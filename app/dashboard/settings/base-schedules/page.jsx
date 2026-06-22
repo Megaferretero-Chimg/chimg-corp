@@ -9,7 +9,7 @@ export default function SettingsBaseSchedulesPage() {
   return (
     <DashboardShell
       title="Horarios base"
-      description="Plantillas de jornada por area y rol para alimentar la planificacion mensual y semanal."
+      description="Catalogo de horarios diarios por area para alimentar la programacion operativa."
     >
       <BaseSchedulesManager />
     </DashboardShell>

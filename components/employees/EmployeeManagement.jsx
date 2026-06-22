@@ -594,12 +594,13 @@ export default function EmployeeManagement() {
     }));
   }
 
-  function handleRoleChange(roleCodes) {
-    const selectedRoleCodes = Array.isArray(roleCodes) ? roleCodes : [roleCodes].filter(Boolean);
-    const selectedRoles = selectedRoleCodes
-      .map((roleCode) => roles.find((candidate) => candidate.code === roleCode))
+  function handleRoleChange(primaryRoleCode, operationalCodes = []) {
+    const primaryRole = roles.find((candidate) => candidate.code === primaryRoleCode) || null;
+    const selectedOperationalCodes = Array.isArray(operationalCodes) ? operationalCodes : [];
+    const subrolesByCode = new Map((primaryRole?.subroles || []).map((subrole) => [subrole.code, subrole]));
+    const operationalAssignments = selectedOperationalCodes
+      .map((subroleCode) => subrolesByCode.get(subroleCode))
       .filter(Boolean);
-    const primaryRole = selectedRoles[0] || null;
 
     setForm((current) => ({
       ...current,
@@ -607,11 +608,11 @@ export default function EmployeeManagement() {
       roleName: primaryRole?.name || "",
       areaCode: primaryRole?.areaCode || "",
       areaName: primaryRole?.areaName || "",
-      roleAssignments: selectedRoles.map((role, index) => ({
-        code: role.code,
-        name: role.name,
-        areaCode: role.areaCode,
-        areaName: role.areaName,
+      roleAssignments: operationalAssignments.map((subrole, index) => ({
+        code: subrole.code,
+        name: subrole.name,
+        areaCode: primaryRole.areaCode,
+        areaName: primaryRole.areaName,
         isPrimary: index === 0,
       })),
     }));

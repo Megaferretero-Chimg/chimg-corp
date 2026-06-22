@@ -15,7 +15,7 @@ export default async function PlanningMonthlyPage({ searchParams }) {
 
   return (
     <DashboardShell
-      title="Programacion operativa"
+      title="Programacion de horarios"
       description="Administra turnos variables de almacen y bodega; las areas de horario fijo se resuelven desde su configuracion base."
     >
       <SchedulePlanner initialFilters={{ month, branchCode, areaCode, roleCode }} />

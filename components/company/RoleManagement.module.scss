@@ -9,6 +9,14 @@
   gap: 0.5rem;
 }
 
+.clickableRow {
+  cursor: pointer;
+}
+
+.clickableRow:hover {
+  background: #f8fbff;
+}
+
 .roleCode {
   width: fit-content;
   display: inline-flex;
@@ -35,7 +43,15 @@
 }
 
 .roleDescription {
+  display: grid;
+  gap: 0.28rem;
   color: #4d6487;
   font-size: var(--font-size-base);
   line-height: 1.55;
+}
+
+.roleDescription small {
+  color: #17428c;
+  font-size: var(--font-size-xs);
+  font-weight: 800;
 }

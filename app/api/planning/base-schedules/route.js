@@ -43,7 +43,7 @@ export async function POST(request) {
     const roleCode = String(body?.roleCode || "").trim();
     const [area, role] = await Promise.all([
       Area.findOne({ code: areaCode }).lean(),
-      Role.findOne({ code: roleCode, areaCode }).lean(),
+      roleCode ? Role.findOne({ code: roleCode, areaCode }).lean() : null,
     ]);
     const payload = normalizeBaseScheduleTemplatePayload(body, { area, role });
     const template = await BaseScheduleTemplate.create(payload);

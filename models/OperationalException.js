@@ -38,8 +38,13 @@ const operationalExceptionSchema = new Schema(
     },
     type: {
       type: String,
-      enum: ["absence", "sick_leave", "permission", "schedule_change", "replacement", "other"],
+      enum: ["absence", "sick_leave", "permission", "schedule_change", "replacement", "medical_appointment", "early_leave", "late_arrival", "missing_punch", "outside_work", "material_pickup", "field_visit", "other"],
       required: true,
+    },
+    scope: {
+      type: String,
+      enum: ["full_day", "partial_day", "early_leave", "late_arrival", "missing_punch", "outside_work", "exit_return", "date_range", "other"],
+      default: "full_day",
     },
     date: {
       type: Date,
@@ -59,6 +64,54 @@ const operationalExceptionSchema = new Schema(
       trim: true,
       default: "",
     },
+    startTime: {
+      type: String,
+      trim: true,
+      default: "",
+    },
+    endTime: {
+      type: String,
+      trim: true,
+      default: "",
+    },
+    plannedStartTime: {
+      type: String,
+      trim: true,
+      default: "",
+    },
+    plannedEndTime: {
+      type: String,
+      trim: true,
+      default: "",
+    },
+    plannedLunchStartTime: {
+      type: String,
+      trim: true,
+      default: "",
+    },
+    plannedLunchEndTime: {
+      type: String,
+      trim: true,
+      default: "",
+    },
+    plannedLunchDurationMinutes: {
+      type: Number,
+      min: 0,
+      default: 0,
+    },
+    destination: {
+      type: String,
+      trim: true,
+      default: "",
+    },
+    countsAsWorkedTime: {
+      type: Boolean,
+      default: false,
+    },
+    allowSupplementaryTime: {
+      type: Boolean,
+      default: false,
+    },
     registeredBy: {
       type: String,
       trim: true,
@@ -73,7 +126,7 @@ const operationalExceptionSchema = new Schema(
     },
     resolution: {
       type: String,
-      enum: ["pending", "discount_day", "paid_leave", "reschedule", "replacement", "no_action", "other"],
+      enum: ["pending", "discount_day", "paid_leave", "complete_scheduled_time", "approved_work_time", "justified_record", "reschedule", "replacement", "no_action", "other"],
       default: "pending",
     },
     resolutionNotes: {

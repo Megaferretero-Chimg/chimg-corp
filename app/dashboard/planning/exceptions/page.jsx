@@ -9,12 +9,12 @@ export default function PlanningExceptionsPage() {
   return (
     <DashboardShell
       title="Ajustes y excepciones"
-      description="Centraliza las novedades reales que modifican el plan: ausencias, permisos, cambios, reemplazos y decisiones operativas."
+      description="Registra permisos, salidas tempranas, ausencias justificadas y novedades que explican diferencias de asistencia sin tratarlas como sanciones."
     >
       <ExceptionManager
         eyebrow="Planificacion"
-        title="Gestion de cambios operativos"
-        description="Registra que ocurrio, quien lo reporto, quien lo autorizo y que decision se tomo para asistencia, cobertura o nomina."
+        title="Ajustes y excepciones"
+        description="Deja trazabilidad de que ocurrio, por que se autorizo y como debe leerse en asistencia o nomina cuando falten horas planificadas."
       />
     </DashboardShell>
   );

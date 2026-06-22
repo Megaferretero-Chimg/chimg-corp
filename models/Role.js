@@ -30,6 +30,34 @@ const roleSchema = new Schema(
       trim: true,
       default: "",
     },
+    subroles: {
+      type: [
+        {
+          code: {
+            type: String,
+            trim: true,
+            uppercase: true,
+            default: "",
+          },
+          name: {
+            type: String,
+            trim: true,
+            uppercase: true,
+            default: "",
+          },
+          description: {
+            type: String,
+            trim: true,
+            default: "",
+          },
+          isActive: {
+            type: Boolean,
+            default: true,
+          },
+        },
+      ],
+      default: [],
+    },
     isActive: {
       type: Boolean,
       default: true,

@@ -23,6 +23,16 @@ const scheduleDaySchema = new Schema(
       min: 0,
       default: 60,
     },
+    lunchStartTime: {
+      type: String,
+      trim: true,
+      default: "",
+    },
+    lunchEndTime: {
+      type: String,
+      trim: true,
+      default: "",
+    },
     hasLunch: {
       type: Boolean,
       default: true,
@@ -67,14 +77,14 @@ const baseScheduleTemplateSchema = new Schema(
     },
     roleCode: {
       type: String,
-      required: true,
       trim: true,
+      default: "",
     },
     roleName: {
       type: String,
-      required: true,
       trim: true,
       uppercase: true,
+      default: "",
     },
     rotationGroup: {
       type: String,

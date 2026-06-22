@@ -10,7 +10,7 @@ import TransitionLink from "@/components/navigation/TransitionLink";
 import { PLANNING_MODULE } from "@/lib/modules/planning/module";
 import styles from "./DashboardShell.module.scss";
 
-export default function DashboardShell({ title, description, children, moduleConfig = PLANNING_MODULE }) {
+export default function DashboardShell({ title, description, actions = null, children, moduleConfig = PLANNING_MODULE }) {
   const pathname = usePathname();
   const navigation = moduleConfig.navigation || [];
 
@@ -204,6 +204,7 @@ export default function DashboardShell({ title, description, children, moduleCon
             <h1 className={styles.title}>{title}</h1>
             <p className={styles.description}>{description}</p>
           </div>
+          {actions ? <div className={styles.headerActions}>{actions}</div> : null}
         </header>
 
         <section className="page-entrance page-entrance-delay-sm">{children}</section>

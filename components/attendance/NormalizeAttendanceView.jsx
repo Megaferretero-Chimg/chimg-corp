@@ -147,6 +147,18 @@ function getMatchClass(status) {
   return styles.matchDanger;
 }
 
+function getEmployeeKey(employee) {
+  if (!employee) {
+    return "";
+  }
+
+  return [
+    employee?.matchedEmployeeId || "",
+    employee?.biometricCode || "",
+    employee?.fullName || "",
+  ].join("|");
+}
+
 export default function NormalizeAttendanceView({ uploadId }) {
   const isClientReady = useClientReady();
   const [response, setResponse] = useState(null);
@@ -154,6 +166,7 @@ export default function NormalizeAttendanceView({ uploadId }) {
   const [isSaving, setIsSaving] = useState(false);
   const [isPublishingPunches, setIsPublishingPunches] = useState(false);
   const [search, setSearch] = useState("");
+  const [selectedEmployeeKey, setSelectedEmployeeKey] = useState("");
   const [toast, setToast] = useState(null);
   const toastTimeoutRef = useRef(null);
 
@@ -176,7 +189,10 @@ export default function NormalizeAttendanceView({ uploadId }) {
       return haystack.includes(normalizedSearch);
     });
   }, [response?.employees, search]);
-  const reconciliationRows = useMemo(() => response?.employees || [], [response?.employees]);
+  const selectedEmployee = useMemo(
+    () => (response?.employees || []).find((employee) => getEmployeeKey(employee) === selectedEmployeeKey) || null,
+    [response?.employees, selectedEmployeeKey],
+  );
   const reconciliationNeedsAttention = Boolean(
     (response?.summary?.inactiveEmployees || 0) > 0 ||
       (response?.summary?.unmatchedEmployees || 0) > 0 ||
@@ -290,6 +306,7 @@ export default function NormalizeAttendanceView({ uploadId }) {
 
         if (!isCancelled) {
           setResponse(payload);
+          setSelectedEmployeeKey((current) => current || getEmployeeKey(payload.employees?.[0]));
         }
       } catch (requestError) {
         if (!isCancelled) {
@@ -508,8 +525,24 @@ export default function NormalizeAttendanceView({ uploadId }) {
                     </tr>
                   </thead>
                   <tbody>
-                    {reconciliationRows.map((employee) => (
-                      <tr key={`reconcile-${employee.biometricCode}`}>
+                    {filteredEmployees.map((employee) => {
+                      const employeeKey = getEmployeeKey(employee);
+                      const isSelected = selectedEmployeeKey === employeeKey;
+
+                      return (
+                      <tr
+                        key={`reconcile-${employeeKey}`}
+                        className={isSelected ? styles.selectedEmployeeRow : ""}
+                        onClick={() => setSelectedEmployeeKey(employeeKey)}
+                        onKeyDown={(event) => {
+                          if (event.key === "Enter" || event.key === " ") {
+                            event.preventDefault();
+                            setSelectedEmployeeKey(employeeKey);
+                          }
+                        }}
+                        role="button"
+                        tabIndex={0}
+                      >
                         <td className={styles.reconciliationCode}>
                           {employee.biometricCode || "s/n"}
                         </td>
@@ -542,7 +575,15 @@ export default function NormalizeAttendanceView({ uploadId }) {
                           )}
                         </td>
                       </tr>
-                    ))}
+                      );
+                    })}
+                    {!filteredEmployees.length ? (
+                      <tr>
+                        <td colSpan={6} className={styles.emptyTableCell}>
+                          No hay empleados que coincidan con el filtro actual.
+                        </td>
+                      </tr>
+                    ) : null}
                   </tbody>
                 </table>
               </div>
@@ -562,25 +603,25 @@ export default function NormalizeAttendanceView({ uploadId }) {
             </label>
 
             <div className={styles.employeeList}>
-              {filteredEmployees.map((employee) => (
-                <article key={`${employee.biometricCode}-${employee.fullName}`} className={styles.employeeCard}>
+              {selectedEmployee ? (
+                <article key={`${selectedEmployee.biometricCode}-${selectedEmployee.fullName}`} className={styles.employeeCard}>
                   <div className={styles.employeeHeader}>
                     <div>
-                      <p className={styles.employeeName}>{employee.fullName}</p>
+                      <p className={styles.employeeName}>Picadas de {selectedEmployee.fullName}</p>
                       <p className={styles.employeeMeta}>
-                        {employee.biometricCode || "s/n"} · {employee.department || "Sin departamento"}
+                        {selectedEmployee.biometricCode || "s/n"} · {selectedEmployee.department || "Sin departamento"}
                       </p>
                     </div>
                     <div className={styles.employeeCount}>
                       <FileSpreadsheet size={16} />
-                      <span>{employee.punchCount} picadas</span>
+                      <span>{selectedEmployee.punchCount} picadas</span>
                     </div>
                   </div>
 
                   <div className={styles.punchList}>
-                    {employee.punches.length ? (
-                      groupPunchesByWeek(employee.punches).map((week) => (
-                        <section key={`${employee.biometricCode}-${week.weekKey}`} className={styles.weekGroup}>
+                    {selectedEmployee.punches.length ? (
+                      groupPunchesByWeek(selectedEmployee.punches).map((week) => (
+                        <section key={`${selectedEmployee.biometricCode}-${week.weekKey}`} className={styles.weekGroup}>
                           <div className={styles.weekHeader}>
                             <span className={styles.weekTitle}>{week.label}</span>
                             <span className={styles.weekCount}>{week.punches.length} picadas</span>
@@ -603,7 +644,7 @@ export default function NormalizeAttendanceView({ uploadId }) {
                               <tbody>
                                 {groupPunchesByDay(week.punches).map((day) => (
                                   <tr
-                                    key={`${employee.biometricCode}-${week.weekKey}-${day.dayKey}`}
+                                    key={`${selectedEmployee.biometricCode}-${week.weekKey}-${day.dayKey}`}
                                   >
                                     <td className={styles.punchDay}>
                                       {formatDayName(day.punches[0]?.punchedAt)}
@@ -639,13 +680,11 @@ export default function NormalizeAttendanceView({ uploadId }) {
                     )}
                   </div>
                 </article>
-              ))}
-
-              {!filteredEmployees.length ? (
+              ) : (
                 <div className={styles.emptyEmployees}>
-                  No hay empleados que coincidan con el filtro actual.
+                  Selecciona un empleado en la tabla superior para revisar sus picadas.
                 </div>
-              ) : null}
+              )}
             </div>
 
             {response.parserLogs?.length ? (

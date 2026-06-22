@@ -403,6 +403,15 @@
     border-bottom: 0;
   }
 
+  tbody tr[role="button"] {
+    cursor: pointer;
+    transition: background 160ms ease;
+  }
+
+  tbody tr[role="button"]:hover {
+    background: #f8fbff;
+  }
+
   td {
     color: #263b61;
   }
@@ -419,6 +428,16 @@
     color: #667a9d;
     font-size: var(--font-size-sm);
   }
+}
+
+.selectedEmployeeRow {
+  background: #eef5ff !important;
+  box-shadow: inset 3px 0 0 var(--primary);
+}
+
+.emptyTableCell {
+  color: var(--text-muted) !important;
+  text-align: center;
 }
 
 .reconciliationCode {

@@ -28,15 +28,17 @@ export default function EmployeeForm({
   onRoleChange,
   onSubmit,
 }) {
-  const selectedRoleCodes = new Set((form.roleAssignments || []).map((role) => role.code));
+  const selectedRole = roles.find((role) => role.code === form.roleCode) || null;
+  const operationalSubroles = (selectedRole?.subroles || []).filter((subrole) => subrole.isActive !== false);
+  const selectedOperationalCodes = new Set((form.roleAssignments || []).map((role) => role.code));
 
-  function toggleRole(role) {
+  function toggleOperationalSubrole(subrole) {
     const currentCodes = (form.roleAssignments || []).map((assignment) => assignment.code);
-    const nextCodes = selectedRoleCodes.has(role.code)
-      ? currentCodes.filter((code) => code !== role.code)
-      : [...currentCodes, role.code];
+    const nextCodes = selectedOperationalCodes.has(subrole.code)
+      ? currentCodes.filter((code) => code !== subrole.code)
+      : [...currentCodes, subrole.code];
 
-    onRoleChange(nextCodes);
+    onRoleChange(form.roleCode, nextCodes);
   }
 
   return (
@@ -139,30 +141,50 @@ export default function EmployeeForm({
         </select>
       </label>
 
-      <div className="catalog-field">
-        <span className="catalog-label">Roles operativos</span>
-        <div className={styles.rolePicker}>
-          {roles.map((role) => {
-            const isSelected = selectedRoleCodes.has(role.code);
+      <label className="catalog-field">
+        <span className="catalog-label">Rol principal</span>
+        <select
+          value={form.roleCode}
+          onChange={(event) => onRoleChange(event.target.value, [])}
+          className="catalog-select"
+        >
+          <option value="">Selecciona un rol</option>
+          {roles.map((role) => (
+            <option key={role.id} value={role.code}>
+              {role.name}
+            </option>
+          ))}
+        </select>
+      </label>
 
-            return (
-              <button
-                key={role.id}
-                type="button"
-                className={`${styles.roleOption} ${isSelected ? styles.roleOptionSelected : ""}`}
-                onClick={() => toggleRole(role)}
-                aria-pressed={isSelected}
-              >
-                <span>{role.name}</span>
-                <small>{role.areaName || "Sin area"}</small>
-              </button>
-            );
-          })}
+      {operationalSubroles.length ? (
+        <div className="catalog-field">
+          <span className="catalog-label">Coberturas operativas</span>
+          <div className={styles.rolePicker}>
+            {operationalSubroles.map((subrole) => {
+              const isSelected = selectedOperationalCodes.has(subrole.code);
+
+              return (
+                <button
+                  key={subrole.code}
+                  type="button"
+                  className={`${styles.roleOption} ${isSelected ? styles.roleOptionSelected : ""}`}
+                  onClick={() => toggleOperationalSubrole(subrole)}
+                  aria-pressed={isSelected}
+                >
+                  <span>{subrole.name}</span>
+                  <small>{selectedRole.name}</small>
+                </button>
+              );
+            })}
+          </div>
+          {form.roleAssignments?.length ? (
+            <span className={styles.roleHint}>Estas coberturas se usan para planificación semanal. El rol principal se mantiene como {selectedRole.name}.</span>
+          ) : (
+            <span className={styles.roleHint}>Selecciona las coberturas que esta persona puede ejercer en planificación.</span>
+          )}
         </div>
-        {form.roleAssignments?.length ? (
-          <span className={styles.roleHint}>El primer rol seleccionado queda como rol principal para reportes actuales.</span>
-        ) : null}
-      </div>
+      ) : null}
 
       <label className="catalog-field">
         <span className="catalog-label">Sueldo</span>

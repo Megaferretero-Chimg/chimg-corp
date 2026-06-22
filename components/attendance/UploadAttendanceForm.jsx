@@ -1,19 +1,18 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useRef, useState, useTransition } from "react";
+import { useCallback, useEffect, useRef, useState, useTransition } from "react";
 import { format } from "date-fns";
 import { es } from "date-fns/locale";
 import {
-  AlertCircle,
   Clock3,
-  CheckCircle2,
   FileSpreadsheet,
   Inbox,
   History,
   Upload,
   X,
 } from "lucide-react";
+import FloatingNotice from "@/components/ui/FloatingNotice";
 import { planningModulePath } from "@/lib/modules/planning/routes";
 import styles from "./UploadAttendanceForm.module.scss";
 
@@ -70,28 +69,53 @@ export default function UploadAttendanceForm() {
   const [savedUpload, setSavedUpload] = useState(null);
   const [uploadsHistory, setUploadsHistory] = useState([]);
   const [isHistoryLoading, setIsHistoryLoading] = useState(true);
-  const [toast, setToast] = useState(null);
+  const [notice, setNotice] = useState(null);
   const [isDragging, setIsDragging] = useState(false);
   const [isPending, startTransition] = useTransition();
   const inputRef = useRef(null);
-  const toastTimeoutRef = useRef(null);
+  const noticeExitTimeoutRef = useRef(null);
+  const noticeRemoveTimeoutRef = useRef(null);
   const isUploadLocked = Boolean(savedUpload);
   const isInitialLoading = isHistoryLoading && !branches.length && !uploadsHistory.length && !savedUpload;
 
-  function showToast(type, message) {
-    setToast({ type, message });
-
-    if (toastTimeoutRef.current) {
-      clearTimeout(toastTimeoutRef.current);
+  const clearNoticeTimers = useCallback(() => {
+    if (noticeExitTimeoutRef.current) {
+      window.clearTimeout(noticeExitTimeoutRef.current);
+      noticeExitTimeoutRef.current = null;
     }
 
-    toastTimeoutRef.current = setTimeout(() => {
-      setToast(null);
-      toastTimeoutRef.current = null;
-    }, 5000);
-  }
+    if (noticeRemoveTimeoutRef.current) {
+      window.clearTimeout(noticeRemoveTimeoutRef.current);
+      noticeRemoveTimeoutRef.current = null;
+    }
+  }, []);
 
-  function applySelectedFile(file) {
+  const dismissNotice = useCallback(() => {
+    clearNoticeTimers();
+    setNotice((current) => (current ? { ...current, isLeaving: true } : null));
+    noticeRemoveTimeoutRef.current = window.setTimeout(() => {
+      setNotice(null);
+      noticeRemoveTimeoutRef.current = null;
+    }, 240);
+  }, [clearNoticeTimers]);
+
+  const showNotice = useCallback((type, message) => {
+    clearNoticeTimers();
+    setNotice({ type, message, isLeaving: false });
+    noticeExitTimeoutRef.current = window.setTimeout(() => {
+      dismissNotice();
+    }, 5000);
+  }, [clearNoticeTimers, dismissNotice]);
+
+  const resetFileInput = useCallback(() => {
+    setSelectedFile(null);
+
+    if (inputRef.current) {
+      inputRef.current.value = "";
+    }
+  }, []);
+
+  const applySelectedFile = useCallback((file) => {
     if (isUploadLocked) {
       return;
     }
@@ -101,14 +125,14 @@ export default function UploadAttendanceForm() {
     }
 
     if (!hasValidExcelExtension(file.name)) {
-      showToast("error", "Solo se permiten archivos .xls, .xlsx, .csv o .dat.");
+      showNotice("error", "Solo se permiten archivos .xls, .xlsx, .csv o .dat.");
       return;
     }
 
-    setToast(null);
+    setNotice(null);
     setSavedUpload(null);
     setSelectedFile(file);
-  }
+  }, [isUploadLocked, showNotice]);
 
   function handleInputChange(event) {
     applySelectedFile(event.target.files?.[0] || null);
@@ -129,16 +153,16 @@ export default function UploadAttendanceForm() {
     event.preventDefault();
 
     if (!selectedFile) {
-      showToast("error", "Selecciona un archivo biométrico para continuar.");
+      showNotice("error", "Selecciona un archivo biométrico para continuar.");
       return;
     }
 
     if (!branchCode) {
-      showToast("error", "Selecciona la sucursal de origen del archivo.");
+      showNotice("error", "Selecciona la sucursal de origen del archivo.");
       return;
     }
 
-    setToast(null);
+    setNotice(null);
 
     startTransition(async () => {
       try {
@@ -158,18 +182,19 @@ export default function UploadAttendanceForm() {
         }
 
         setSavedUpload(payload.upload || null);
-        setUploadsHistory((current) => [payload.upload, ...current].slice(0, 20));
-        showToast("success", payload.message || "Archivo guardado correctamente.");
-        setSelectedFile(null);
-
-        if (inputRef.current) {
-          inputRef.current.value = "";
-        }
+        setUploadsHistory((current) => [payload.upload, ...current.filter((item) => item.id !== payload.upload?.id)].slice(0, 20));
+        showNotice("success", payload.message || "Archivo guardado correctamente.");
+        resetFileInput();
       } catch (submissionError) {
         setSavedUpload(null);
-        showToast("error", submissionError.message);
+        showNotice("error", submissionError.message);
       }
     });
+  }
+
+  function handleNewUpload() {
+    setSavedUpload(null);
+    resetFileInput();
   }
 
   useEffect(() => {
@@ -181,8 +206,10 @@ export default function UploadAttendanceForm() {
           setIsHistoryLoading(true);
         }
 
-        const response = await fetch("/api/attendance/upload");
-        const branchesResponse = await fetch("/api/branches");
+        const [response, branchesResponse] = await Promise.all([
+          fetch("/api/attendance/upload"),
+          fetch("/api/branches"),
+        ]);
         const payload = await response.json();
         const branchesPayload = await branchesResponse.json();
 
@@ -200,7 +227,7 @@ export default function UploadAttendanceForm() {
         }
       } catch (historyError) {
         if (!isCancelled) {
-          showToast("error", historyError.message);
+          showNotice("error", historyError.message);
         }
       } finally {
         if (!isCancelled) {
@@ -213,42 +240,13 @@ export default function UploadAttendanceForm() {
 
     return () => {
       isCancelled = true;
-
-      if (toastTimeoutRef.current) {
-        clearTimeout(toastTimeoutRef.current);
-      }
+      clearNoticeTimers();
     };
-  }, []);
+  }, [clearNoticeTimers, showNotice]);
 
   return (
     <>
-      {toast ? (
-        <div
-          className={`${styles.toast} ${
-            toast.type === "success" ? styles.toastSuccess : styles.toastError
-          }`}
-          role="status"
-          aria-live="polite"
-        >
-          <div className={styles.toastIcon}>
-            {toast.type === "success" ? <CheckCircle2 size={18} /> : <AlertCircle size={18} />}
-          </div>
-          <div className={styles.toastContent}>
-            <p className={styles.toastTitle}>
-              {toast.type === "success" ? "Archivo guardado" : "Algo necesita atención"}
-            </p>
-            <p className={styles.toastMessage}>{toast.message}</p>
-          </div>
-          <button
-            type="button"
-            onClick={() => setToast(null)}
-            className={styles.toastClose}
-            aria-label="Cerrar notificación"
-          >
-            <X size={16} />
-          </button>
-        </div>
-      ) : null}
+      <FloatingNotice notice={notice} onClose={dismissNotice} />
 
       <section className={styles.panel}>
         {isInitialLoading ? (
@@ -283,198 +281,206 @@ export default function UploadAttendanceForm() {
           </div>
         ) : (
           <>
-        <form onSubmit={handleSubmit} className={styles.form}>
-          <div className={styles.header}>
-            <p className={styles.eyebrow}>Subir archivo</p>
-            <h2 className={styles.title}>Guarda el reporte original del biométrico</h2>
-            <p className={styles.description}>
-              Arrastra el CSV de Ambato o el attlog de Salcedo, elige la sucursal de origen y guardaremos el archivo completo para procesarlo después.
-            </p>
-          </div>
-
-          <label className={styles.field}>
-            <span className={styles.label}>Sucursal del biométrico</span>
-            <select
-              value={branchCode}
-              onChange={(event) => setBranchCode(event.target.value)}
-              className={styles.select}
-              disabled={isUploadLocked}
-            >
-              <option value="">Selecciona una sucursal</option>
-              {branches.map((branch) => (
-                <option key={branch.id || branch.code} value={branch.code}>
-                  {branch.name || branch.code}
-                </option>
-              ))}
-            </select>
-          </label>
-
-          <div
-            className={`${styles.dropzone} ${isDragging ? styles.dropzoneActive : ""} ${
-              isUploadLocked ? styles.dropzoneLocked : ""
-            }`}
-            onDragOver={(event) => {
-              if (isUploadLocked) {
-                return;
-              }
-
-              event.preventDefault();
-              setIsDragging(true);
-            }}
-            onDragLeave={() => setIsDragging(false)}
-            onDrop={handleDrop}
-            onClick={() => {
-              if (!isUploadLocked) {
-                inputRef.current?.click();
-              }
-            }}
-            role="button"
-            tabIndex={isUploadLocked ? -1 : 0}
-            aria-disabled={isUploadLocked}
-            onKeyDown={(event) => {
-              if (isUploadLocked) {
-                return;
-              }
-
-              if (event.key === "Enter" || event.key === " ") {
-                event.preventDefault();
-                inputRef.current?.click();
-              }
-            }}
-          >
-            <div className={styles.dropzoneIcon}>
-              {selectedFile ? <FileSpreadsheet size={26} /> : <Inbox size={26} />}
-            </div>
-            <span className={styles.fieldTitle}>
-              {isUploadLocked
-                ? "Archivo guardado en la base de datos"
-                : selectedFile
-                  ? "Archivo listo para guardar"
-                  : "Arrastra tu archivo Excel aquí"}
-            </span>
-            <span className={styles.fieldHint}>
-              {isUploadLocked
-                ? "La carga quedó cerrada para evitar reemplazos accidentales desde esta misma vista."
-                : selectedFile
-                  ? "Revisa el archivo seleccionado y luego confirma el guardado."
-                  : `También puedes hacer clic para buscarlo. Permitidos: ${ACCEPTED_FILES_LABEL}`}
-            </span>
-
-            <input
-              ref={inputRef}
-              type="file"
-              accept={ACCEPTED_FILES_LABEL}
-              onChange={handleInputChange}
-              className={styles.fileInput}
-              disabled={isUploadLocked}
-            />
-          </div>
-
-          {selectedFile && !isUploadLocked ? (
-            <div className={styles.selectedFileCard}>
-              <div className={styles.selectedFileIcon}>
-                <FileSpreadsheet size={18} />
-              </div>
-              <div className={styles.selectedFileContent}>
-                <p className={styles.selectedFileName}>{selectedFile.name}</p>
-                <p className={styles.selectedFileMeta}>
-                  {formatFileSize(selectedFile.size)} · {selectedFile.type || "Tipo no disponible"}
-                </p>
-              </div>
-              <button
-                type="button"
-                onClick={() => {
-                  setSelectedFile(null);
-                  setToast(null);
-
-                  if (inputRef.current) {
-                    inputRef.current.value = "";
-                  }
-                }}
-                className={styles.removeFileButton}
-                aria-label="Quitar archivo"
-              >
-                <X size={16} />
-              </button>
-            </div>
-          ) : null}
-
-          <div className={styles.actions}>
-            <button
-              type="submit"
-              disabled={!selectedFile || !branchCode || isPending || isUploadLocked}
-              className={styles.submit}
-            >
-              <Upload size={16} />
-              {isPending ? "Guardando archivo..." : "Confirmar guardado"}
-            </button>
-          </div>
-        </form>
-
-        {savedUpload ? (
-          <div className={styles.stack}>
-            <div className={styles.summaryGrid}>
-              {[
-                { label: "Archivo", value: savedUpload.fileName || "N/D" },
-                { label: "Sucursal", value: savedUpload.branchName || savedUpload.branchCode || "N/D" },
-                { label: "Estado", value: formatUploadStatus(savedUpload.status) },
-                { label: "Tamaño", value: formatFileSize(savedUpload.fileSize || 0) },
-                { label: "Guardado", value: formatDateTime(savedUpload.createdAt) },
-              ].map((item) => (
-                <div key={item.label} className={styles.summaryCard}>
-                  <p className={styles.summaryLabel}>{item.label}</p>
-                  <p className={styles.summaryValueSmall}>{item.value}</p>
-                </div>
-              ))}
-            </div>
-          </div>
-        ) : null}
-
-        <div className={styles.historySection}>
-          <div className={styles.historyHeader}>
-            <div>
-              <p className={styles.eyebrow}>Historial</p>
-              <h3 className={styles.historyTitle}>Archivos cargados recientemente</h3>
-            </div>
-            <div className={styles.historyBadge}>
-              <History size={16} />
-              <span>{uploadsHistory.length}</span>
-            </div>
-          </div>
-
-          {isHistoryLoading ? (
-            <div className={styles.historyEmpty}>
-              <Clock3 size={16} />
-              <span>Cargando historial de archivos...</span>
-            </div>
-          ) : uploadsHistory.length ? (
-            <div className={styles.historyList}>
-              {uploadsHistory.map((upload) => (
-                <article key={upload.id} className={styles.historyItem}>
-                  <div className={styles.historyItemMain}>
-                    <p className={styles.historyFileName}>{upload.fileName}</p>
-                    <p className={styles.historyMeta}>
-                      {[upload.branchName || upload.branchCode, formatFileSize(upload.fileSize || 0), formatDateTime(upload.createdAt)]
-                        .filter(Boolean)
-                        .join(" · ")}
+            <div className={styles.contentGrid}>
+              <div className={styles.uploadColumn}>
+                <form onSubmit={handleSubmit} className={styles.form}>
+                  <div className={styles.header}>
+                    <p className={styles.eyebrow}>Subir archivo</p>
+                    <h2 className={styles.title}>Guarda el reporte original del biométrico</h2>
+                    <p className={styles.description}>
+                      Arrastra el CSV de Ambato o el attlog de Salcedo, elige la sucursal de origen y guardaremos el archivo completo para procesarlo después.
                     </p>
                   </div>
-                  <div className={styles.historyItemSide}>
-                    <span className={styles.historyStatus}>{formatUploadStatus(upload.status)}</span>
-                    <Link href={planningModulePath(`/attendance/uploads/${upload.id}`)} className={styles.historyAction}>
-                      {upload.hasNormalization ? "Abrir revisión" : "Abrir y revisar"}
-                    </Link>
+
+                  <label className={styles.field}>
+                    <span className={styles.label}>Sucursal del biométrico</span>
+                    <select
+                      value={branchCode}
+                      onChange={(event) => setBranchCode(event.target.value)}
+                      className={styles.select}
+                      disabled={isUploadLocked}
+                    >
+                      <option value="">Selecciona una sucursal</option>
+                      {branches.map((branch) => (
+                        <option key={branch.id || branch.code} value={branch.code}>
+                          {branch.name || branch.code}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+
+                  <div
+                    className={`${styles.dropzone} ${isDragging ? styles.dropzoneActive : ""} ${
+                      isUploadLocked ? styles.dropzoneLocked : ""
+                    }`}
+                    onDragOver={(event) => {
+                      if (isUploadLocked) {
+                        return;
+                      }
+
+                      event.preventDefault();
+                      setIsDragging(true);
+                    }}
+                    onDragLeave={() => setIsDragging(false)}
+                    onDrop={handleDrop}
+                    onClick={() => {
+                      if (!isUploadLocked) {
+                        inputRef.current?.click();
+                      }
+                    }}
+                    role="button"
+                    tabIndex={isUploadLocked ? -1 : 0}
+                    aria-disabled={isUploadLocked}
+                    onKeyDown={(event) => {
+                      if (isUploadLocked) {
+                        return;
+                      }
+
+                      if (event.key === "Enter" || event.key === " ") {
+                        event.preventDefault();
+                        inputRef.current?.click();
+                      }
+                    }}
+                  >
+                    <div className={styles.dropzoneIcon}>
+                      {selectedFile ? <FileSpreadsheet size={26} /> : <Inbox size={26} />}
+                    </div>
+                    <span className={styles.fieldTitle}>
+                      {isUploadLocked
+                        ? "Archivo guardado en la base de datos"
+                        : selectedFile
+                          ? "Archivo listo para guardar"
+                          : "Arrastra tu archivo Excel aquí"}
+                    </span>
+                    <span className={styles.fieldHint}>
+                      {isUploadLocked
+                        ? "La carga quedó cerrada para evitar reemplazos accidentales desde esta misma vista."
+                        : selectedFile
+                          ? "Revisa el archivo seleccionado y luego confirma el guardado."
+                          : `También puedes hacer clic para buscarlo. Permitidos: ${ACCEPTED_FILES_LABEL}`}
+                    </span>
+
+                    <input
+                      ref={inputRef}
+                      type="file"
+                      accept={ACCEPTED_FILES_LABEL}
+                      onChange={handleInputChange}
+                      className={styles.fileInput}
+                      disabled={isUploadLocked}
+                    />
                   </div>
-                </article>
-              ))}
+
+                  {selectedFile && !isUploadLocked ? (
+                    <div className={styles.selectedFileCard}>
+                      <div className={styles.selectedFileIcon}>
+                        <FileSpreadsheet size={18} />
+                      </div>
+                      <div className={styles.selectedFileContent}>
+                        <p className={styles.selectedFileName}>{selectedFile.name}</p>
+                        <p className={styles.selectedFileMeta}>
+                          {formatFileSize(selectedFile.size)} · {selectedFile.type || "Tipo no disponible"}
+                        </p>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setNotice(null);
+                          resetFileInput();
+                        }}
+                        className={styles.removeFileButton}
+                        aria-label="Quitar archivo"
+                      >
+                        <X size={16} />
+                      </button>
+                    </div>
+                  ) : null}
+
+                  <div className={styles.actions}>
+                    <button
+                      type="submit"
+                      disabled={!selectedFile || !branchCode || isPending || isUploadLocked}
+                      className={styles.submit}
+                    >
+                      <Upload size={16} />
+                      {isPending ? "Guardando archivo..." : "Confirmar guardado"}
+                    </button>
+                  </div>
+                </form>
+
+                {savedUpload ? (
+                  <div className={styles.stack}>
+                    <div className={styles.summaryGrid}>
+                      {[
+                        { label: "Archivo", value: savedUpload.fileName || "N/D" },
+                        { label: "Sucursal", value: savedUpload.branchName || savedUpload.branchCode || "N/D" },
+                        { label: "Estado", value: formatUploadStatus(savedUpload.status) },
+                        { label: "Tamaño", value: formatFileSize(savedUpload.fileSize || 0) },
+                        { label: "Guardado", value: formatDateTime(savedUpload.createdAt) },
+                      ].map((item) => (
+                        <div key={item.label} className={styles.summaryCard}>
+                          <p className={styles.summaryLabel}>{item.label}</p>
+                          <p className={styles.summaryValueSmall}>{item.value}</p>
+                        </div>
+                      ))}
+                    </div>
+                    <div className={styles.secondaryActions}>
+                      <Link href={planningModulePath(`/attendance/uploads/${savedUpload.id}`)} className={styles.reviewButton}>
+                        Abrir revisión
+                      </Link>
+                      <button type="button" className={styles.newUploadButton} onClick={handleNewUpload}>
+                        Cargar otro archivo
+                      </button>
+                    </div>
+                  </div>
+                ) : null}
+              </div>
+
+              <aside className={styles.historySection}>
+                <div className={styles.historyHeader}>
+                  <div>
+                    <p className={styles.eyebrow}>Historial</p>
+                    <h3 className={styles.historyTitle}>Archivos cargados recientemente</h3>
+                  </div>
+                  <div className={styles.historyBadge}>
+                    <History size={16} />
+                    <span>{uploadsHistory.length}</span>
+                  </div>
+                </div>
+
+                {isHistoryLoading ? (
+                  <div className={styles.historyEmpty}>
+                    <Clock3 size={16} />
+                    <span>Cargando historial de archivos...</span>
+                  </div>
+                ) : uploadsHistory.length ? (
+                  <div className={styles.historyList}>
+                    {uploadsHistory.map((upload) => (
+                      <article key={upload.id} className={styles.historyItem}>
+                        <div className={styles.historyItemMain}>
+                          <p className={styles.historyFileName}>{upload.fileName}</p>
+                          <p className={styles.historyMeta}>
+                            {[upload.branchName || upload.branchCode, formatFileSize(upload.fileSize || 0), formatDateTime(upload.createdAt)]
+                              .filter(Boolean)
+                              .join(" · ")}
+                          </p>
+                        </div>
+                        <div className={styles.historyItemSide}>
+                          <span className={styles.historyStatus}>{formatUploadStatus(upload.status)}</span>
+                          <Link href={planningModulePath(`/attendance/uploads/${upload.id}`)} className={styles.historyAction}>
+                            {upload.hasNormalization ? "Abrir revisión" : "Abrir y revisar"}
+                          </Link>
+                        </div>
+                      </article>
+                    ))}
+                  </div>
+                ) : (
+                  <div className={styles.historyEmpty}>
+                    <FileSpreadsheet size={16} />
+                    <span>Todavía no hay archivos cargados en el historial.</span>
+                  </div>
+                )}
+              </aside>
             </div>
-          ) : (
-            <div className={styles.historyEmpty}>
-              <FileSpreadsheet size={16} />
-              <span>Todavía no hay archivos cargados en el historial.</span>
-            </div>
-          )}
-        </div>
           </>
         )}
       </section>

@@ -20,6 +20,7 @@ import BaseScheduleTemplate from "@/models/BaseScheduleTemplate";
 import Employee from "@/models/Employee";
 import Holiday from "@/models/Holiday";
 import LaborRuleConfig from "@/models/LaborRuleConfig";
+import OperationalException from "@/models/OperationalException";
 import ScheduleAssignment from "@/models/ScheduleAssignment";
 import VacationRequest from "@/models/VacationRequest";
 
@@ -646,6 +647,7 @@ function mergeReferenceDaysWithAssignment(referenceDays, assignment) {
 
 function buildFixedScheduleFallbackAssignments({ employees = [], templates = [], monthKeys = [], holidays = [] }) {
   const templatesByRole = new Map();
+  const templatesByArea = new Map();
   const holidaysByMonth = new Map();
   const assignments = [];
 
@@ -653,7 +655,15 @@ function buildFixedScheduleFallbackAssignments({ employees = [], templates = [],
     const areaCode = String(template.areaCode || "").trim().toUpperCase();
     const roleCode = String(template.roleCode || "").trim().toUpperCase();
 
-    if (!areaCode || !roleCode || VARIABLE_SCHEDULE_AREA_CODES.has(areaCode)) {
+    if (!areaCode || VARIABLE_SCHEDULE_AREA_CODES.has(areaCode)) {
+      return;
+    }
+
+    if (!roleCode) {
+      if (!templatesByArea.has(areaCode)) {
+        templatesByArea.set(areaCode, template);
+      }
+
       return;
     }
 
@@ -677,7 +687,7 @@ function buildFixedScheduleFallbackAssignments({ employees = [], templates = [],
   employees.forEach((employee) => {
     const areaCode = String(employee.areaCode || "").trim().toUpperCase();
     const roleCode = String(employee.roleCode || "").trim().toUpperCase();
-    const template = templatesByRole.get(`${areaCode}|${roleCode}`);
+    const template = templatesByRole.get(`${areaCode}|${roleCode}`) || templatesByArea.get(areaCode);
 
     if (!template) {
       return;
@@ -793,6 +803,201 @@ function hasWorkWithoutScheduleTag(day) {
 
 function buildDayDecisionMap(decisions = []) {
   return new Map(decisions.map((decision) => [`${toId(decision.employee)}|${decision.dateKey}`, decision]));
+}
+
+function buildOperationalExceptionDecisionMap(exceptions = []) {
+  const decisions = new Map();
+
+  exceptions.forEach((exception) => {
+    if (!["complete_scheduled_time", "paid_leave", "approved_work_time", "discount_day"].includes(exception.resolution)) return;
+
+    const employeeId = toId(exception.employee);
+    if (!employeeId || !exception.dateKey) return;
+
+    const scope = exception.scope || "full_day";
+    if (scope === "partial_day" || scope === "other") return;
+
+    const startKey = exception.dateKey;
+    const endKey = exception.endDateKey || startKey;
+    const decision = exception.resolution === "discount_day"
+      ? "discount_day"
+      : scope === "early_leave"
+      ? "justify_early_leave"
+      : scope === "late_arrival"
+        ? "justify_late"
+      : scope === "missing_punch"
+        ? "justify_incomplete_punches"
+      : "complete_regular_day";
+    const baseDecision = {
+      employee: exception.employee,
+      decision,
+      note: [
+        "Justificacion operativa",
+        exception.resolutionNotes || exception.notes || "",
+      ].filter(Boolean).join(": "),
+      decidedBy: exception.authorizedBy || exception.registeredBy || "JUSTIFICACION OPERATIVA",
+      source: "operational_exception",
+    };
+
+    for (let cursor = new Date(`${startKey}T12:00:00.000Z`); formatEcuadorDateKey(cursor) <= endKey; cursor = addDays(cursor, 1)) {
+      const dateKey = formatEcuadorDateKey(cursor);
+      decisions.set(`${employeeId}|${dateKey}`, {
+        ...baseDecision,
+        dateKey,
+      });
+    }
+  });
+
+  return decisions;
+}
+
+function justifiedIntervalMinutes(exception) {
+  if (!exception?.startTime || !exception?.endTime) return 0;
+
+  const start = combineDateAndTime(exception.dateKey, exception.startTime);
+  let end = combineDateAndTime(exception.dateKey, exception.endTime);
+
+  if (!start || !end) return 0;
+
+  if (end <= start) {
+    end = addDays(end, 1);
+  }
+
+  return Math.max(0, Math.round((end - start) / 60000));
+}
+
+function buildJustifiedWorkIntervalMap(exceptions = []) {
+  const intervalsByKey = new Map();
+
+  exceptions.forEach((exception) => {
+    if (exception.resolution !== "approved_work_time") return;
+    if (exception.countsAsWorkedTime === false) return;
+
+    const employeeId = toId(exception.employee);
+    const minutes = justifiedIntervalMinutes(exception);
+
+    if (!employeeId || !exception.dateKey || !minutes) return;
+
+    const startKey = exception.dateKey;
+    const endKey = exception.endDateKey || startKey;
+
+    for (let cursor = new Date(`${startKey}T12:00:00.000Z`); formatEcuadorDateKey(cursor) <= endKey; cursor = addDays(cursor, 1)) {
+      const dateKey = formatEcuadorDateKey(cursor);
+      const key = `${employeeId}|${dateKey}`;
+
+      if (!intervalsByKey.has(key)) {
+        intervalsByKey.set(key, []);
+      }
+
+      intervalsByKey.get(key).push({
+        minutes,
+        startTime: exception.startTime || "",
+        endTime: exception.endTime || "",
+        destination: exception.destination || "",
+        allowSupplementaryTime: exception.allowSupplementaryTime !== false,
+        note: exception.resolutionNotes || exception.notes || "",
+        decidedBy: exception.authorizedBy || exception.registeredBy || "",
+      });
+    }
+  });
+
+  return intervalsByKey;
+}
+
+function buildExceptionPlannedScheduleMap(exceptions = []) {
+  const schedulesByKey = new Map();
+
+  exceptions.forEach((exception) => {
+    if (exception.scope === "other") return;
+    if (!exception.plannedStartTime || !exception.plannedEndTime) return;
+
+    const employeeId = toId(exception.employee);
+    if (!employeeId || !exception.dateKey) return;
+
+    const startKey = exception.dateKey;
+    const endKey = exception.endDateKey || startKey;
+
+    for (let cursor = new Date(`${startKey}T12:00:00.000Z`); formatEcuadorDateKey(cursor) <= endKey; cursor = addDays(cursor, 1)) {
+      const dateKey = formatEcuadorDateKey(cursor);
+      schedulesByKey.set(`${employeeId}|${dateKey}`, {
+        dateKey,
+        dayType: "workday",
+        startTime: exception.plannedStartTime || "",
+        endTime: exception.plannedEndTime || "",
+        lunchStartTime: exception.plannedLunchStartTime || "",
+        lunchEndTime: exception.plannedLunchEndTime || "",
+        lunchDurationMinutes: Number(exception.plannedLunchDurationMinutes) || 0,
+        authorizedExtraMinutes: 0,
+        source: "operational_exception_schedule",
+      });
+    }
+  });
+
+  return schedulesByKey;
+}
+
+function applyExceptionPlannedSchedule(day, plannedSchedule) {
+  if (!plannedSchedule) return day;
+
+  return {
+    ...day,
+    ...plannedSchedule,
+    label: day.label,
+  };
+}
+
+function applyJustifiedWorkIntervals(day, intervals = []) {
+  if (!intervals.length) return day;
+
+  const justifiedWorkMinutes = intervals.reduce((total, interval) => total + Math.max(0, Number(interval.minutes) || 0), 0);
+
+  if (!justifiedWorkMinutes) return day;
+
+  const nextTags = cleanPayrollTags(day.tags || [])
+    .filter((tag) => !["Sin picadas", "Salida anticipada", "Atraso"].includes(tag));
+  const allowSupplementaryTime = intervals.some((interval) => interval.allowSupplementaryTime !== false);
+  const workedMinutes = (Number(day.workedMinutes) || 0) + justifiedWorkMinutes;
+  const plannedRegularMinutes = Number(day.plannedRegularMinutes) || REGULAR_DAY_MINUTES;
+  const regularFloor = Math.min(workedMinutes, plannedRegularMinutes);
+
+  return {
+    ...day,
+    tags: [...new Set([...nextTags, "Trabajo fuera justificado"])],
+    hasIssue: nextTags.some(isAttendanceIssueTag),
+    workedMinutes,
+    workedLabel: workedMinutes ? minutesLabel(workedMinutes) : "--",
+    regularWorkedMinutes: Math.max(Number(day.regularWorkedMinutes) || 0, regularFloor),
+    regularWorkedLabel: regularFloor ? minutesLabel(Math.max(Number(day.regularWorkedMinutes) || 0, regularFloor)) : "--",
+    lateMinutes: 0,
+    earlyLeaveMinutes: 0,
+    justifiedWorkMinutes: (Number(day.justifiedWorkMinutes) || 0) + justifiedWorkMinutes,
+    justifiedWorkLabel: minutesLabel((Number(day.justifiedWorkMinutes) || 0) + justifiedWorkMinutes),
+    justifiedWorkIntervals: [
+      ...(day.justifiedWorkIntervals || []),
+      ...intervals.map((interval) => ({
+        startTime: interval.startTime,
+        endTime: interval.endTime,
+        minutes: interval.minutes,
+        minutesLabel: minutesLabel(interval.minutes),
+        destination: interval.destination,
+        note: interval.note,
+        decidedBy: interval.decidedBy,
+        allowSupplementaryTime: interval.allowSupplementaryTime,
+      })),
+    ],
+    payrollPolicy: {
+      ...(day.payrollPolicy || {}),
+      appliesSupplementaryHours: allowSupplementaryTime && day.payrollPolicy?.appliesSupplementaryHours !== false,
+    },
+    authorization: {
+      ...(day.authorization || {}),
+      decision: "approved_work_time",
+      statusLabel: "Trabajo fuera justificado",
+      note: intervals.map((interval) => interval.note).filter(Boolean).join(" | "),
+      decidedBy: intervals.find((interval) => interval.decidedBy)?.decidedBy || "",
+      isSaved: false,
+    },
+  };
 }
 
 function applyDayDecision(day, decision) {
@@ -1491,6 +1696,9 @@ function compareDay(day, punches, laborRules, employee = {}) {
     extraordinaryLabel: extraordinaryMinutes ? minutesLabel(extraordinaryMinutes) : "--",
     additionalSupplementaryMinutes,
     additionalSupplementaryLabel: additionalSupplementaryMinutes ? minutesLabel(additionalSupplementaryMinutes) : "--",
+    justifiedWorkMinutes: 0,
+    justifiedWorkLabel: "--",
+    justifiedWorkIntervals: [],
     tags,
     hasIssue,
   };
@@ -1520,6 +1728,7 @@ function emptyEmployeeSummary() {
     detectedExtraordinaryMinutes: 0,
     unplannedExtraMinutes: 0,
     additionalSupplementaryMinutes: 0,
+    justifiedWorkMinutes: 0,
     issueDays: 0,
   };
 }
@@ -1620,16 +1829,36 @@ export async function GET(request) {
     const assignmentsByEmployeeMonth = new Map(
       assignments.map((assignment) => [`${toId(assignment.employee)}|${assignment.monthKey}`, assignment]),
     );
-    const dayDecisions = employeeIds.length
-      ? await AttendanceDayDecision.find({
-          employee: { $in: employeeIds },
-          date: {
-            $gte: start,
-            $lt: end,
-          },
-        }).lean()
-      : [];
+    const [dayDecisions, operationalExceptions] = employeeIds.length
+      ? await Promise.all([
+          AttendanceDayDecision.find({
+            employee: { $in: employeeIds },
+            date: {
+              $gte: start,
+              $lt: end,
+            },
+          }).lean(),
+          OperationalException.find({
+            employee: { $in: employeeIds },
+            status: { $ne: "void" },
+            resolution: { $in: ["complete_scheduled_time", "paid_leave", "approved_work_time", "discount_day"] },
+            $or: [
+              { date: { $gte: start, $lt: end } },
+              { date: { $lt: end }, endDate: { $gte: start } },
+            ],
+          }).lean(),
+        ])
+      : [[], []];
     const dayDecisionsByEmployeeDate = buildDayDecisionMap(dayDecisions);
+    const operationalDecisionsByEmployeeDate = buildOperationalExceptionDecisionMap(operationalExceptions);
+    const justifiedWorkIntervalsByEmployeeDate = buildJustifiedWorkIntervalMap(operationalExceptions);
+    const exceptionPlannedSchedulesByEmployeeDate = buildExceptionPlannedScheduleMap(operationalExceptions);
+
+    operationalDecisionsByEmployeeDate.forEach((decision, key) => {
+      if (!dayDecisionsByEmployeeDate.has(key)) {
+        dayDecisionsByEmployeeDate.set(key, decision);
+      }
+    });
     const vacationDateKeysByEmployee = buildVacationDateKeysByEmployee(vacations);
     const punchesByEmployeeDate = new Map();
 
@@ -1659,7 +1888,10 @@ export async function GET(request) {
 
         const assignedDay = mergeReferenceDaysWithAssignment([referenceDay], assignment)[0];
 
-        return applyVacationDay(applyEmploymentStartDay(assignedDay, employmentStartDateKey), vacationDateKeys);
+        return applyExceptionPlannedSchedule(
+          applyVacationDay(applyEmploymentStartDay(assignedDay, employmentStartDateKey), vacationDateKeys),
+          exceptionPlannedSchedulesByEmployeeDate.get(`${employeeKey}|${referenceDay.dateKey}`),
+        );
       });
       const employeePunchesByDate = new Map(
         referenceDays.map((day) => [
@@ -1674,7 +1906,10 @@ export async function GET(request) {
       laborRules,
       ).map((day) => applyLunchPolicyByDay(day, employee, laborRules));
       const comparedDays = comparableDays.map((day) =>
-        compareDay(day, punchesByEmployeeDate.get(`${employeeKey}|${day.dateKey}`) || [], laborRules, employee),
+        applyJustifiedWorkIntervals(
+          compareDay(day, punchesByEmployeeDate.get(`${employeeKey}|${day.dateKey}`) || [], laborRules, employee),
+          justifiedWorkIntervalsByEmployeeDate.get(`${employeeKey}|${day.dateKey}`) || [],
+        ),
       );
       const visibleDays = comparedDays.filter((day) => monthKeyFromDateKey(day.dateKey) === monthKey);
       const classifiedDays = applyMonthlyHourTarget(visibleDays, regularTargetMinutes);
@@ -1718,6 +1953,7 @@ export async function GET(request) {
         totals.detectedExtraordinaryMinutes += Number(day.detectedExtraordinaryMinutes) || 0;
         totals.unplannedExtraMinutes += day.additionalSupplementaryMinutes;
         totals.additionalSupplementaryMinutes += day.additionalSupplementaryMinutes;
+        totals.justifiedWorkMinutes += day.justifiedWorkMinutes || 0;
         return totals;
       }, emptyEmployeeSummary());
       summary.plannedRegularMinutes = Math.min(summary.plannedRegularMinutes, regularTargetMinutes);
@@ -1789,6 +2025,7 @@ export async function GET(request) {
           detectedExtraordinaryLabel: minutesLabel(summary.detectedExtraordinaryMinutes),
           unplannedExtraLabel: minutesLabel(summary.unplannedExtraMinutes),
           additionalSupplementaryLabel: minutesLabel(summary.additionalSupplementaryMinutes),
+          justifiedWorkLabel: minutesLabel(summary.justifiedWorkMinutes),
           lateLabel: minutesLabel(summary.lateMinutes),
           earlyLeaveLabel: minutesLabel(summary.earlyLeaveMinutes),
         },
@@ -1820,6 +2057,7 @@ export async function GET(request) {
         totals.detectedExtraordinaryMinutes += row.summary.detectedExtraordinaryMinutes;
         totals.unplannedExtraMinutes += row.summary.additionalSupplementaryMinutes;
         totals.additionalSupplementaryMinutes = (totals.additionalSupplementaryMinutes || 0) + row.summary.additionalSupplementaryMinutes;
+        totals.justifiedWorkMinutes += row.summary.justifiedWorkMinutes || 0;
         return totals;
       },
       {
@@ -1845,6 +2083,7 @@ export async function GET(request) {
         detectedExtraordinaryMinutes: 0,
         unplannedExtraMinutes: 0,
         additionalSupplementaryMinutes: 0,
+        justifiedWorkMinutes: 0,
       },
     );
 
@@ -1862,6 +2101,7 @@ export async function GET(request) {
         detectedExtraordinaryLabel: minutesLabel(summary.detectedExtraordinaryMinutes),
         unplannedExtraLabel: minutesLabel(summary.unplannedExtraMinutes),
         additionalSupplementaryLabel: minutesLabel(summary.additionalSupplementaryMinutes),
+        justifiedWorkLabel: minutesLabel(summary.justifiedWorkMinutes),
         lateLabel: minutesLabel(summary.lateMinutes),
         earlyLeaveLabel: minutesLabel(summary.earlyLeaveMinutes),
       },

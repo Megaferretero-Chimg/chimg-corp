@@ -516,7 +516,7 @@ export default function LaborRulesManager() {
               <label className={styles.field}>
                 <span>Area</span>
                 <select value={rule.areaCode} onChange={(event) => handleAreaSelection(index, event.target.value)}>
-                  <option value="">Seleccionar area</option>
+                  <option value="">Seleccionar</option>
                   {areas.map((area) => (
                     <option key={area.code} value={area.code}>{area.name}</option>
                   ))}

@@ -24,6 +24,7 @@ const INITIAL_FORM = {
   name: "",
   areaCode: "",
   description: "",
+  subroles: [],
   isActive: true,
 };
 
@@ -33,6 +34,7 @@ function mapRoleToForm(role) {
     name: role.name || "",
     areaCode: role.areaCode || "",
     description: role.description || "",
+    subroles: role.subroles || [],
     isActive: Boolean(role.isActive),
   };
 }
@@ -263,6 +265,12 @@ export default function RoleManagement() {
     setIsDrawerOpen(true);
   }
 
+  function handleRowClick(event, role) {
+    if (event.target.closest("button, a")) return;
+
+    handleEdit(role);
+  }
+
   function requestDelete(role) {
     setRoleToDelete(role);
   }
@@ -356,7 +364,11 @@ export default function RoleManagement() {
                         </thead>
                         <tbody>
                           {filteredRoles.map((role) => (
-                            <tr key={role.id}>
+                            <tr
+                              key={role.id}
+                              className={styles.clickableRow}
+                              onClick={(event) => handleRowClick(event, role)}
+                            >
                               <td>
                                 <div className={styles.roleIdentity}>
                                   <div className={styles.roleCode}>
@@ -378,6 +390,9 @@ export default function RoleManagement() {
                                     <BriefcaseBusiness size={14} style={{ marginRight: "0.42rem", verticalAlign: "text-bottom" }} />
                                     {role.description || "Descripción pendiente"}
                                   </span>
+                                  {role.subroles?.length ? (
+                                    <small>{role.subroles.length} subrol{role.subroles.length === 1 ? "" : "es"} operativo{role.subroles.length === 1 ? "" : "s"}</small>
+                                  ) : null}
                                 </div>
                               </td>
                               <td>

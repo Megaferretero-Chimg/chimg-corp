@@ -464,7 +464,48 @@
 }
 
 .header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
   margin-bottom: 1.25rem;
+}
+
+.headerActions {
+  flex: 0 0 auto;
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.65rem;
+  padding-top: 0.2rem;
+}
+
+.headerActions :global(a),
+.headerActions :global(button) {
+  min-height: 2.75rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.45rem;
+  border: 1px solid rgba(16, 33, 62, 0.12);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.94);
+  color: #16325f;
+  padding: 0.7rem 0.95rem;
+  text-decoration: none;
+  font-weight: 800;
+  white-space: nowrap;
+  box-shadow: 0 12px 26px rgba(16, 33, 62, 0.1);
+  transition:
+    transform 160ms ease,
+    border-color 160ms ease,
+    background 160ms ease;
+}
+
+.headerActions :global(a:hover),
+.headerActions :global(button:hover) {
+  transform: translateY(-1px);
+  border-color: rgba(31, 111, 255, 0.22);
+  background: #ffffff;
 }
 
 .eyebrow {
@@ -488,6 +529,17 @@
   max-width: 52rem;
   color: var(--text-muted);
   line-height: 1.8;
+}
+
+@media (max-width: 720px) {
+  .header {
+    display: grid;
+  }
+
+  .headerActions {
+    justify-content: flex-start;
+    padding-top: 0;
+  }
 }
 
 @keyframes mobile-backdrop-in {

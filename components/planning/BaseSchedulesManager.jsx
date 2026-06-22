@@ -1,146 +1,135 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState, useTransition } from "react";
-import {
-  AlertCircle,
-  CheckCircle2,
-  Copy,
-  Edit3,
-  Filter,
-  Plus,
-  RotateCcw,
-  Save,
-  Trash2,
-  X,
-} from "lucide-react";
+import { Filter, Plus, RotateCcw, Trash2 } from "lucide-react";
 
 import ConfirmDialog from "@/components/ui/ConfirmDialog";
 import FloatingNotice from "@/components/ui/FloatingNotice";
 import { DEFAULT_TEMPLATE_ROWS } from "@/lib/planning/baseSchedules";
-import { DAY_TYPES } from "@/lib/schedules";
 import styles from "./BaseSchedulesManager.module.scss";
 
+const EMPTY_ROW = DEFAULT_TEMPLATE_ROWS[0];
 const EMPTY_FORM = {
   id: "",
   name: "",
   areaCode: "",
   roleCode: "",
   rotationGroup: "",
-  weeklyRows: DEFAULT_TEMPLATE_ROWS,
+  weeklyRows: [{ ...EMPTY_ROW }],
   notes: "",
   isActive: true,
 };
 
-const DEFAULT_RULES = {
-  dailyBaseHours: 8,
-  weeklyBaseHours: 40,
-  maxSupplementaryMinutesPerDay: 60,
-  maxSupplementaryMinutesPerWeek: 300,
-  defaultGraceMinutes: 10,
-  areaLunchRules: [],
-  roleLunchRules: [],
-};
-const MANDATORY_WEEKLY_REST_DAYS = 2;
-
-function cloneRows(rows) {
-  return rows.map((row) => ({ ...row }));
+function cloneRow(row = EMPTY_ROW) {
+  return { ...EMPTY_ROW, ...row, dayOfWeek: 1, label: "Horario", dayType: "workday", authorizedExtraMinutes: 0 };
 }
 
-function minutesLabel(minutes) {
-  const value = Number(minutes) || 0;
-  const hours = Math.floor(value / 60);
-  const rest = value % 60;
-
-  if (!hours) {
-    return `${rest}m`;
-  }
-
-  return rest ? `${hours}h ${rest}m` : `${hours}h`;
+function getTemplateRow(templateOrForm) {
+  return cloneRow(templateOrForm?.weeklyRows?.[0] || EMPTY_ROW);
 }
 
 function parseTimeToMinutes(value) {
-  if (!/^\d{2}:\d{2}$/.test(String(value || ""))) {
-    return null;
-  }
+  if (!/^\d{2}:\d{2}$/.test(String(value || ""))) return null;
 
   const [hours, minutes] = String(value).split(":").map(Number);
   return hours * 60 + minutes;
 }
 
-function calculatePresenceMinutes(row) {
+function minutesLabel(minutes) {
+  const safeMinutes = Math.max(0, Math.round(Number(minutes) || 0));
+  const hours = Math.floor(safeMinutes / 60);
+  const rest = safeMinutes % 60;
+
+  if (!hours) return `${rest}m`;
+  return rest ? `${hours}h ${rest}m` : `${hours}h`;
+}
+
+function formatClockLabel(value) {
+  const minutes = parseTimeToMinutes(value);
+
+  if (minutes === null) return "--";
+
+  return `${String(Math.floor(minutes / 60)).padStart(2, "0")}H${String(minutes % 60).padStart(2, "0")}`;
+}
+
+function calculateLunchMinutes(row) {
+  const lunchStart = parseTimeToMinutes(row.lunchStartTime);
+  const lunchEnd = parseTimeToMinutes(row.lunchEndTime);
+
+  if (lunchStart === null || lunchEnd === null || lunchEnd <= lunchStart) return 0;
+
+  return lunchEnd - lunchStart;
+}
+
+function calculateGrossMinutes(row) {
   const start = parseTimeToMinutes(row.startTime);
   const end = parseTimeToMinutes(row.endTime);
 
-  if (start === null || end === null || end <= start) {
-    return null;
-  }
+  if (start === null || end === null || end <= start) return 0;
 
-  return Math.max(end - start - (Number(row.lunchDurationMinutes) || 0), 0);
+  return end - start;
 }
 
-function calculatePlannedNetMinutes(row, baseDailyMinutes, presenceMinutes = null) {
-  if (row.dayType === "weekend_overtime") {
-    return presenceMinutes || 0;
-  }
+function getScheduleSummary(row) {
+  const lunchMinutes = row.hasLunch ? calculateLunchMinutes(row) : 0;
+  const grossMinutes = calculateGrossMinutes(row);
+  const netMinutes = Math.max(0, grossMinutes - lunchMinutes);
 
-  return presenceMinutes ?? 0;
+  return { grossMinutes, lunchMinutes, netMinutes };
 }
 
-function getNetBreakdown(row, baseDailyMinutes, presenceMinutes = null) {
-  if (row.dayType === "weekend_overtime") {
-    const extraordinaryMinutes = calculatePlannedNetMinutes(row, baseDailyMinutes, presenceMinutes);
-
-    return {
-      totalMinutes: extraordinaryMinutes,
-      normalMinutes: 0,
-      supplementaryMinutes: 0,
-      extraordinaryMinutes,
-      label: `${minutesLabel(extraordinaryMinutes)} ext`,
-    };
+function formatScheduleLabel(row) {
+  if (row.hasLunch && row.lunchStartTime && row.lunchEndTime) {
+    return `${formatClockLabel(row.startTime)} A ${formatClockLabel(row.lunchStartTime)} ${formatClockLabel(row.lunchEndTime)} A ${formatClockLabel(row.endTime)}`;
   }
 
-  const coveredNetMinutes = calculatePlannedNetMinutes(row, baseDailyMinutes, presenceMinutes);
-  const normalMinutes = Math.min(baseDailyMinutes, coveredNetMinutes);
-  const supplementaryMinutes = Math.max(coveredNetMinutes - normalMinutes, 0);
-
-  return {
-    totalMinutes: coveredNetMinutes,
-    normalMinutes,
-    supplementaryMinutes,
-    extraordinaryMinutes: 0,
-    label: supplementaryMinutes
-      ? `${minutesLabel(normalMinutes)} + ${minutesLabel(supplementaryMinutes)} sup`
-      : minutesLabel(normalMinutes),
-  };
+  return `${formatClockLabel(row.startTime)} A ${formatClockLabel(row.endTime)}`;
 }
 
 function buildFormSignature(form) {
+  const row = getTemplateRow(form);
+
   return JSON.stringify({
     name: String(form.name || "").trim(),
     areaCode: form.areaCode || "",
-    roleCode: form.roleCode || "",
-    rotationGroup: String(form.rotationGroup || "").trim(),
-    weeklyRows: (form.weeklyRows || []).map((row) => ({
-      dayOfWeek: row.dayOfWeek,
-      dayType: row.dayType,
+    row: {
       startTime: row.startTime || "",
-      lunchDurationMinutes: Number(row.lunchDurationMinutes) || 0,
       hasLunch: Boolean(row.hasLunch),
+      lunchStartTime: row.lunchStartTime || "",
+      lunchEndTime: row.lunchEndTime || "",
       endTime: row.endTime || "",
-      graceMinutes: Number(row.graceMinutes) || 0,
-    })),
+    },
     notes: String(form.notes || "").trim(),
     isActive: form.isActive !== false,
   });
 }
 
+function buildPayload(form) {
+  const row = getTemplateRow(form);
+  const lunchMinutes = row.hasLunch ? calculateLunchMinutes(row) : 0;
+
+  return {
+    ...form,
+    id: "",
+    roleCode: "",
+    roleName: "",
+    rotationGroup: "",
+    weeklyRows: [{
+      ...row,
+      lunchDurationMinutes: lunchMinutes,
+      lunchStartTime: row.hasLunch ? row.lunchStartTime : "",
+      lunchEndTime: row.hasLunch ? row.lunchEndTime : "",
+      hasLunch: Boolean(row.hasLunch && lunchMinutes),
+      authorizedExtraMinutes: 0,
+    }],
+  };
+}
+
 export default function BaseSchedulesManager() {
   const [templates, setTemplates] = useState([]);
   const [areas, setAreas] = useState([]);
-  const [roles, setRoles] = useState([]);
-  const [templateFilters, setTemplateFilters] = useState({ areaCode: "", roleKey: "" });
-  const [rules, setRules] = useState(DEFAULT_RULES);
-  const [form, setForm] = useState({ ...EMPTY_FORM, weeklyRows: cloneRows(DEFAULT_TEMPLATE_ROWS) });
+  const [templateFilters, setTemplateFilters] = useState({ areaCode: "" });
+  const [form, setForm] = useState({ ...EMPTY_FORM, weeklyRows: [cloneRow()] });
   const [savedFormSignature, setSavedFormSignature] = useState("");
   const [templateToDelete, setTemplateToDelete] = useState(null);
   const [isSaveConfirmOpen, setIsSaveConfirmOpen] = useState(false);
@@ -150,114 +139,29 @@ export default function BaseSchedulesManager() {
   const noticeExitTimeoutRef = useRef(null);
   const noticeRemoveTimeoutRef = useRef(null);
 
-  const selectedArea = areas.find((area) => area.code === form.areaCode);
-  const selectedRole = roles.find((role) => role.code === form.roleCode && role.areaCode === form.areaCode);
-  const canEditScheduleRows = Boolean(selectedArea && selectedRole);
+  const row = getTemplateRow(form);
+  const summary = getScheduleSummary(row);
   const formSignature = buildFormSignature(form);
   const hasChanges = formSignature !== savedFormSignature;
+  const canSave = Boolean(form.name.trim() && form.areaCode && row.startTime && row.endTime && summary.netMinutes > 0);
 
-  const rolesForArea = useMemo(
-    () => roles.filter((role) => !form.areaCode || role.areaCode === form.areaCode),
-    [form.areaCode, roles],
+  const visibleAreas = useMemo(
+    () => areas,
+    [areas],
   );
-  const rolesForTemplateFilter = useMemo(
-    () => roles.filter((role) => !templateFilters.areaCode || role.areaCode === templateFilters.areaCode),
-    [roles, templateFilters.areaCode],
+
+  const visibleTemplates = useMemo(
+    () => templates.map((template) => ({
+      ...template,
+      weeklyRows: [getTemplateRow(template)],
+    })),
+    [templates],
   );
 
   const filteredTemplates = useMemo(
-    () =>
-      templates.filter((template) => {
-        if (templateFilters.areaCode && template.areaCode !== templateFilters.areaCode) {
-          return false;
-        }
-
-        if (
-          templateFilters.roleKey
-          && `${template.areaCode}|${template.roleCode}` !== templateFilters.roleKey
-        ) {
-          return false;
-        }
-
-        return true;
-      }),
-    [templateFilters.areaCode, templateFilters.roleKey, templates],
+    () => visibleTemplates.filter((template) => !templateFilters.areaCode || template.areaCode === templateFilters.areaCode),
+    [templateFilters.areaCode, visibleTemplates],
   );
-
-  const validation = useMemo(() => {
-    const baseDailyMinutes = (Number(rules.dailyBaseHours) || 8) * 60;
-    const weeklyBaseMinutes = (Number(rules.weeklyBaseHours) || 40) * 60;
-    const dailySupplementaryLimit = Number(rules.maxSupplementaryMinutesPerDay) || 0;
-    const weeklySupplementaryLimit = Number(rules.maxSupplementaryMinutesPerWeek) || 0;
-    let workingDays = 0;
-    let restDays = 0;
-    let netMinutes = 0;
-    let supplementaryMinutes = 0;
-    let extraordinaryMinutes = 0;
-    let extraordinaryDays = 0;
-    const warnings = [];
-
-    form.weeklyRows.forEach((row) => {
-      const type = DAY_TYPES.find((item) => item.value === row.dayType);
-
-      if (!type?.isWorkingDay) {
-        restDays += 1;
-        return;
-      }
-
-      workingDays += 1;
-
-      if (row.dayType === "weekend_overtime") {
-        extraordinaryDays += 1;
-      }
-
-      const presenceMinutes = calculatePresenceMinutes(row);
-
-      if (presenceMinutes === null) {
-        warnings.push(`${row.label}: falta entrada/salida valida.`);
-        return;
-      }
-
-      const breakdown = getNetBreakdown(row, baseDailyMinutes, presenceMinutes);
-      netMinutes += breakdown.totalMinutes;
-      extraordinaryMinutes += breakdown.extraordinaryMinutes;
-
-      if (row.dayType === "workday") {
-        supplementaryMinutes += breakdown.supplementaryMinutes;
-
-        if (breakdown.supplementaryMinutes > dailySupplementaryLimit) {
-          warnings.push(`${row.label}: supera la suplementaria diaria permitida.`);
-        }
-      }
-
-      if (breakdown.totalMinutes < baseDailyMinutes && row.dayType === "workday") {
-        warnings.push(`${row.label}: no completa las 8h netas.`);
-      }
-    });
-
-    if (restDays < MANDATORY_WEEKLY_REST_DAYS && extraordinaryDays === 0) {
-      warnings.push("La semana tiene menos de dos descansos; marca el dia adicional como extraordinario.");
-    }
-
-    if (supplementaryMinutes > weeklySupplementaryLimit) {
-      warnings.push("La semana supera el limite de suplementarias.");
-    }
-
-    if (netMinutes < weeklyBaseMinutes && workingDays > 0) {
-      warnings.push("La plantilla queda por debajo de las horas base semanales.");
-    }
-
-    return {
-      workingDays,
-      restDays,
-      netMinutes,
-      supplementaryMinutes,
-      extraordinaryMinutes,
-      extraordinaryDays,
-      warnings,
-      isValid: warnings.length === 0,
-    };
-  }, [form.weeklyRows, rules]);
 
   const templatesByArea = useMemo(() => {
     const grouped = new Map();
@@ -265,10 +169,7 @@ export default function BaseSchedulesManager() {
     filteredTemplates.forEach((template) => {
       const key = template.areaName || "Sin area";
 
-      if (!grouped.has(key)) {
-        grouped.set(key, []);
-      }
-
+      if (!grouped.has(key)) grouped.set(key, []);
       grouped.get(key).push(template);
     });
 
@@ -276,15 +177,10 @@ export default function BaseSchedulesManager() {
   }, [filteredTemplates]);
 
   const clearNoticeTimers = useCallback(() => {
-    if (noticeExitTimeoutRef.current) {
-      window.clearTimeout(noticeExitTimeoutRef.current);
-      noticeExitTimeoutRef.current = null;
-    }
-
-    if (noticeRemoveTimeoutRef.current) {
-      window.clearTimeout(noticeRemoveTimeoutRef.current);
-      noticeRemoveTimeoutRef.current = null;
-    }
+    if (noticeExitTimeoutRef.current) window.clearTimeout(noticeExitTimeoutRef.current);
+    if (noticeRemoveTimeoutRef.current) window.clearTimeout(noticeRemoveTimeoutRef.current);
+    noticeExitTimeoutRef.current = null;
+    noticeRemoveTimeoutRef.current = null;
   }, []);
 
   const dismissNotice = useCallback(() => {
@@ -299,162 +195,54 @@ export default function BaseSchedulesManager() {
   const showNotice = useCallback((type, message) => {
     clearNoticeTimers();
     setNotice({ type, message, isLeaving: false });
-    noticeExitTimeoutRef.current = window.setTimeout(() => {
-      dismissNotice();
-    }, 4000);
+    noticeExitTimeoutRef.current = window.setTimeout(dismissNotice, 4000);
   }, [clearNoticeTimers, dismissNotice]);
 
-  function buildInitialForm(nextForm = EMPTY_FORM) {
-    return {
+  function setCurrentForm(nextForm = EMPTY_FORM) {
+    const preparedForm = {
+      ...EMPTY_FORM,
       ...nextForm,
-      weeklyRows: cloneRows(nextForm.weeklyRows?.length === 7 ? nextForm.weeklyRows : DEFAULT_TEMPLATE_ROWS),
+      roleCode: "",
+      roleName: "",
+      rotationGroup: "",
+      weeklyRows: [getTemplateRow(nextForm)],
     };
-  }
 
-  function setCurrentForm(nextForm) {
-    const preparedForm = buildInitialForm(nextForm);
     setForm(preparedForm);
     setSavedFormSignature(buildFormSignature(preparedForm));
   }
 
   function resetForm() {
-    setCurrentForm(EMPTY_FORM);
-  }
-
-  function applyAreaLunchToRows(areaCode, rows) {
-    const rule = (rules.areaLunchRules || []).find((item) => item.areaCode === areaCode);
-
-    if (!rule) {
-      return rows;
-    }
-
-    const lunchDurationMinutes = Number(rule.lunchDurationMinutes) || 0;
-
-    return rows.map((row) => {
-      const type = DAY_TYPES.find((item) => item.value === row.dayType);
-
-      if (!type?.isWorkingDay) {
-        return row;
-      }
-
-      return {
-        ...row,
-        hasLunch: lunchDurationMinutes > 0,
-        lunchDurationMinutes,
-      };
-    });
-  }
-
-  function applyRoleLunchToRows(areaCode, roleCode, rows) {
-    const roleRule = (rules.roleLunchRules || []).find((item) =>
-      item.areaCode === areaCode && item.roleCode === roleCode,
-    );
-
-    if (!roleRule) {
-      return rows;
-    }
-
-    const lunchDurationMinutes = Number(roleRule.lunchDurationMinutes) || 0;
-
-    return rows.map((row) => {
-      const type = DAY_TYPES.find((item) => item.value === row.dayType);
-
-      if (!type?.isWorkingDay) {
-        return row;
-      }
-
-      return {
-        ...row,
-        hasLunch: lunchDurationMinutes > 0,
-        lunchDurationMinutes,
-      };
-    });
+    setCurrentForm({ ...EMPTY_FORM, weeklyRows: [cloneRow()] });
   }
 
   function updateField(name, value) {
-    setForm((current) => {
-      if (name === "roleCode") {
-        return {
-          ...current,
-          roleCode: value,
-          weeklyRows: applyRoleLunchToRows(current.areaCode, value, current.weeklyRows),
-        };
-      }
-
-      if (name !== "areaCode") {
-        return { ...current, [name]: value };
-      }
-
-      return {
-        ...current,
-        areaCode: value,
-        roleCode: "",
-        weeklyRows: applyAreaLunchToRows(value, current.weeklyRows),
-      };
-    });
+    setForm((current) => ({ ...current, [name]: value }));
   }
 
-  function updateTemplateFilter(name, value) {
-    setTemplateFilters((current) => {
-      if (name === "areaCode") {
-        const selectedRole = roles.find((role) => `${role.areaCode}|${role.code}` === current.roleKey);
+  function updateRow(updates) {
+    setForm((current) => {
+      const nextRow = { ...getTemplateRow(current), ...updates };
 
-        return {
-          areaCode: value,
-          roleKey: selectedRole?.areaCode === value ? current.roleKey : "",
-        };
+      if (updates.hasLunch === true) {
+        nextRow.startTime = nextRow.startTime || "07:00";
+        nextRow.lunchStartTime = nextRow.lunchStartTime || "12:30";
+        nextRow.lunchEndTime = nextRow.lunchEndTime || "14:00";
+        nextRow.endTime = nextRow.endTime || "18:00";
       }
 
-      return { ...current, [name]: value };
+      if (updates.hasLunch === false) {
+        nextRow.lunchStartTime = "";
+        nextRow.lunchEndTime = "";
+        nextRow.lunchDurationMinutes = 0;
+      }
+
+      return { ...current, weeklyRows: [cloneRow(nextRow)] };
     });
   }
 
   function clearTemplateFilters() {
-    setTemplateFilters({ areaCode: "", roleKey: "" });
-  }
-
-  function updateRow(dayOfWeek, updates) {
-    setForm((current) => ({
-      ...current,
-      weeklyRows: current.weeklyRows.map((row) => {
-        if (row.dayOfWeek !== dayOfWeek) {
-          return row;
-        }
-
-        const nextRow = { ...row, ...updates };
-        const dayType = DAY_TYPES.find((item) => item.value === nextRow.dayType);
-
-        if (!dayType?.isWorkingDay) {
-          nextRow.startTime = "";
-          nextRow.endTime = "";
-          nextRow.hasLunch = false;
-          nextRow.lunchDurationMinutes = 0;
-          nextRow.authorizedExtraMinutes = 0;
-        }
-
-        if (Number(updates.lunchDurationMinutes) > 0) {
-          nextRow.hasLunch = true;
-        }
-
-        return nextRow;
-      }),
-    }));
-  }
-
-  function editTemplate(template) {
-    setCurrentForm(template);
-  }
-
-  function duplicateTemplate(template) {
-    const duplicated = {
-      ...template,
-      id: "",
-      name: `${template.name} COPIA`,
-      weeklyRows: cloneRows(template.weeklyRows?.length === 7 ? template.weeklyRows : DEFAULT_TEMPLATE_ROWS),
-    };
-
-    setForm(duplicated);
-    setSavedFormSignature(buildFormSignature(EMPTY_FORM));
+    setTemplateFilters({ areaCode: "" });
   }
 
   useEffect(() => {
@@ -462,51 +250,27 @@ export default function BaseSchedulesManager() {
 
     async function loadData() {
       try {
-        const [templatesResponse, areasResponse, rolesResponse, rulesResponse] = await Promise.all([
+        const [templatesResponse, areasResponse] = await Promise.all([
           fetch("/api/planning/base-schedules"),
           fetch("/api/areas"),
-          fetch("/api/roles"),
-          fetch("/api/planning/labor-rules"),
         ]);
-        const [templatesPayload, areasPayload, rolesPayload, rulesPayload] = await Promise.all([
+        const [templatesPayload, areasPayload] = await Promise.all([
           templatesResponse.json(),
           areasResponse.json(),
-          rolesResponse.json(),
-          rulesResponse.json(),
         ]);
 
-        if (!templatesResponse.ok) {
-          throw new Error(templatesPayload.error || "No se pudieron cargar las plantillas.");
-        }
-
-        if (!areasResponse.ok) {
-          throw new Error(areasPayload.error || "No se pudieron cargar las areas.");
-        }
-
-        if (!rolesResponse.ok) {
-          throw new Error(rolesPayload.error || "No se pudieron cargar los roles.");
-        }
-
-        if (!rulesResponse.ok) {
-          throw new Error(rulesPayload.error || "No se pudieron cargar las reglas laborales.");
-        }
+        if (!templatesResponse.ok) throw new Error(templatesPayload.error || "No se pudieron cargar las plantillas.");
+        if (!areasResponse.ok) throw new Error(areasPayload.error || "No se pudieron cargar las areas.");
 
         if (!isCancelled) {
           setTemplates(templatesPayload.templates || []);
           setAreas(areasPayload.areas || []);
-          setRoles(rolesPayload.roles || []);
-          setRules({ ...DEFAULT_RULES, ...(rulesPayload.rules || {}) });
-          setForm({ ...EMPTY_FORM, weeklyRows: cloneRows(DEFAULT_TEMPLATE_ROWS) });
-          setSavedFormSignature(buildFormSignature(EMPTY_FORM));
+          setCurrentForm({ ...EMPTY_FORM, weeklyRows: [cloneRow()] });
         }
       } catch (error) {
-        if (!isCancelled) {
-          showNotice("error", error.message);
-        }
+        if (!isCancelled) showNotice("error", error.message);
       } finally {
-        if (!isCancelled) {
-          setIsLoading(false);
-        }
+        if (!isCancelled) setIsLoading(false);
       }
     }
 
@@ -521,29 +285,27 @@ export default function BaseSchedulesManager() {
   function handleSubmit(event) {
     event.preventDefault();
 
-    if (!hasChanges || isPending) {
-      return;
-    }
+    if (!hasChanges || isPending || !canSave) return;
 
     setIsSaveConfirmOpen(true);
   }
 
   function confirmSave() {
+    if (isPending) return;
+
+    setIsSaveConfirmOpen(false);
+
     startTransition(async () => {
       try {
-        const endpoint = form.id
-          ? `/api/planning/base-schedules/${form.id}`
-          : "/api/planning/base-schedules";
-        const response = await fetch(endpoint, {
-          method: form.id ? "PATCH" : "POST",
+        const payloadToSave = buildPayload(form);
+        const response = await fetch("/api/planning/base-schedules", {
+          method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(form),
+          body: JSON.stringify(payloadToSave),
         });
         const payload = await response.json();
 
-        if (!response.ok) {
-          throw new Error(payload.error || "No se pudo guardar la plantilla.");
-        }
+        if (!response.ok) throw new Error(payload.error || "No se pudo guardar la plantilla.");
 
         setTemplates((current) => {
           const saved = payload.template;
@@ -552,13 +314,10 @@ export default function BaseSchedulesManager() {
           return exists
             ? current.map((template) => (template.id === saved.id ? saved : template))
             : [...current, saved].sort((left, right) =>
-                `${left.areaName}${left.roleName}${left.name}`.localeCompare(
-                  `${right.areaName}${right.roleName}${right.name}`,
-                ),
+                `${left.areaName}${left.name}`.localeCompare(`${right.areaName}${right.name}`, "es"),
               );
         });
-        setCurrentForm(payload.template);
-        setIsSaveConfirmOpen(false);
+        resetForm();
         showNotice("success", payload.message);
       } catch (error) {
         showNotice("error", error.message);
@@ -567,29 +326,28 @@ export default function BaseSchedulesManager() {
   }
 
   function confirmDeleteTemplate() {
-    if (!templateToDelete) {
-      return;
-    }
+    if (!templateToDelete) return;
 
     startTransition(async () => {
       try {
-        const response = await fetch(`/api/planning/base-schedules/${templateToDelete.id}`, {
-          method: "DELETE",
-        });
-        const payload = await response.json();
+        const idsToDelete = [...new Set(templateToDelete.duplicateIds?.length ? templateToDelete.duplicateIds : [templateToDelete.id])];
+        const responses = await Promise.all(idsToDelete.map(async (templateId) => {
+          const response = await fetch(`/api/planning/base-schedules/${templateId}`, {
+            method: "DELETE",
+          });
+          const payload = await response.json();
 
-        if (!response.ok) {
-          throw new Error(payload.error || "No se pudo eliminar la plantilla.");
-        }
+          if (!response.ok) throw new Error(payload.error || "No se pudo eliminar la plantilla.");
 
-        setTemplates((current) => current.filter((template) => template.id !== templateToDelete.id));
+          return templateId;
+        }));
+        const deletedIds = new Set(responses);
 
-        if (form.id === templateToDelete.id) {
-          resetForm();
-        }
-
+        setTemplates((current) => current.filter((template) => !deletedIds.has(template.id)));
         setTemplateToDelete(null);
-        showNotice("success", "Plantilla eliminada correctamente.");
+        showNotice("success", idsToDelete.length > 1
+          ? `Se eliminaron ${idsToDelete.length} plantillas duplicadas de ese horario.`
+          : "Plantilla eliminada correctamente.");
       } catch (error) {
         showNotice("error", error.message);
       }
@@ -597,7 +355,7 @@ export default function BaseSchedulesManager() {
   }
 
   if (isLoading) {
-    return <div className={styles.loading}>Cargando plantillas de horario...</div>;
+    return <div className={styles.loading}>Cargando horarios diarios...</div>;
   }
 
   return (
@@ -605,9 +363,9 @@ export default function BaseSchedulesManager() {
       <FloatingNotice notice={notice} onClose={dismissNotice} />
       <ConfirmDialog
         isOpen={isSaveConfirmOpen}
-        title="Guardar plantilla"
-        message="La plantilla quedara guardada como base para planificacion por area y rol. Revisa las alertas antes de confirmar."
-        confirmLabel={isPending ? "Guardando..." : "Guardar"}
+        title="Crear horario diario"
+        message="El horario quedara disponible como opcion para programar cualquier dia dentro del area seleccionada."
+        confirmLabel={isPending ? "Creando..." : "Crear"}
         cancelLabel="Revisar"
         tone="info"
         isPending={isPending}
@@ -616,8 +374,8 @@ export default function BaseSchedulesManager() {
       />
       <ConfirmDialog
         isOpen={Boolean(templateToDelete)}
-        title="Eliminar plantilla"
-        message={`Deseas eliminar "${templateToDelete?.name || ""}"? Esta accion no se puede deshacer.`}
+        title="Eliminar horario"
+        message={`Deseas eliminar "${templateToDelete?.name || ""}"?${templateToDelete?.duplicateIds?.length > 1 ? ` Esta opcion agrupa ${templateToDelete.duplicateIds.length} plantillas antiguas con el mismo horario.` : ""} Esta accion no se puede deshacer.`}
         confirmLabel={isPending ? "Eliminando..." : "Eliminar"}
         isPending={isPending}
         onCancel={() => setTemplateToDelete(null)}
@@ -627,126 +385,91 @@ export default function BaseSchedulesManager() {
       <form className={styles.formPanel} onSubmit={handleSubmit}>
         <div className={styles.panelHeader}>
           <div>
-            <p className={styles.eyebrow}>Plantilla</p>
-            <h2 className={styles.title}>{form.id ? "Editar horario base" : "Nuevo horario base"}</h2>
+            <p className={styles.eyebrow}>Horario diario</p>
+            <h2 className={styles.title}>Crear opcion de horario</h2>
             <p className={styles.description}>
-              Define turnos por rol. El almuerzo se toma de reglas laborales del area y puede ajustarse por plantilla.
+              Crea opciones por area. Un tramo continuo se interpreta como media jornada o jornada corrida; dos tramos calculan automaticamente el descanso.
             </p>
           </div>
-          {form.id ? (
-            <button type="button" className={styles.iconButton} onClick={resetForm} title="Limpiar formulario">
-              <X size={16} />
-            </button>
-          ) : null}
         </div>
 
         <div className={styles.formGrid}>
           <label className={styles.field}>
             <span>Nombre</span>
-            <input value={form.name} onChange={(event) => updateField("name", event.target.value)} placeholder="Ej. VENTAS CAJERA SEMANA A" />
+            <input value={form.name} onChange={(event) => updateField("name", event.target.value)} placeholder="Ej. APERTURA ALMACEN" />
           </label>
           <label className={styles.field}>
             <span>Area</span>
             <select value={form.areaCode} onChange={(event) => updateField("areaCode", event.target.value)}>
-              <option value="">Seleccionar area</option>
-              {areas.map((area) => <option key={area.code} value={area.code}>{area.name}</option>)}
+              <option value="">Seleccionar</option>
+              {visibleAreas.map((area) => <option key={area.code} value={area.code}>{area.name}</option>)}
             </select>
-          </label>
-          <label className={styles.field}>
-            <span>Rol</span>
-            <select value={form.roleCode} onChange={(event) => updateField("roleCode", event.target.value)}>
-              <option value="">Seleccionar rol</option>
-              {rolesForArea.map((role) => <option key={role.code} value={role.code}>{role.name}</option>)}
-            </select>
-          </label>
-          <label className={styles.field}>
-            <span>Grupo de rotacion</span>
-            <input value={form.rotationGroup} onChange={(event) => updateField("rotationGroup", event.target.value)} placeholder="Ej. Semana A / Backup" />
           </label>
         </div>
 
-        {canEditScheduleRows ? (
-          <section className={`${styles.validationPanel} ${validation.isValid ? styles.validationOk : styles.validationWarn}`}>
-            <div className={styles.validationHeader}>
-              {validation.isValid ? <CheckCircle2 size={18} /> : <AlertCircle size={18} />}
-              <div>
-                <strong>{validation.isValid ? "Cumple reglas base" : "Revisar reglas base"}</strong>
-                <span>
-                  {minutesLabel(validation.netMinutes)} netas, {minutesLabel(validation.supplementaryMinutes)} suplementarias, {validation.restDays} descansos.
-                  {validation.extraordinaryMinutes ? ` ${minutesLabel(validation.extraordinaryMinutes)} extraordinarias.` : ""}
-                </span>
-              </div>
-            </div>
-            {validation.warnings.length ? (
-              <ul>
-                {validation.warnings.map((warning) => <li key={warning}>{warning}</li>)}
-              </ul>
+        <section className={styles.scheduleBuilder}>
+          <div className={styles.schedulePreview}>
+            <span>Formato</span>
+            <strong>{formatScheduleLabel(row)}</strong>
+          </div>
+
+          <label className={styles.lunchToggle}>
+            <input
+              type="checkbox"
+              checked={Boolean(row.hasLunch)}
+              onChange={(event) => updateRow({ hasLunch: event.target.checked })}
+            />
+            <span>Definir almuerzo / descanso</span>
+          </label>
+
+          <div className={styles.timeGrid}>
+            <label>
+              <span>Entrada</span>
+              <input type="time" value={row.startTime || ""} onChange={(event) => updateRow({ startTime: event.target.value })} />
+            </label>
+            {row.hasLunch ? (
+              <>
+                <label>
+                  <span>Fin mañana</span>
+                  <input type="time" value={row.lunchStartTime || ""} onChange={(event) => updateRow({ lunchStartTime: event.target.value })} />
+                </label>
+                <label>
+                  <span>Inicio tarde</span>
+                  <input type="time" value={row.lunchEndTime || ""} onChange={(event) => updateRow({ lunchEndTime: event.target.value })} />
+                </label>
+              </>
             ) : null}
-          </section>
-        ) : null}
+            <label>
+              <span>Salida</span>
+              <input type="time" value={row.endTime || ""} onChange={(event) => updateRow({ endTime: event.target.value })} />
+            </label>
+          </div>
 
-        <div className={`${styles.tableWrap} ${!canEditScheduleRows ? styles.tableWrapDisabled : ""}`}>
-          {!canEditScheduleRows ? (
-            <div className={styles.tableOverlay}>
-              Selecciona primero un area y un rol para habilitar la edicion del horario.
-            </div>
-          ) : null}
-          <table className={styles.table}>
-            <thead>
-              <tr>
-                <th>Dia</th>
-                <th>Tipo</th>
-                <th>Entrada</th>
-                <th>Almuerzo</th>
-                <th>Salida</th>
-                <th>Neto</th>
-              </tr>
-            </thead>
-            <tbody>
-              {form.weeklyRows.map((row) => {
-                const type = DAY_TYPES.find((item) => item.value === row.dayType);
-                const disabled = !type?.isWorkingDay;
-                const baseDailyMinutes = (Number(rules.dailyBaseHours) || 8) * 60;
-                const presenceMinutes = disabled ? null : calculatePresenceMinutes(row);
-                const netBreakdown = disabled ? null : getNetBreakdown(row, baseDailyMinutes, presenceMinutes);
-                const isShortPresence = netBreakdown !== null && presenceMinutes !== null && netBreakdown.totalMinutes > presenceMinutes;
-
-                return (
-                  <tr key={row.dayOfWeek}>
-                    <td>{row.label}</td>
-                    <td>
-                      <select disabled={!canEditScheduleRows} value={row.dayType} onChange={(event) => updateRow(row.dayOfWeek, { dayType: event.target.value })}>
-                        {DAY_TYPES.map((dayType) => <option key={dayType.value} value={dayType.value}>{dayType.label}</option>)}
-                      </select>
-                    </td>
-                    <td><input type="time" value={row.startTime} disabled={!canEditScheduleRows || disabled} onChange={(event) => updateRow(row.dayOfWeek, { startTime: event.target.value })} /></td>
-                    <td><input className={styles.compactNumberInput} type="number" min="0" disabled={!canEditScheduleRows || disabled} value={row.lunchDurationMinutes} onChange={(event) => updateRow(row.dayOfWeek, { lunchDurationMinutes: event.target.value })} /></td>
-                    <td><input type="time" value={row.endTime} disabled={!canEditScheduleRows || disabled} onChange={(event) => updateRow(row.dayOfWeek, { endTime: event.target.value })} /></td>
-                    <td>
-                      <span className={`${styles.netTag} ${isShortPresence ? styles.netTagWarn : ""}`}>
-                        {netBreakdown === null ? "--" : netBreakdown.label}
-                      </span>
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
+          <div className={styles.summaryGrid}>
+            <article>
+              <span>Total jornada</span>
+              <strong>{minutesLabel(summary.grossMinutes)}</strong>
+            </article>
+            <article>
+              <span>Almuerzo / descanso</span>
+              <strong>{minutesLabel(summary.lunchMinutes)}</strong>
+            </article>
+            <article>
+              <span>Horas netas</span>
+              <strong>{minutesLabel(summary.netMinutes)}</strong>
+            </article>
+          </div>
+        </section>
 
         <label className={styles.field}>
           <span>Notas</span>
-          <textarea rows={3} value={form.notes} onChange={(event) => updateField("notes", event.target.value)} placeholder="Ej. Intercalar semanalmente con el turno de backup." />
+          <textarea rows={3} value={form.notes} onChange={(event) => updateField("notes", event.target.value)} placeholder="Ej. Usar para cierre o refuerzo de tarde." />
         </label>
 
         <div className={styles.actions}>
-          <button type="button" className={styles.ghostButton} onClick={resetForm}>
+          <button type="submit" className={styles.primaryButton} disabled={isPending || !hasChanges || !canSave}>
             <Plus size={16} />
-            Nueva
-          </button>
-          <button type="submit" className={styles.primaryButton} disabled={isPending || !hasChanges || !canEditScheduleRows}>
-            <Save size={16} />
-            {isPending ? "Guardando..." : hasChanges ? "Guardar plantilla" : "Sin cambios"}
+            {isPending ? "Creando..." : "Crear horario"}
           </button>
         </div>
       </form>
@@ -754,40 +477,26 @@ export default function BaseSchedulesManager() {
       <section className={styles.listPanel}>
         <div className={styles.panelHeader}>
           <div>
-            <p className={styles.eyebrow}>Biblioteca</p>
-            <h2 className={styles.title}>Plantillas disponibles</h2>
+            <p className={styles.eyebrow}>Catalogo</p>
+            <h2 className={styles.title}>Opciones por area</h2>
           </div>
         </div>
 
         <div className={styles.filterBar}>
           <div className={styles.filterTitle}>
             <Filter size={16} />
-            <span>{filteredTemplates.length} de {templates.length} plantillas</span>
+            <span>{filteredTemplates.length} de {visibleTemplates.length} horarios</span>
           </div>
           <div className={styles.filterControls}>
             <label className={styles.compactField}>
               <span>Area</span>
               <select
                 value={templateFilters.areaCode}
-                onChange={(event) => updateTemplateFilter("areaCode", event.target.value)}
+                onChange={(event) => setTemplateFilters({ areaCode: event.target.value })}
               >
                 <option value="">Todas</option>
-                {areas.map((area) => (
+                {visibleAreas.map((area) => (
                   <option key={area.code} value={area.code}>{area.name}</option>
-                ))}
-              </select>
-            </label>
-            <label className={styles.compactField}>
-              <span>Rol</span>
-              <select
-                value={templateFilters.roleKey}
-                onChange={(event) => updateTemplateFilter("roleKey", event.target.value)}
-              >
-                <option value="">Todos</option>
-                {rolesForTemplateFilter.map((role) => (
-                  <option key={`${role.areaCode}-${role.code}`} value={`${role.areaCode}|${role.code}`}>
-                    {role.areaName} · {role.name}
-                  </option>
                 ))}
               </select>
             </label>
@@ -803,37 +512,39 @@ export default function BaseSchedulesManager() {
             <div key={areaName} className={styles.group}>
               <h3>{areaName}</h3>
               <div className={styles.templateList}>
-                {areaTemplates.map((template) => (
-                  <article key={template.id} className={styles.templateCard}>
-                    <div>
-                      <span className={styles.roleTag}>{template.roleName}</span>
-                      <h4>{template.name}</h4>
-                      <p>{template.rotationGroup || "Sin rotacion"}</p>
-                    </div>
-                    <div className={styles.dayChips}>
-                      {template.weeklyRows.map((row) => (
-                        <span key={row.dayOfWeek}>{row.label.slice(0, 3)} {row.startTime || "--"}-{row.endTime || "--"}</span>
-                      ))}
-                    </div>
-                    <div className={styles.cardActions}>
-                      <button type="button" onClick={() => editTemplate(template)} title="Editar"><Edit3 size={15} /></button>
-                      <button type="button" onClick={() => duplicateTemplate(template)} title="Duplicar"><Copy size={15} /></button>
-                      <button type="button" className={styles.dangerButton} onClick={() => setTemplateToDelete(template)} title="Eliminar"><Trash2 size={15} /></button>
-                    </div>
-                  </article>
-                ))}
+                {areaTemplates.map((template) => {
+                  const templateRow = getTemplateRow(template);
+                  const templateSummary = getScheduleSummary(templateRow);
+
+                  return (
+                    <article key={template.id} className={styles.templateCard}>
+                      <div>
+                        <span className={styles.roleTag}>{minutesLabel(templateSummary.netMinutes)} netas</span>
+                        <h4>{template.name}</h4>
+                        <p>{formatScheduleLabel(templateRow)}</p>
+                      </div>
+                      <div className={styles.dayChips}>
+                        <span>Jornada {minutesLabel(templateSummary.grossMinutes)}</span>
+                        <span>Descanso {minutesLabel(templateSummary.lunchMinutes)}</span>
+                      </div>
+                      <div className={styles.cardActions}>
+                        <button type="button" className={styles.dangerButton} onClick={() => setTemplateToDelete(template)} title="Eliminar"><Trash2 size={15} /></button>
+                      </div>
+                    </article>
+                  );
+                })}
               </div>
             </div>
           ))}
 
           {!templates.length ? (
             <div className={styles.emptyState}>
-              Todavia no hay plantillas. Crea la primera para empezar a modelar los turnos por area y rol.
+              Todavia no hay horarios diarios. Crea la primera opcion para empezar a programar por area.
             </div>
           ) : null}
           {templates.length && !filteredTemplates.length ? (
             <div className={styles.emptyState}>
-              No hay plantillas con esos filtros.
+              No hay horarios con esos filtros.
             </div>
           ) : null}
         </div>

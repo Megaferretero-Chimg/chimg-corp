@@ -33,6 +33,16 @@ const generatedDaySchema = new Schema(
       min: 0,
       default: 0,
     },
+    lunchStartTime: {
+      type: String,
+      trim: true,
+      default: "",
+    },
+    lunchEndTime: {
+      type: String,
+      trim: true,
+      default: "",
+    },
     endTime: {
       type: String,
       trim: true,
@@ -43,12 +53,44 @@ const generatedDaySchema = new Schema(
       min: 0,
       default: 0,
     },
+    areaCode: {
+      type: String,
+      trim: true,
+      default: "",
+    },
+    areaName: {
+      type: String,
+      trim: true,
+      uppercase: true,
+      default: "",
+    },
+    roleCode: {
+      type: String,
+      trim: true,
+      default: "",
+    },
+    roleName: {
+      type: String,
+      trim: true,
+      uppercase: true,
+      default: "",
+    },
+    operationalNote: {
+      type: String,
+      trim: true,
+      default: "",
+    },
+    operationalJustification: {
+      type: Boolean,
+      default: false,
+    },
     source: {
       type: String,
       enum: [
         "template",
         "holiday",
         "manual_override",
+        "operational",
         "attendance_inferred",
         "attendance_extra",
         "attendance_rest",

@@ -5,6 +5,7 @@ import connectToDatabase from "@/lib/db/mongodb";
 import { parseMonthKey } from "@/lib/planning/holidays";
 import {
   buildAssignmentPayload,
+  getNextMonthKey,
   getMonthWeekOptions,
   getPreviousMonthKey,
   serializeScheduleAssignment,
@@ -13,6 +14,7 @@ import {
 import BaseScheduleTemplate from "@/models/BaseScheduleTemplate";
 import Employee from "@/models/Employee";
 import Holiday from "@/models/Holiday";
+import OperationalException from "@/models/OperationalException";
 import ScheduleAssignment from "@/models/ScheduleAssignment";
 
 const VARIABLE_SCHEDULE_AREA_CODES = new Set(["ALM", "BOD"]);
@@ -42,6 +44,9 @@ function normalizeOperationalDay(day, holidayNamesByDate) {
   const holidayName = holidayNamesByDate.get(dateKey);
   const requestedType = String(day?.dayType || "off_day").trim();
   const isWorkday = requestedType === "workday" || requestedType === "weekend_overtime";
+  const isVacation = requestedType === "vacation";
+  const operationalNote = String(day?.operationalNote || "").trim().toUpperCase();
+  const operationalJustification = Boolean(day?.operationalJustification && operationalNote);
 
   if (holidayName) {
     return {
@@ -51,8 +56,16 @@ function normalizeOperationalDay(day, holidayNamesByDate) {
       dayType: "holiday",
       startTime: "",
       lunchDurationMinutes: 0,
+      lunchStartTime: "",
+      lunchEndTime: "",
       endTime: "",
       authorizedExtraMinutes: 0,
+      areaCode: String(day?.areaCode || "").trim(),
+      areaName: String(day?.areaName || "").trim().toUpperCase(),
+      roleCode: String(day?.roleCode || "").trim(),
+      roleName: String(day?.roleName || "").trim().toUpperCase(),
+      operationalNote,
+      operationalJustification,
       source: "holiday",
     };
   }
@@ -61,13 +74,115 @@ function normalizeOperationalDay(day, holidayNamesByDate) {
     dateKey,
     dayOfWeek,
     label: DAY_LABELS.get(dayOfWeek) || "",
-    dayType: isWorkday ? requestedType : "off_day",
+    dayType: isWorkday ? requestedType : (isVacation ? "vacation" : "off_day"),
     startTime: isWorkday ? String(day?.startTime || "").trim() : "",
     lunchDurationMinutes: isWorkday ? Math.max(0, Number(day?.lunchDurationMinutes) || 0) : 0,
+    lunchStartTime: isWorkday ? String(day?.lunchStartTime || "").trim() : "",
+    lunchEndTime: isWorkday ? String(day?.lunchEndTime || "").trim() : "",
     endTime: isWorkday ? String(day?.endTime || "").trim() : "",
     authorizedExtraMinutes: isWorkday ? Math.max(0, Number(day?.authorizedExtraMinutes) || 0) : 0,
+    areaCode: String(day?.areaCode || "").trim(),
+    areaName: String(day?.areaName || "").trim().toUpperCase(),
+    roleCode: String(day?.roleCode || "").trim(),
+    roleName: String(day?.roleName || "").trim().toUpperCase(),
+    operationalNote,
+    operationalJustification,
     source: "operational",
   };
+}
+
+function buildAutoExceptionPayload({ employee, day }) {
+  const note = String(day?.operationalNote || "").trim().toUpperCase();
+
+  if (!note || day?.operationalJustification !== true) {
+    return null;
+  }
+
+  const basePayload = {
+    employee: employee._id,
+    employeeName: employee.fullName || "",
+    employeeDni: employee.dni || "",
+    branchName: employee.branchName || employee.branch || "",
+    areaName: employee.areaName || "",
+    roleName: day.roleName || employee.roleName || "",
+    date: new Date(`${day.dateKey}T12:00:00.000Z`),
+    dateKey: day.dateKey,
+    endDate: null,
+    endDateKey: "",
+    startTime: "",
+    endTime: "",
+    registeredBy: "IMPORTACION HORARIOS",
+    authorizedBy: "",
+    resolution: "pending",
+    resolutionNotes: "",
+    notes: `IMPORTADO DESDE HORARIO: ${note}`,
+    status: "open",
+  };
+
+  if (note === "PERMISO") {
+    return {
+      ...basePayload,
+      type: "permission",
+      scope: "full_day",
+      destination: "",
+      countsAsWorkedTime: false,
+      allowSupplementaryTime: false,
+    };
+  }
+
+  if (note === "SALCEDO") {
+    return {
+      ...basePayload,
+      type: "outside_work",
+      scope: "outside_work",
+      destination: "SALCEDO",
+      countsAsWorkedTime: true,
+      allowSupplementaryTime: false,
+    };
+  }
+
+  return {
+    ...basePayload,
+    type: "other",
+    scope: "other",
+    destination: note,
+    countsAsWorkedTime: false,
+    allowSupplementaryTime: false,
+  };
+}
+
+function mergeAssignmentsByEmployee(assignments, requestedMonthKey) {
+  const grouped = new Map();
+
+  assignments.forEach((assignment) => {
+    const employeeId = assignment.employee?.toString?.() || "";
+
+    if (!employeeId) return;
+    if (!grouped.has(employeeId)) grouped.set(employeeId, []);
+    grouped.get(employeeId).push(assignment);
+  });
+
+  return [...grouped.values()].map((employeeAssignments) => {
+    const primary =
+      employeeAssignments.find((assignment) => assignment.monthKey === requestedMonthKey)
+      || employeeAssignments[0];
+    const generatedDaysByDate = new Map();
+
+    employeeAssignments
+      .sort((left, right) => String(left.monthKey || "").localeCompare(String(right.monthKey || "")))
+      .forEach((assignment) => {
+        (assignment.generatedDays || []).forEach((day) => {
+          if (day?.dateKey) generatedDaysByDate.set(day.dateKey, day);
+        });
+      });
+
+    return {
+      ...primary,
+      monthKey: requestedMonthKey || primary.monthKey,
+      generatedDays: [...generatedDaysByDate.values()]
+        .sort((left, right) => String(left.dateKey).localeCompare(String(right.dateKey))),
+    };
+  });
 }
 
 export async function GET(request) {
@@ -83,11 +198,22 @@ export async function GET(request) {
     const { searchParams } = new URL(request.url);
     const { monthKey } = parseMonthKey(searchParams.get("month"));
     const branchCode = String(searchParams.get("branchCode") || "").trim().toUpperCase();
+    const areaCode = String(searchParams.get("areaCode") || "").trim();
+    const roleCode = String(searchParams.get("roleCode") || "").trim();
     const employeeId = String(searchParams.get("employeeId") || "").trim();
-    const query = { monthKey };
+    const monthKeys = [getPreviousMonthKey(monthKey), monthKey, getNextMonthKey(monthKey)];
+    const query = { monthKey: { $in: monthKeys } };
 
     if (branchCode) {
       query.branchCode = branchCode;
+    }
+
+    if (areaCode) {
+      query.areaCode = areaCode;
+    }
+
+    if (roleCode) {
+      query.roleCode = roleCode;
     }
 
     if (employeeId) {
@@ -99,7 +225,7 @@ export async function GET(request) {
       .lean();
 
     return NextResponse.json({
-      assignments: assignments.map(serializeScheduleAssignment),
+      assignments: mergeAssignmentsByEmployee(assignments, monthKey).map(serializeScheduleAssignment),
     });
   } catch (error) {
     return NextResponse.json(
@@ -128,17 +254,43 @@ export async function POST(request) {
       const employeeIds = employeeDays
         .map((entry) => String(entry?.employeeId || "").trim())
         .filter(Boolean);
-      const [employees, holidays, currentAssignments] = await Promise.all([
+      const clearScheduleTargets = Array.isArray(body?.clearScheduleTargets) ? body.clearScheduleTargets : [];
+      const clearScheduleTargetKeys = new Set(clearScheduleTargets
+        .map((target) => `${String(target?.employeeId || "").trim()}|${String(target?.dateKey || "").trim()}`)
+        .filter((key) => /\|(\d{4}-\d{2}-\d{2})$/.test(key)));
+      const submittedDateKeys = employeeDays.flatMap((entry) =>
+        (Array.isArray(entry?.days) ? entry.days : [])
+          .map((day) => String(day?.dateKey || "").trim())
+          .filter((dateKey) => /^\d{4}-\d{2}-\d{2}$/.test(dateKey)),
+      );
+      const targetMonthKeys = [...new Set([monthKey, ...submittedDateKeys.map((dateKey) => dateKey.slice(0, 7))])];
+      const [employees, holidays, currentAssignments, importedExceptions] = await Promise.all([
         Employee.find({ _id: { $in: employeeIds } }).lean(),
-        Holiday.find({ dateKey: { $regex: `^${monthKey}-` } }).lean(),
-        ScheduleAssignment.find({ monthKey, employee: { $in: employeeIds } }).lean(),
+        Holiday.find({ dateKey: { $in: submittedDateKeys } }).lean(),
+        ScheduleAssignment.find({ monthKey: { $in: targetMonthKeys }, employee: { $in: employeeIds } }).lean(),
+        OperationalException.find({
+          employee: { $in: employeeIds },
+          dateKey: { $in: submittedDateKeys },
+          registeredBy: "IMPORTACION HORARIOS",
+        }).select({ employee: 1, dateKey: 1, status: 1 }).lean(),
       ]);
       const employeesById = new Map(employees.map((employee) => [employee._id.toString(), employee]));
+      const reviewedImportedExceptionKeys = new Set(
+        importedExceptions
+          .filter((exception) => exception.status === "resolved")
+          .map((exception) => `${exception.employee?.toString?.() || ""}|${exception.dateKey}`),
+      );
       const currentByEmployee = new Map(
-        currentAssignments.map((assignment) => [assignment.employee?.toString?.() || "", assignment]),
+        currentAssignments.map((assignment) => [
+          `${assignment.monthKey}|${assignment.employee?.toString?.() || ""}`,
+          assignment,
+        ]),
       );
       const holidayNamesByDate = new Map(holidays.map((holiday) => [holiday.dateKey, holiday.name]));
       const operations = [];
+      const exceptionOperations = [];
+      const exceptionCleanupKeys = new Set();
+      const savedEmployeeIds = new Set();
 
       employeeDays.forEach((entry) => {
         const employeeId = String(entry?.employeeId || "").trim();
@@ -148,47 +300,114 @@ export async function POST(request) {
           return;
         }
 
-        const currentAssignment = currentByEmployee.get(employeeId);
-        const existingDaysByDate = new Map(
-          (currentAssignment?.generatedDays || []).map((day) => [day.dateKey, day]),
-        );
+        const daysByMonth = new Map();
 
         (Array.isArray(entry?.days) ? entry.days : []).forEach((day) => {
           const normalized = normalizeOperationalDay(day, holidayNamesByDate);
 
           if (normalized) {
-            existingDaysByDate.set(normalized.dateKey, normalized);
+            const dayMonthKey = normalized.dateKey.slice(0, 7);
+            const autoException = buildAutoExceptionPayload({ employee, day: normalized });
+            const clearKey = `${employee._id.toString()}|${normalized.dateKey}`;
+            const shouldClearScheduleDay = clearScheduleTargetKeys.has(`${employeeId}|${normalized.dateKey}`)
+              && normalized.dayType === "off_day"
+              && normalized.operationalJustification !== true;
+
+            if (!daysByMonth.has(dayMonthKey)) daysByMonth.set(dayMonthKey, []);
+            daysByMonth.get(dayMonthKey).push(normalized);
+
+            if (shouldClearScheduleDay) {
+              exceptionCleanupKeys.add(clearKey);
+            }
+
+            if (autoException && !reviewedImportedExceptionKeys.has(`${employee._id.toString()}|${normalized.dateKey}`)) {
+              exceptionOperations.push({
+                updateOne: {
+                  filter: {
+                    employee: employee._id,
+                    dateKey: normalized.dateKey,
+                    registeredBy: "IMPORTACION HORARIOS",
+                    status: "open",
+                  },
+                  update: { $set: autoException },
+                  upsert: true,
+                },
+              });
+            }
           }
         });
 
-        const generatedDays = [...existingDaysByDate.values()]
-          .filter((day) => String(day.dateKey || "").startsWith(`${monthKey}-`))
-          .sort((left, right) => String(left.dateKey).localeCompare(String(right.dateKey)));
+        daysByMonth.forEach((monthDays, targetMonthKey) => {
+          savedEmployeeIds.add(employeeId);
+          const currentAssignment = currentByEmployee.get(`${targetMonthKey}|${employeeId}`);
+          const existingDaysByDate = new Map(
+            (currentAssignment?.generatedDays || []).map((day) => [day.dateKey, day]),
+          );
 
-        operations.push({
-          updateOne: {
-            filter: { monthKey, employee: employee._id },
-            update: {
-              $set: {
-                monthKey,
-                employee: employee._id,
-                employeeName: employee.fullName || "",
-                employeeDni: employee.dni || "",
-                branchCode: employee.branchCode || "",
-                branchName: employee.branchName || employee.branch || "",
-                areaCode: employee.areaCode || "",
-                areaName: employee.areaName || "",
-                roleCode: employee.roleCode || "",
-                roleName: employee.roleName || "",
-                template: currentAssignment?.template || null,
-                templateName: "PROGRAMACION OPERATIVA",
-                rotationGroup: "OPERATIVO_VARIABLE",
-                generatedDays,
-                weeklyPlan: [],
-                notes: "Programacion operativa armada sin plantillas por semana.",
+          monthDays.forEach((day) => {
+            if (
+              clearScheduleTargetKeys.has(`${employeeId}|${day.dateKey}`)
+              && day.dayType === "off_day"
+              && day.operationalJustification !== true
+            ) {
+              existingDaysByDate.delete(day.dateKey);
+              return;
+            }
+
+            existingDaysByDate.set(day.dateKey, day);
+          });
+
+          const generatedDays = [...existingDaysByDate.values()]
+            .filter((day) => String(day.dateKey || "").startsWith(`${targetMonthKey}-`))
+            .sort((left, right) => String(left.dateKey).localeCompare(String(right.dateKey)));
+
+          operations.push(generatedDays.length ? {
+            updateOne: {
+              filter: { monthKey: targetMonthKey, employee: employee._id },
+              update: {
+                $set: {
+                  monthKey: targetMonthKey,
+                  employee: employee._id,
+                  employeeName: employee.fullName || "",
+                  employeeDni: employee.dni || "",
+                  branchCode: employee.branchCode || "",
+                  branchName: employee.branchName || employee.branch || "",
+                  areaCode: employee.areaCode || "",
+                  areaName: employee.areaName || "",
+                  roleCode: employee.roleCode || "",
+                  roleName: employee.roleName || "",
+                  template: currentAssignment?.template || null,
+                  templateName: "PROGRAMACION DE HORARIOS",
+                  rotationGroup: "OPERATIVO_VARIABLE",
+                  generatedDays,
+                  weeklyPlan: [],
+                  notes: "Programacion de horarios armada sin plantillas por semana.",
+                },
               },
+              upsert: true,
             },
-            upsert: true,
+          } : {
+            deleteOne: {
+              filter: { monthKey: targetMonthKey, employee: employee._id },
+            },
+          });
+        });
+      });
+
+      exceptionCleanupKeys.forEach((key) => {
+        const [employeeIdForCleanup, dateKey] = key.split("|");
+        const employee = employeesById.get(employeeIdForCleanup);
+
+        if (!employee || !dateKey) return;
+
+        exceptionOperations.unshift({
+          deleteOne: {
+            filter: {
+              employee: employee._id,
+              dateKey,
+              registeredBy: "IMPORTACION HORARIOS",
+              status: "open",
+            },
           },
         });
       });
@@ -197,13 +416,18 @@ export async function POST(request) {
         await ScheduleAssignment.bulkWrite(operations);
       }
 
-      const assignments = await ScheduleAssignment.find({ monthKey })
+      if (exceptionOperations.length) {
+        await OperationalException.bulkWrite(exceptionOperations);
+      }
+
+      const assignmentMonthKeys = [getPreviousMonthKey(monthKey), monthKey, getNextMonthKey(monthKey)];
+      const assignments = await ScheduleAssignment.find({ monthKey: { $in: assignmentMonthKeys } })
         .sort({ employeeName: 1 })
         .lean();
 
       return NextResponse.json({
-        message: `Programacion operativa guardada para ${operations.length} empleados.`,
-        assignments: assignments.map(serializeScheduleAssignment),
+        message: `Programacion de horarios guardada para ${savedEmployeeIds.size} empleados.`,
+        assignments: mergeAssignmentsByEmployee(assignments, monthKey).map(serializeScheduleAssignment),
       });
     }
 
@@ -240,7 +464,11 @@ export async function POST(request) {
       );
       const currentEmployeeIds = new Set(currentAssignments.map((assignment) => assignment.employee?.toString?.() || ""));
       const templatesByRole = templates.reduce((map, template) => {
-        const key = `${template.areaCode || ""}|${template.roleCode || ""}`;
+        const areaCodeForTemplate = String(template.areaCode || "").trim();
+        const roleCodeForTemplate = String(template.roleCode || "").trim();
+        const key = roleCodeForTemplate
+          ? `${areaCodeForTemplate}|${roleCodeForTemplate}`
+          : `${areaCodeForTemplate}|__AREA__`;
 
         if (!map.has(key)) {
           map.set(key, []);
@@ -269,7 +497,11 @@ export async function POST(request) {
       for (const [branchRoleKey, roleEmployees] of employeesByBranchRole.entries()) {
         const [, areaCodeForGroup = "", roleCodeForGroup = ""] = branchRoleKey.split("|");
         const roleKey = `${areaCodeForGroup}|${roleCodeForGroup}`;
-        const roleTemplates = sortTemplatesByVariant(templatesByRole.get(roleKey) || []);
+        const areaKey = `${areaCodeForGroup}|__AREA__`;
+        const roleTemplates = sortTemplatesByVariant([
+          ...(templatesByRole.get(roleKey) || []),
+          ...(templatesByRole.get(areaKey) || []),
+        ]);
 
         if (!roleTemplates.length) {
           skipped.push(...roleEmployees.map((employee) => employee.fullName));

@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 
-import { isAuthenticated } from "@/lib/auth";
+import { getAuthenticatedUser, isAuthenticated } from "@/lib/auth";
 import connectToDatabase from "@/lib/db/mongodb";
 import {
   buildMonthExceptionQuery,
@@ -62,7 +62,9 @@ export async function POST(request) {
     }
 
     const employee = await Employee.findById(employeeId).lean();
-    const payload = normalizeExceptionPayload(body, employee);
+    const user = await getAuthenticatedUser();
+    const registeredBy = user?.employeeName || user?.username || user?.id || "SISTEMA";
+    const payload = normalizeExceptionPayload({ ...body, registeredBy }, employee);
     const exception = await OperationalException.create(payload);
 
     return NextResponse.json(

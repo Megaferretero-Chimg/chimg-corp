@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 
-import { isAuthenticated } from "@/lib/auth";
+import { getAuthenticatedUser, isAuthenticated } from "@/lib/auth";
 import connectToDatabase from "@/lib/db/mongodb";
 import {
   normalizeExceptionPayload,
@@ -29,7 +29,9 @@ export async function PATCH(request, context) {
     const body = await request.json();
     const employeeId = String(body?.employeeId || "").trim();
     const employee = await Employee.findById(employeeId).lean();
-    const payload = normalizeExceptionPayload(body, employee);
+    const user = await getAuthenticatedUser();
+    const registeredBy = user?.employeeName || user?.username || user?.id || "SISTEMA";
+    const payload = normalizeExceptionPayload({ ...body, registeredBy }, employee);
     const exception = await OperationalException.findByIdAndUpdate(exceptionId, payload, {
       new: true,
       runValidators: true,

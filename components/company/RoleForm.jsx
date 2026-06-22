@@ -1,6 +1,6 @@
 "use client";
 
-import { Plus } from "lucide-react";
+import { Plus, Trash2 } from "lucide-react";
 
 import styles from "./RoleForm.module.scss";
 
@@ -14,6 +14,28 @@ export default function RoleForm({
   onCancel,
   onSubmit,
 }) {
+  const subroles = Array.isArray(form.subroles) ? form.subroles : [];
+
+  function updateSubrole(index, field, value) {
+    onFieldChange(
+      "subroles",
+      subroles.map((subrole, currentIndex) =>
+        currentIndex === index ? { ...subrole, [field]: value } : subrole,
+      ),
+    );
+  }
+
+  function addSubrole() {
+    onFieldChange("subroles", [
+      ...subroles,
+      { code: "", name: "", description: "", isActive: true },
+    ]);
+  }
+
+  function removeSubrole(index) {
+    onFieldChange("subroles", subroles.filter((_, currentIndex) => currentIndex !== index));
+  }
+
   return (
     <form onSubmit={onSubmit} className={`catalog-form-grid ${styles.formGrid}`}>
       <label className="catalog-field">
@@ -64,6 +86,50 @@ export default function RoleForm({
           rows={4}
         />
       </label>
+
+      <div className={`catalog-field ${styles.subrolesField}`}>
+        <div className={styles.subrolesHeader}>
+          <span className="catalog-label">Subroles operativos</span>
+          <button type="button" className="catalog-button-ghost" onClick={addSubrole}>
+            <Plus size={16} />
+            Agregar
+          </button>
+        </div>
+
+        {subroles.length ? (
+          <div className={styles.subrolesList}>
+            {subroles.map((subrole, index) => (
+              <div key={`${subrole.code || "subrole"}-${index}`} className={styles.subroleRow}>
+                <input
+                  value={subrole.code || ""}
+                  onChange={(event) => updateSubrole(index, "code", event.target.value.toUpperCase())}
+                  className="catalog-input"
+                  placeholder="Código"
+                />
+                <input
+                  value={subrole.name || ""}
+                  onChange={(event) => updateSubrole(index, "name", event.target.value)}
+                  className="catalog-input"
+                  placeholder="Nombre del subrol"
+                />
+                <button
+                  type="button"
+                  className="catalog-icon-button danger"
+                  onClick={() => removeSubrole(index)}
+                  aria-label={`Eliminar subrol ${subrole.name || index + 1}`}
+                  title="Eliminar subrol"
+                >
+                  <Trash2 size={16} />
+                </button>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <span className={styles.subrolesHint}>
+            Úsalo cuando este rol principal pueda cubrir varias funciones operativas, por ejemplo Ferretero, Acabados u Hogar dentro de Ventas.
+          </span>
+        )}
+      </div>
 
       <label className={`catalog-field ${styles.statusField}`}>
         <span className="catalog-label">Estado</span>

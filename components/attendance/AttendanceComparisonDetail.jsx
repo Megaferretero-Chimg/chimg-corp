@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
-import { AlertTriangle, ArrowLeft, RefreshCw } from "lucide-react";
+import { AlertTriangle, ArrowLeft, Plus, RefreshCw, Trash2 } from "lucide-react";
 
 import CatalogDrawer from "@/components/catalog/CatalogDrawer";
 import ConfirmDialog from "@/components/ui/ConfirmDialog";
@@ -359,6 +359,64 @@ function hourInputToMinutes(value) {
   return Math.max(0, Math.round(Number(rawValue) || 0));
 }
 
+function clockTimeToMinutes(value) {
+  const [hours, minutes] = String(value || "").split(":").map(Number);
+
+  if (
+    Number.isNaN(hours) ||
+    Number.isNaN(minutes) ||
+    hours < 0 ||
+    hours > 23 ||
+    minutes < 0 ||
+    minutes > 59
+  ) {
+    return null;
+  }
+
+  return hours * 60 + minutes;
+}
+
+function minutesToClockTime(value) {
+  const totalMinutes = Math.max(0, Math.min(23 * 60 + 59, Math.round(Number(value) || 0)));
+  const hours = Math.floor(totalMinutes / 60);
+  const minutes = totalMinutes % 60;
+
+  return `${String(hours).padStart(2, "0")}:${String(minutes).padStart(2, "0")}`;
+}
+
+function lunchPunchSuggestion(day) {
+  if (!day || day.punches?.length !== 2) return null;
+
+  const firstPunchMinutes = clockTimeToMinutes(day.punches[0]?.time);
+  const lastPunchMinutes = clockTimeToMinutes(day.punches[1]?.time);
+
+  if (firstPunchMinutes === null || lastPunchMinutes === null) return null;
+
+  const spanMinutes = lastPunchMinutes - firstPunchMinutes;
+
+  if (spanMinutes <= 6 * 60) return null;
+
+  const lunchMinutes = Math.max(
+    0,
+    Number(day.lunchDurationMinutes) ||
+      Number(day.lunchDiscountMinutes) ||
+      DEFAULT_LUNCH_LIMIT_MINUTES,
+  );
+
+  if (!lunchMinutes || lunchMinutes >= spanMinutes) return null;
+
+  const lunchStartMinutes = Math.round((firstPunchMinutes + lastPunchMinutes - lunchMinutes) / 2);
+  const lunchEndMinutes = lunchStartMinutes + lunchMinutes;
+
+  if (lunchStartMinutes <= firstPunchMinutes || lunchEndMinutes >= lastPunchMinutes) return null;
+
+  return {
+    lunchMinutes,
+    lunchStart: minutesToClockTime(lunchStartMinutes),
+    lunchEnd: minutesToClockTime(lunchEndMinutes),
+  };
+}
+
 function buildActionDrafts(days = []) {
   return Object.fromEntries(days.map((day) => [
     day.dateKey,
@@ -654,6 +712,9 @@ export default function AttendanceComparisonDetail({ employeeId, initialFilters 
   const [savingBulkAction, setSavingBulkAction] = useState("");
   const [pendingBulkDecision, setPendingBulkDecision] = useState("");
   const [selectedDayKey, setSelectedDayKey] = useState("");
+  const [punchForm, setPunchForm] = useState(null);
+  const [pendingDeletePunch, setPendingDeletePunch] = useState(null);
+  const [isSavingPunch, setIsSavingPunch] = useState(false);
 
   const filters = {
     ...stableInitialFilters,
@@ -697,6 +758,7 @@ export default function AttendanceComparisonDetail({ employeeId, initialFilters 
   const selectedCanCompleteRegularDay = selectedDay
     ? !isExtraordinaryDay(selectedDay) && plannedPaidDayMinutes(selectedDay).plannedRegularMinutes > 0
     : false;
+  const selectedLunchSuggestion = selectedDay ? lunchPunchSuggestion(selectedDay) : null;
 
   function syncUrl(nextMonth) {
     if (typeof window === "undefined") return;
@@ -711,9 +773,11 @@ export default function AttendanceComparisonDetail({ employeeId, initialFilters 
     window.history.replaceState(null, "", `${window.location.pathname}?${params.toString()}`);
   }
 
-  async function loadReport(nextMonth = month) {
+  async function loadReport(nextMonth = month, options = {}) {
     try {
-      setIsLoading(true);
+      if (!options.background) {
+        setIsLoading(true);
+      }
       setError("");
 
       const params = new URLSearchParams();
@@ -733,7 +797,9 @@ export default function AttendanceComparisonDetail({ employeeId, initialFilters 
     } catch (requestError) {
       setError(requestError.message);
     } finally {
-      setIsLoading(false);
+      if (!options.background) {
+        setIsLoading(false);
+      }
     }
   }
 
@@ -817,6 +883,146 @@ export default function AttendanceComparisonDetail({ employeeId, initialFilters 
   function restoreIssueMinutes(day, field, minutes) {
     updateActionDraft(day.dateKey, field, minutesToHourInput(minutes));
     updateActionDraft(day.dateKey, "decision", "custom");
+  }
+
+  function openAddPunch(day) {
+    setPunchForm({
+      dateKey: day.dateKey,
+      dateLabel: day.dateLabel,
+      dayLabel: day.dayLabel,
+      time: "",
+      reason: "",
+    });
+  }
+
+  function updatePunchForm(field, value) {
+    setPunchForm((current) => current ? { ...current, [field]: value } : current);
+  }
+
+  function closeAddPunch() {
+    if (!isSavingPunch) setPunchForm(null);
+  }
+
+  async function saveManualPunch() {
+    if (!punchForm) return;
+
+    try {
+      setIsSavingPunch(true);
+      setError("");
+
+      const response = await fetch("/api/attendance/punches", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          employeeId,
+          punchedAt: `${punchForm.dateKey}T${punchForm.time}`,
+          reason: punchForm.reason,
+        }),
+      });
+      const payload = await response.json();
+
+      if (!response.ok) {
+        throw new Error(payload.error || "No se pudo agregar la picada.");
+      }
+
+      setSelectedDayKey(punchForm.dateKey);
+      setPunchForm(null);
+      await loadReport(month, { background: true });
+    } catch (requestError) {
+      setError(requestError.message);
+    } finally {
+      setIsSavingPunch(false);
+    }
+  }
+
+  function openDeletePunch(day, punch) {
+    setPendingDeletePunch({
+      dayLabel: day.dayLabel,
+      dateLabel: day.dateLabel,
+      dateKey: day.dateKey,
+      punch,
+      reason: "",
+    });
+  }
+
+  function updateDeletePunchReason(value) {
+    setPendingDeletePunch((current) => current ? { ...current, reason: value } : current);
+  }
+
+  function closeDeletePunch() {
+    if (!isSavingPunch) setPendingDeletePunch(null);
+  }
+
+  async function deleteSelectedPunch() {
+    if (!pendingDeletePunch?.punch?.id) return;
+
+    try {
+      setIsSavingPunch(true);
+      setError("");
+
+      const response = await fetch(`/api/attendance/punches/${pendingDeletePunch.punch.id}`, {
+        method: "DELETE",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          reason: pendingDeletePunch.reason,
+        }),
+      });
+      const payload = await response.json();
+
+      if (!response.ok) {
+        throw new Error(payload.error || "No se pudo eliminar la picada.");
+      }
+
+      setSelectedDayKey(pendingDeletePunch.dateKey);
+      setPendingDeletePunch(null);
+      await loadReport(month, { background: true });
+    } catch (requestError) {
+      setError(requestError.message);
+    } finally {
+      setIsSavingPunch(false);
+    }
+  }
+
+  async function addDefaultLunchPunches(day, suggestion) {
+    if (!day || !suggestion) return;
+
+    try {
+      setIsSavingPunch(true);
+      setError("");
+
+      const reason = `Registro manual de almuerzo predeterminado (${formatMinutes(suggestion.lunchMinutes)}).`;
+      const lunchPunches = [suggestion.lunchStart, suggestion.lunchEnd];
+
+      for (const time of lunchPunches) {
+        const response = await fetch("/api/attendance/punches", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            employeeId,
+            punchedAt: `${day.dateKey}T${time}`,
+            reason,
+          }),
+        });
+        const payload = await response.json();
+
+        if (!response.ok) {
+          throw new Error(payload.error || "No se pudo agregar el almuerzo.");
+        }
+      }
+
+      setSelectedDayKey(day.dateKey);
+      await loadReport(month, { background: true });
+    } catch (requestError) {
+      setError(requestError.message);
+    } finally {
+      setIsSavingPunch(false);
+    }
   }
 
   function openDayDecision(day) {
@@ -1396,7 +1602,13 @@ export default function AttendanceComparisonDetail({ employeeId, initialFilters 
             onClose={closeDayDecision}
           >
             {selectedDay ? (
-              <div className={styles.decisionModal}>
+              <div className={`${styles.decisionModal} ${isSavingPunch ? styles.decisionModalPending : ""}`}>
+                {isSavingPunch ? (
+                  <div className={styles.decisionLoadingOverlay} aria-live="polite">
+                    <RefreshCw size={18} />
+                    <span>Actualizando picadas...</span>
+                  </div>
+                ) : null}
                 <div className={styles.decisionSummary}>
                   <article>
                     <span>Trabajado</span>
@@ -1432,12 +1644,44 @@ export default function AttendanceComparisonDetail({ employeeId, initialFilters 
 
                 <div className={styles.modalPunches}>
                   {selectedDay.punches.map((punch, index) => (
-                    <span key={punch.id}>
+                    <button
+                      key={punch.id}
+                      type="button"
+                      className={styles.punchChipButton}
+                      onClick={() => openDeletePunch(selectedDay, punch)}
+                      disabled={isSavingPunch || savingDay === selectedDay.dateKey}
+                      title="Eliminar picada"
+                    >
                       <small>{punchLabel(index, selectedDay.punchCount)}</small>
-                      {punch.time}
-                    </span>
+                      <span className={styles.punchChipTime}>{punch.time}</span>
+                      <span className={styles.punchDeleteOverlay} aria-hidden="true">
+                        <Trash2 size={14} />
+                      </span>
+                    </button>
                   ))}
+                  <button
+                    type="button"
+                    className={styles.addPunchChip}
+                    onClick={() => openAddPunch(selectedDay)}
+                    disabled={isSavingPunch || savingDay === selectedDay.dateKey}
+                    aria-label={`Agregar picada para ${selectedDay.dateLabel}`}
+                    title="Agregar picada"
+                  >
+                    <Plus size={15} aria-hidden="true" />
+                  </button>
                 </div>
+
+                {selectedLunchSuggestion ? (
+                  <button
+                    type="button"
+                    className={styles.addLunchButton}
+                    onClick={() => addDefaultLunchPunches(selectedDay, selectedLunchSuggestion)}
+                    disabled={isSavingPunch || savingDay === selectedDay.dateKey}
+                  >
+                    Agregar almuerzo
+                    <span>{selectedLunchSuggestion.lunchStart} - {selectedLunchSuggestion.lunchEnd}</span>
+                  </button>
+                ) : null}
 
                 {!selectedIsReviewed ? (
                   <>
@@ -1603,6 +1847,70 @@ export default function AttendanceComparisonDetail({ employeeId, initialFilters 
               <strong>{pendingBulkDecision === "reset"
                 ? `Eliminar ${savedDecisionDays.length} decisiones guardadas`
                 : bulkDecisionDescription(pendingBulkDecision)}</strong>
+            </div>
+          </ConfirmDialog>
+
+          <ConfirmDialog
+            isOpen={Boolean(punchForm)}
+            title="Agregar picada"
+            message={punchForm ? `Se agregará una picada manual para ${punchForm.dayLabel} ${punchForm.dateLabel}.` : ""}
+            confirmLabel="Guardar picada"
+            cancelLabel="Cancelar"
+            tone="default"
+            isPending={isSavingPunch}
+            confirmDisabled={!punchForm?.time || String(punchForm?.reason || "").trim().length < 4}
+            onCancel={closeAddPunch}
+            onConfirm={saveManualPunch}
+          >
+            <div className={styles.punchMutationForm}>
+              <label>
+                <span>Día</span>
+                <input type="text" value={punchForm ? `${punchForm.dayLabel} ${punchForm.dateLabel}` : ""} readOnly />
+              </label>
+              <label>
+                <span>Hora</span>
+                <input
+                  type="time"
+                  value={punchForm?.time || ""}
+                  onChange={(event) => updatePunchForm("time", event.target.value)}
+                />
+              </label>
+              <label className={styles.punchMutationNote}>
+                <span>Motivo o nota</span>
+                <textarea
+                  rows={3}
+                  placeholder="Ej. Registro manual por olvido de marcación."
+                  value={punchForm?.reason || ""}
+                  onChange={(event) => updatePunchForm("reason", event.target.value)}
+                />
+              </label>
+            </div>
+          </ConfirmDialog>
+
+          <ConfirmDialog
+            isOpen={Boolean(pendingDeletePunch)}
+            title="Eliminar picada"
+            message={pendingDeletePunch
+              ? `Se eliminará la picada de las ${pendingDeletePunch.punch.time} del ${pendingDeletePunch.dateLabel}.`
+              : ""}
+            confirmLabel="Eliminar picada"
+            cancelLabel="Cancelar"
+            tone="danger"
+            isPending={isSavingPunch}
+            confirmDisabled={String(pendingDeletePunch?.reason || "").trim().length < 4}
+            onCancel={closeDeletePunch}
+            onConfirm={deleteSelectedPunch}
+          >
+            <div className={styles.punchMutationForm}>
+              <label className={styles.punchMutationNote}>
+                <span>Motivo o nota</span>
+                <textarea
+                  rows={3}
+                  placeholder="Ej. Picada duplicada o registrada por error."
+                  value={pendingDeletePunch?.reason || ""}
+                  onChange={(event) => updateDeletePunchReason(event.target.value)}
+                />
+              </label>
             </div>
           </ConfirmDialog>
         </>

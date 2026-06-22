@@ -295,20 +295,31 @@ export default function VacationPlanner() {
           </div>
         </div>
 
-        <div className={styles.summaryGrid}>
-          <div className={styles.metric}>
-            <span>Registros</span>
-            <strong>{vacations.length}</strong>
+        {isLoading ? (
+          <div className={styles.summaryGrid} aria-hidden="true">
+            {Array.from({ length: 3 }, (_, index) => (
+              <div key={index} className={styles.metricSkeleton}>
+                <span className={styles.skeletonLineShort} />
+                <span className={styles.skeletonNumber} />
+              </div>
+            ))}
           </div>
-          <div className={styles.metric}>
-            <span>Dias calendario</span>
-            <strong>{vacations.reduce((total, vacation) => total + vacation.totalCalendarDays, 0)}</strong>
+        ) : (
+          <div className={styles.summaryGrid}>
+            <div className={styles.metric}>
+              <span>Registros</span>
+              <strong>{vacations.length}</strong>
+            </div>
+            <div className={styles.metric}>
+              <span>Dias calendario</span>
+              <strong>{vacations.reduce((total, vacation) => total + vacation.totalCalendarDays, 0)}</strong>
+            </div>
+            <div className={styles.metric}>
+              <span>Empleados activos</span>
+              <strong>{activeEmployees.length}</strong>
+            </div>
           </div>
-          <div className={styles.metric}>
-            <span>Empleados activos</span>
-            <strong>{activeEmployees.length}</strong>
-          </div>
-        </div>
+        )}
       </section>
 
       <section className={styles.panel}>
@@ -319,7 +330,19 @@ export default function VacationPlanner() {
           </div>
         </div>
 
-        {vacations.length ? (
+        {isLoading ? (
+          <div className={styles.tableSkeleton} aria-live="polite" aria-label="Cargando vacaciones">
+            {Array.from({ length: 5 }, (_, index) => (
+              <div key={index} className={styles.skeletonRow}>
+                <span className={styles.skeletonAvatar} />
+                <span className={styles.skeletonCell} />
+                <span className={styles.skeletonCell} />
+                <span className={styles.skeletonPill} />
+                <span className={styles.skeletonActions} />
+              </div>
+            ))}
+          </div>
+        ) : vacations.length ? (
           <div className={styles.tableWrap}>
             <table className={styles.table}>
               <thead>
