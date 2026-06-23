@@ -13,6 +13,22 @@ function currentMonthKey() {
   return formatEcuadorMonthKey();
 }
 
+const MIN_MONTHLY_CLOSURE_MONTH_KEY = "2026-05";
+
+function monthKeysFromMinimumUntilCurrent() {
+  const { year: currentYear, monthIndex: currentMonthIndex } = parseMonthKey(currentMonthKey());
+  const { year: minimumYear, monthIndex: minimumMonthIndex } = parseMonthKey(MIN_MONTHLY_CLOSURE_MONTH_KEY);
+  const totalMonths = Math.max(0, (currentYear - minimumYear) * 12 + (currentMonthIndex - minimumMonthIndex) + 1);
+
+  return Array.from({ length: totalMonths }, (_, index) => {
+    const date = new Date(currentYear, currentMonthIndex - index, 1);
+    const nextYear = date.getFullYear();
+    const nextMonth = String(date.getMonth() + 1).padStart(2, "0");
+
+    return `${nextYear}-${nextMonth}`;
+  });
+}
+
 function minutesLabel(minutes) {
   const value = Math.max(0, Number(minutes) || 0);
   const hours = Math.floor(value / 60);
@@ -51,6 +67,23 @@ function payrollLateMinutes(row = {}) {
 const SUPPLEMENTARY_SURCHARGE_MULTIPLIER = 0.5;
 const EXTRAORDINARY_SURCHARGE_MULTIPLIER = 1;
 
+function parseBooleanOption(value, fallback = true) {
+  if (value === undefined || value === null || value === "") return fallback;
+
+  return !["0", "false", "no", "off"].includes(String(value).trim().toLowerCase());
+}
+
+function parseEmployeeIdList(value) {
+  if (Array.isArray(value)) {
+    return value.map((item) => String(item || "").trim()).filter(Boolean);
+  }
+
+  return String(value || "")
+    .split(",")
+    .map((item) => item.trim())
+    .filter(Boolean);
+}
+
 function serializeClosure(closure) {
   if (!closure) return null;
 
@@ -66,6 +99,7 @@ function serializeClosure(closure) {
     version: Number(closure.version) || 1,
     isLatest: closure.isLatest !== false,
     status: closure.status || "closed",
+    completeBaseHours: closure.completeBaseHours !== false,
     closedBy: closure.closedBy || "admin",
     closedAt: closure.closedAt,
     totals: {
@@ -81,6 +115,7 @@ function serializeClosure(closure) {
     rows: rowDocs.map((row) => ({
       employeeId: row.employee?.toString?.() || "",
       employeeName: row.employeeName || "",
+      employeeDni: row.employeeDni || "",
       branchCode: row.branchCode || "",
       branchName: row.branchName || "",
       areaCode: row.areaCode || "",
@@ -127,6 +162,7 @@ function serializeClosure(closure) {
 
 function serializePreview(snapshot) {
   return {
+    completeBaseHours: snapshot.completeBaseHours !== false,
     rows: snapshot.rows.map((row) => ({
       ...row,
       regularWorkedLabel: minutesLabel(row.regularWorkedMinutes),
@@ -162,6 +198,25 @@ function serializePreview(snapshot) {
   };
 }
 
+function serializeClosureMonth(monthKey, closure = null) {
+  const totals = closure?.totals || {};
+
+  return {
+    monthKey,
+    isClosed: Boolean(closure),
+    version: closure ? Number(closure.version) || 1 : null,
+    closedBy: closure?.closedBy || "",
+    closedAt: closure?.closedAt || null,
+    employees: Number(totals.employees) || 0,
+    regularWorkedLabel: closure ? minutesLabel(totals.regularWorkedMinutes) : "--",
+    regularTargetLabel: closure ? minutesLabel(totals.regularTargetMinutes) : "--",
+    supplementaryLabel: closure ? minutesLabel(totals.supplementaryMinutes) : "--",
+    extraordinaryLabel: closure ? minutesLabel(totals.extraordinaryMinutes) : "--",
+    lateLabel: closure ? minutesLabel(totals.lateMinutes) : "--",
+    salaryTotalLabel: closure ? moneyLabel(totals.salaryTotal) : "--",
+  };
+}
+
 function approvedSupplementaryMinutes(days = []) {
   return days.reduce((total, day) => {
     return total + (Number(day.supplementaryMinutes) || 0);
@@ -190,6 +245,7 @@ function snapshotRows(comparisonRows) {
       employeeId: row.employee.id,
       employee: row.employee.id,
       employeeName: row.employee.fullName,
+      employeeDni: formatEmployeeDni(row.employee.dni),
       branchCode: row.employee.branchCode,
       branchName: row.employee.branchName,
       areaCode: row.employee.areaCode,
@@ -221,8 +277,14 @@ function snapshotRows(comparisonRows) {
   });
 }
 
-function completeBaseHoursFromAdditional(rows = []) {
+function completeBaseHoursFromAdditional(rows = [], employeeIds = null) {
+  const selectedEmployeeIds = Array.isArray(employeeIds) ? new Set(employeeIds) : null;
+
   return rows.map((row) => {
+    if (selectedEmployeeIds && !selectedEmployeeIds.has(getRowEmployeeId(row))) {
+      return row;
+    }
+
     const regularTargetMinutes = Math.max(0, Number(row.regularTargetMinutes) || 0);
     const regularWorkedMinutes = Math.max(0, Number(row.regularWorkedMinutes) || 0);
     let missingRegularMinutes = Math.max(0, regularTargetMinutes - regularWorkedMinutes);
@@ -358,6 +420,10 @@ function getRowEmployeeId(row) {
   return row.employee?.toString?.() || row.employeeId || "";
 }
 
+function formatEmployeeDni(value) {
+  return String(value || "").trim();
+}
+
 async function buildPayrollCsv(rows, monthKey) {
   const { monthStart } = monthRangeFromKey(monthKey);
   const employeeIds = [...new Set(rows.map(getRowEmployeeId).filter(Boolean))];
@@ -381,7 +447,7 @@ async function buildPayrollCsv(rows, monthKey) {
         const employee = employeesById.get(employeeId);
 
         return [
-          employee?.dni || "",
+          formatEmployeeDni(employee?.dni),
           formatPayrollMinutes(row.supplementaryMinutes),
           formatPayrollMinutes(row.extraordinaryMinutes),
           formatPayrollMinutes(0),
@@ -393,6 +459,65 @@ async function buildPayrollCsv(rows, monthKey) {
   ];
 
   return `\uFEFF${lines.map((line) => line.map(escapeCsvCell).join(";")).join("\r\n")}\r\n`;
+}
+
+async function buildPayrollExcel(rows, monthKey) {
+  const { monthStart } = monthRangeFromKey(monthKey);
+  const employeeIds = [...new Set(rows.map(getRowEmployeeId).filter(Boolean))];
+  const employees = employeeIds.length
+    ? await Employee.find({ _id: { $in: employeeIds } }).select({
+        dni: 1,
+        employmentRelation: 1,
+        isActive: 1,
+        terminationDate: 1,
+      }).lean()
+    : [];
+  const employeesById = new Map(employees.map((employee) => [employee._id.toString(), employee]));
+  const bodyRows = rows
+    .slice()
+    .sort((left, right) => String(left.employeeName || "").localeCompare(String(right.employeeName || ""), "es"))
+    .filter((row) => wasEmployeeInPayrollDuringMonth(employeesById.get(getRowEmployeeId(row)), monthStart))
+    .map((row) => {
+      const employee = employeesById.get(getRowEmployeeId(row));
+
+      return [
+        formatEmployeeDni(employee?.dni),
+        formatPayrollMinutes(row.supplementaryMinutes),
+        formatPayrollMinutes(row.extraordinaryMinutes),
+        formatPayrollMinutes(0),
+        "",
+        "",
+        row.employeeName || "",
+      ];
+    });
+  const worksheet = XLSX.utils.aoa_to_sheet([
+    ["Cedula", "HorasSuplementarias", "HorasExtraordinarias", "HorasNocturnas", "", "", ""],
+    ...bodyRows,
+  ]);
+
+  worksheet["!cols"] = [
+    { wch: 16 },
+    { wch: 22 },
+    { wch: 24 },
+    { wch: 18 },
+    { wch: 10 },
+    { wch: 10 },
+    { wch: 34 },
+  ];
+
+  bodyRows.forEach((_, index) => {
+    const cellAddress = `A${index + 2}`;
+
+    if (worksheet[cellAddress]) {
+      worksheet[cellAddress].t = "s";
+      worksheet[cellAddress].z = "@";
+    }
+  });
+
+  const workbook = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(workbook, worksheet, "Nomina");
+
+  return XLSX.write(workbook, { type: "buffer", bookType: "xlsx" });
 }
 
 async function buildDetailedExcel(rows, monthKey, closure = null) {
@@ -414,8 +539,8 @@ async function buildDetailedExcel(rows, monthKey, closure = null) {
     ["Métrica", "Horas", "Valor"],
     ["Laborables", decimalHours(totals.regularWorkedMinutes), ""],
     ["Laborables del mes", decimalHours(totals.regularTargetMinutes), ""],
-    ["Suplementarias autorizadas", decimalHours(totals.supplementaryMinutes), roundMoney(totals.supplementaryAmount)],
-    ["Extraordinarias autorizadas", decimalHours(totals.extraordinaryMinutes), roundMoney(totals.extraordinaryAmount)],
+    ["Suplementarias cierre", decimalHours(totals.supplementaryMinutes), roundMoney(totals.supplementaryAmount)],
+    ["Extraordinarias cierre", decimalHours(totals.extraordinaryMinutes), roundMoney(totals.extraordinaryAmount)],
     ["Atrasos", decimalHours(totals.lateMinutes), ""],
     ["Sueldos total", "", roundMoney(totals.salaryTotal)],
     ["Empleados", totals.employees, ""],
@@ -430,19 +555,19 @@ async function buildDetailedExcel(rows, monthKey, closure = null) {
 
     return {
       Empleado: row.employeeName || "",
-      Cedula: employee?.dni || "",
+      Cedula: formatEmployeeDni(employee?.dni),
       Sucursal: row.branchName || row.branchCode || "",
       Area: row.areaName || row.areaCode || "",
       Rol: row.roleName || row.roleCode || "",
       "Laborables mes": decimalHours(row.regularTargetMinutes),
       "Laborables trabajadas": decimalHours(row.regularWorkedMinutes),
       "Laborables completadas": decimalHours(row.baseCompletionMinutes),
-      "Sup. planificadas": decimalHours(row.plannedSupplementaryMinutes),
-      "Sup. registradas": decimalHours(row.detectedSupplementaryMinutes),
-      "Sup. autorizadas": decimalHours(row.supplementaryMinutes),
-      "Ext. planificadas": decimalHours(row.plannedExtraordinaryMinutes),
-      "Ext. registradas": decimalHours(row.detectedExtraordinaryMinutes),
-      "Ext. autorizadas": decimalHours(row.extraordinaryMinutes),
+      "HS planificadas": decimalHours(row.plannedSupplementaryMinutes),
+      "HS registradas": decimalHours(row.detectedSupplementaryMinutes),
+      "HS cierre": decimalHours(row.supplementaryMinutes),
+      "HE planificadas": decimalHours(row.plannedExtraordinaryMinutes),
+      "HE registradas": decimalHours(row.detectedExtraordinaryMinutes),
+      "HE cierre": decimalHours(row.extraordinaryMinutes),
       "Cantidad atrasos": Number(row.lateDays) || 0,
       "Tiempo atraso": decimalHours(payrollLateMinutes(row)),
       "Sueldo base": roundMoney(row.salaryBase),
@@ -453,6 +578,14 @@ async function buildDetailedExcel(rows, monthKey, closure = null) {
     };
   });
   const detailSheet = XLSX.utils.json_to_sheet(detailRows);
+  detailRows.forEach((_, index) => {
+    const cellAddress = `B${index + 2}`;
+
+    if (detailSheet[cellAddress]) {
+      detailSheet[cellAddress].t = "s";
+      detailSheet[cellAddress].z = "@";
+    }
+  });
   detailSheet["!cols"] = [
     { wch: 34 },
     { wch: 14 },
@@ -500,13 +633,15 @@ async function buildComparisonSnapshot(request, monthKey, options = {}) {
     throw new Error(payload.error || "No se pudo calcular el cierre del mes.");
   }
 
-  const rows = options.completeBaseHours
-    ? completeBaseHoursFromAdditional(snapshotRows(payload.rows || []))
-    : snapshotRows(payload.rows || []);
+  const baseRows = snapshotRows(payload.rows || []);
+  const rows = options.completeBaseHours !== false
+    ? completeBaseHoursFromAdditional(baseRows, options.baseCompletionEmployeeIds)
+    : baseRows;
 
   return {
     rows,
     totals: sumTotals(rows),
+    completeBaseHours: options.completeBaseHours !== false,
   };
 }
 
@@ -521,20 +656,50 @@ export async function GET(request) {
     await connectToDatabase();
     await ensureMonthlyClosureIndexes();
 
+    const wantsMonthList = request.nextUrl.searchParams.get("list") === "months";
+
+    if (wantsMonthList) {
+      const closedDocs = await MonthlyAttendanceClosure.find({})
+        .sort({ monthKey: -1, version: -1, closedAt: -1 })
+        .lean();
+      const latestByMonth = new Map();
+
+      closedDocs.forEach((closure) => {
+        if (latestByMonth.has(closure.monthKey)) return;
+        latestByMonth.set(closure.monthKey, closure);
+      });
+
+      const monthKeys = [...new Set([...monthKeysFromMinimumUntilCurrent(), ...latestByMonth.keys()])]
+        .filter((monthKey) => monthKey >= MIN_MONTHLY_CLOSURE_MONTH_KEY)
+        .sort((left, right) => right.localeCompare(left));
+
+      return NextResponse.json({
+        months: monthKeys.map((monthKey) => serializeClosureMonth(monthKey, latestByMonth.get(monthKey) || null)),
+      });
+    }
+
     const monthKey = parseMonthKey(request.nextUrl.searchParams.get("month") || currentMonthKey()).monthKey;
     const mode = String(request.nextUrl.searchParams.get("mode") || "").trim();
     const closureId = String(request.nextUrl.searchParams.get("closureId") || "").trim();
     const wantsLive = mode === "live";
     const exportType = request.nextUrl.searchParams.get("export");
     const wantsPayrollCsv = exportType === "payroll-csv";
+    const wantsPayrollExcel = exportType === "payroll-xlsx";
     const wantsDetailedExcel = exportType === "detailed-xlsx";
+    const completeBaseHours = parseBooleanOption(request.nextUrl.searchParams.get("completeBaseHours"), true);
+    const baseCompletionEmployeeIds = parseEmployeeIdList(request.nextUrl.searchParams.get("baseCompletionEmployeeIds"));
     const closures = await MonthlyAttendanceClosure.find({ monthKey })
       .sort({ version: -1, closedAt: -1 })
       .lean();
     const closure = closureId
       ? closures.find((item) => item._id.toString() === closureId) || null
       : closures.find((item) => item.isLatest !== false) || closures[0] || null;
-    const snapshot = wantsLive || !closure ? await buildComparisonSnapshot(request, monthKey) : null;
+    const snapshot = wantsLive || !closure
+      ? await buildComparisonSnapshot(request, monthKey, {
+        completeBaseHours,
+        baseCompletionEmployeeIds: baseCompletionEmployeeIds.length ? baseCompletionEmployeeIds : null,
+      })
+      : null;
 
     if (wantsPayrollCsv) {
       const rows = snapshot?.rows || closure?.rows || [];
@@ -544,6 +709,19 @@ export async function GET(request) {
         headers: {
           "Content-Type": "text/csv; charset=utf-8",
           "Content-Disposition": `attachment; filename="cierre-mensual-${monthKey}.csv"`,
+          "Cache-Control": "no-store",
+        },
+      });
+    }
+
+    if (wantsPayrollExcel) {
+      const rows = snapshot?.rows || closure?.rows || [];
+      const excel = await buildPayrollExcel(rows, monthKey);
+
+      return new Response(excel, {
+        headers: {
+          "Content-Type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+          "Content-Disposition": `attachment; filename="formato-nomina-${monthKey}.xlsx"`,
           "Cache-Control": "no-store",
         },
       });
@@ -571,6 +749,7 @@ export async function GET(request) {
         id: item._id.toString(),
         version: Number(item.version) || 1,
         isLatest: item.isLatest !== false,
+        completeBaseHours: item.completeBaseHours !== false,
         closedBy: item.closedBy || "admin",
         closedAt: item.closedAt,
       })),
@@ -597,19 +776,24 @@ export async function POST(request) {
 
     const body = await request.json().catch(() => ({}));
     const monthKey = parseMonthKey(body.month || currentMonthKey()).monthKey;
-    const completeBaseHours = Boolean(body.completeBaseHours);
+    const completeBaseHours = parseBooleanOption(body.completeBaseHours, true);
+    const baseCompletionEmployeeIds = parseEmployeeIdList(body.baseCompletionEmployeeIds);
     const latest = await MonthlyAttendanceClosure.findOne({ monthKey })
       .sort({ version: -1, closedAt: -1 })
       .lean();
     const version = Number(latest?.version || 0) + 1;
 
-    const snapshot = await buildComparisonSnapshot(request, monthKey, { completeBaseHours });
+    const snapshot = await buildComparisonSnapshot(request, monthKey, {
+      completeBaseHours,
+      baseCompletionEmployeeIds: baseCompletionEmployeeIds.length ? baseCompletionEmployeeIds : null,
+    });
     const actor = await resolveAuditActor();
     await MonthlyAttendanceClosure.updateMany({ monthKey, isLatest: { $ne: false } }, { $set: { isLatest: false } });
     const closure = await MonthlyAttendanceClosure.create({
       monthKey,
       version,
       isLatest: true,
+      completeBaseHours,
       rows: snapshot.rows,
       totals: snapshot.totals,
       closedBy: actor,
@@ -639,6 +823,7 @@ export async function POST(request) {
         holidayExtraordinaryMinutes: snapshot.totals.holidayExtraordinaryMinutes,
         baseCompletionMinutes: snapshot.totals.baseCompletionMinutes,
         completeBaseHours,
+        baseCompletionEmployeeIds,
         lateMinutes: snapshot.totals.lateMinutes,
         salaryTotal: snapshot.totals.salaryTotal,
       },

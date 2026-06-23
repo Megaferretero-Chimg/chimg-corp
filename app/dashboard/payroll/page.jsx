@@ -12,9 +12,15 @@ export default async function PayrollPage({ searchParams }) {
   return (
     <DashboardShell
       title="Nómina y costos"
-      description="Lectura económica del período: plan, ejecución, cierre mensual y detalle por empleado."
+      description="Comparativo del costo planificado contra el cierre mensual guardado, con variaciones por área y empleado."
     >
-      <PayrollHomeView initialMonth={resolvedSearchParams?.month || formatEcuadorMonthKey()} />
+      <PayrollHomeView
+        initialFilters={{
+          month: resolvedSearchParams?.month || formatEcuadorMonthKey(),
+          branchCode: resolvedSearchParams?.branchCode || "",
+          areaCode: resolvedSearchParams?.areaCode || "",
+        }}
+      />
     </DashboardShell>
   );
 }

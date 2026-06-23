@@ -1,17 +1,14 @@
-import DashboardShell from "@/components/dashboard/DashboardShell";
-import PayrollExecutedCostView from "@/components/payroll/PayrollExecutedCostView";
+import { redirect } from "next/navigation";
 
-export const metadata = {
-  title: "Costo ejecutado | Control de Asistencia",
-};
+import { planningModulePath } from "@/lib/modules/planning/routes";
 
-export default function PayrollExecutedCostPage() {
-  return (
-    <DashboardShell
-      title="Costo ejecutado"
-      description="Costo real calculado desde el cierre mensual de asistencia."
-    >
-      <PayrollExecutedCostView />
-    </DashboardShell>
-  );
+export default async function PayrollExecutedCostPage({ searchParams }) {
+  const resolvedSearchParams = await searchParams;
+  const params = new URLSearchParams();
+
+  ["month", "branchCode", "areaCode"].forEach((key) => {
+    if (resolvedSearchParams?.[key]) params.set(key, resolvedSearchParams[key]);
+  });
+
+  redirect(`${planningModulePath("/payroll")}${params.size ? `?${params.toString()}` : ""}`);
 }

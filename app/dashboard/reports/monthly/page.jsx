@@ -1,21 +1,20 @@
 import DashboardShell from "@/components/dashboard/DashboardShell";
-import ModuleScaffold from "@/components/dashboard/ModuleScaffold";
+import MonthlyReportsView from "@/components/reports/MonthlyReportsView";
+import { formatEcuadorMonthKey } from "@/lib/datetime/ecuador";
 
 export const metadata = {
   title: "Reporte mensual | Control de Asistencia",
 };
 
-export default function ReportsMonthlyPage() {
+export default async function ReportsMonthlyPage({ searchParams }) {
+  const resolvedSearchParams = await searchParams;
+
   return (
     <DashboardShell
       title="Reporte mensual"
-      description="Página base para el cierre integral del mes."
+      description="Resumen básico mes a mes con cierre, horas, costos y exportables principales."
     >
-      <ModuleScaffold
-        eyebrow="Reportes"
-        title="Cierre mensual"
-        description="Aquí saldrá luego el resumen consolidado del mes con planificación, ejecución, costos, novedades y cumplimiento."
-      />
+      <MonthlyReportsView initialMonth={resolvedSearchParams?.month || formatEcuadorMonthKey()} />
     </DashboardShell>
   );
 }

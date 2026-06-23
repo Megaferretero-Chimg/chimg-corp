@@ -7,6 +7,23 @@ import Branch from "@/models/Branch";
 
 const ACCEPTED_EXTENSIONS = [".xls", ".xlsx", ".csv", ".dat"];
 
+function parseMonthKey(value) {
+  const match = String(value || "").trim().match(/^(\d{4})-(\d{2})$/);
+
+  if (!match) {
+    return null;
+  }
+
+  const year = Number(match[1]);
+  const month = Number(match[2]);
+
+  if (!Number.isInteger(year) || !Number.isInteger(month) || month < 1 || month > 12) {
+    return null;
+  }
+
+  return { month, year };
+}
+
 function hasValidExcelExtension(fileName) {
   const normalizedName = String(fileName || "").toLowerCase();
   return ACCEPTED_EXTENSIONS.some((extension) => normalizedName.endsWith(extension));
@@ -70,6 +87,7 @@ export async function POST(request) {
     const formData = await request.formData();
     const file = formData.get("file");
     const branchCode = String(formData.get("branchCode") || "").trim().toUpperCase();
+    const period = parseMonthKey(formData.get("monthKey"));
 
     if (!file || typeof file.arrayBuffer !== "function") {
       return NextResponse.json(
@@ -88,6 +106,13 @@ export async function POST(request) {
     if (!branchCode) {
       return NextResponse.json(
         { error: "Selecciona la sucursal de origen del biométrico." },
+        { status: 400 },
+      );
+    }
+
+    if (!period) {
+      return NextResponse.json(
+        { error: "Selecciona el mes al que pertenece la carga." },
         { status: 400 },
       );
     }
@@ -117,6 +142,8 @@ export async function POST(request) {
       originalFile,
       branchCode,
       branchName: branch.name || branchCode,
+      month: period.month,
+      year: period.year,
       status: "uploaded",
     });
 
@@ -129,6 +156,8 @@ export async function POST(request) {
         fileSize: uploadDocument.fileSize,
         branchCode: uploadDocument.branchCode,
         branchName: uploadDocument.branchName,
+        month: uploadDocument.month,
+        year: uploadDocument.year,
         status: uploadDocument.status,
         normalizedAt: null,
         hasNormalization: false,

@@ -1,27 +1,14 @@
-import DashboardShell from "@/components/dashboard/DashboardShell";
-import PayrollPlannedCostView from "@/components/payroll/PayrollPlannedCostView";
+import { redirect } from "next/navigation";
 
-export const metadata = {
-  title: "Analisis de costo planificado | Control de Asistencia",
-};
+import { planningModulePath } from "@/lib/modules/planning/routes";
 
 export default async function PayrollPlannedCostAnalysisPage({ searchParams }) {
-  const {
-    month = "",
-    branchCode = "",
-    areaCode = "",
-    roleCode = "",
-  } = await searchParams;
+  const resolvedSearchParams = await searchParams;
+  const params = new URLSearchParams();
 
-  return (
-    <DashboardShell
-      title="Analisis de costo planificado"
-      description="Filtra el presupuesto mensual por sucursal, area, rol y empleado."
-    >
-      <PayrollPlannedCostView
-        initialFilters={{ month, branchCode, areaCode, roleCode }}
-        mode="analysis"
-      />
-    </DashboardShell>
-  );
+  ["month", "branchCode", "areaCode"].forEach((key) => {
+    if (resolvedSearchParams?.[key]) params.set(key, resolvedSearchParams[key]);
+  });
+
+  redirect(`${planningModulePath("/payroll")}${params.size ? `?${params.toString()}` : ""}`);
 }

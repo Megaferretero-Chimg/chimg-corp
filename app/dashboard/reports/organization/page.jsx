@@ -1,21 +1,12 @@
-import DashboardShell from "@/components/dashboard/DashboardShell";
-import ModuleScaffold from "@/components/dashboard/ModuleScaffold";
+import { redirect } from "next/navigation";
 
-export const metadata = {
-  title: "Reporte por área y rol | Control de Asistencia",
-};
+import { planningModulePath } from "@/lib/modules/planning/routes";
 
-export default function ReportsOrganizationPage() {
-  return (
-    <DashboardShell
-      title="Reporte por área y rol"
-      description="Página base para análisis organizativo."
-    >
-      <ModuleScaffold
-        eyebrow="Reportes"
-        title="Vista estructural del negocio"
-        description="Aquí luego mediremos demanda, cobertura, costo y cumplimiento por área y por rol."
-      />
-    </DashboardShell>
-  );
+export default async function ReportsOrganizationPage({ searchParams }) {
+  const resolvedSearchParams = await searchParams;
+  const params = new URLSearchParams();
+
+  if (resolvedSearchParams?.month) params.set("month", resolvedSearchParams.month);
+
+  redirect(`${planningModulePath("/reports/monthly")}${params.size ? `?${params.toString()}` : ""}`);
 }

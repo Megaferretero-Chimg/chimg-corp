@@ -57,43 +57,6 @@
   padding: 0 0.75rem;
 }
 
-.primaryButton,
-.secondaryButton,
-.dangerButton {
-  width: 100%;
-  min-width: 0;
-  min-height: 2.55rem;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 0.45rem;
-  border: 0;
-  border-radius: 999px;
-  background: var(--primary);
-  color: white;
-  font-weight: 800;
-  padding: 0 1rem;
-  white-space: nowrap;
-  cursor: pointer;
-}
-
-.secondaryButton {
-  border: 1px solid rgba(21, 80, 160, 0.18);
-  background: #edf4ff;
-  color: #1550a0;
-}
-
-.dangerButton {
-  border: 1px solid rgba(180, 35, 24, 0.2);
-  background: #fff0f0;
-  color: #b42318;
-}
-
-.dangerButton:hover {
-  background: #fee4e2;
-  border-color: rgba(180, 35, 24, 0.32);
-}
-
 .toggleButton {
   width: 100%;
   min-width: 0;
@@ -126,39 +89,81 @@
   box-shadow: inset 0 0 0 1px rgba(180, 35, 24, 0.08);
 }
 
-.primaryButton:disabled,
-.secondaryButton:disabled,
-.dangerButton:disabled {
-  cursor: not-allowed;
-  opacity: 0.58;
-}
-
-.authorizationToolbar {
+.summaryCards {
   display: grid;
-  grid-template-columns: minmax(12rem, 1fr) auto;
-  gap: 0.9rem;
-  align-items: center;
-  border-top: 1px solid rgba(16, 33, 62, 0.08);
-  padding-top: 0.95rem;
+  grid-template-columns: repeat(4, minmax(9rem, 1fr));
+  gap: 0.75rem;
 }
 
-.authorizationToolbar strong {
-  display: block;
+.summaryCards article {
+  display: grid;
+  align-content: center;
+  gap: 0.3rem;
+  min-height: 5.2rem;
+  border: 1px solid rgba(16, 33, 62, 0.08);
+  border-radius: 0.78rem;
+  background: rgba(255, 255, 255, 0.96);
+  box-shadow: var(--shadow-panel);
+  padding: 0.9rem 1rem;
+}
+
+.summaryCards span {
+  color: var(--text-muted);
+  font-size: var(--font-size-sm);
+  font-weight: 800;
+}
+
+.summaryCards strong {
   color: var(--text);
-  font-size: 0.96rem;
-  font-weight: 900;
+  font-size: clamp(1.05rem, 1.8vw, 1.45rem);
+  line-height: 1.1;
 }
 
-.authorizationToolbar span {
-  display: block;
-  margin-top: 0.16rem;
+.summaryCards small {
+  color: var(--text-muted);
+  font-size: var(--font-size-sm);
+  font-weight: 400;
 }
 
-.authorizationActions {
+.salarySummaryCard {
+  border-color: rgba(29, 78, 216, 0.28) !important;
+  background: linear-gradient(135deg, #1d4ed8, #1550a0) !important;
+  box-shadow: 0 18px 36px rgba(29, 78, 216, 0.2) !important;
+}
+
+.salarySummaryCard span,
+.salarySummaryCard strong,
+.salarySummaryCard small {
+  color: #fff;
+}
+
+.salarySummaryCard span,
+.salarySummaryCard small {
+  opacity: 0.88;
+}
+
+.salarySummaryValues {
   display: grid;
-  grid-template-columns: repeat(4, minmax(8.5rem, auto));
-  gap: 0.55rem;
-  align-items: center;
+  grid-template-columns: 1fr auto;
+  gap: 0.18rem 0.8rem;
+  align-items: baseline;
+}
+
+.salarySummaryValues strong {
+  font-size: clamp(0.95rem, 1.45vw, 1.22rem);
+}
+
+.salarySummarySecondary {
+  display: block;
+  color: #fff !important;
+  font-size: 0.88rem !important;
+  font-weight: 500 !important;
+  opacity: 0.78;
+}
+
+.salarySummaryValues small {
+  justify-self: end;
+  font-size: 0.7rem;
 }
 
 .errorBox {
@@ -240,7 +245,7 @@
 
 .tableScroller table {
   width: 100%;
-  min-width: 1420px;
+  min-width: 1240px;
   border-collapse: collapse;
 }
 
@@ -277,42 +282,73 @@
   background: #f8fbff;
 }
 
-.rowActions {
+.controlCounters {
   display: grid;
-  grid-template-columns: 1fr;
-  gap: 0.35rem;
-  min-width: 8.2rem;
+  grid-template-columns: repeat(2, minmax(4rem, 1fr));
+  gap: 0.75rem;
+  max-width: 10rem;
 }
 
-.rowActions button {
-  display: inline-flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 0.4rem;
-  min-height: 2rem;
-  border: 1px solid rgba(16, 33, 62, 0.1);
-  border-radius: 999px;
-  background: #ffffff;
-  color: #16325f;
-  font-size: 0.76rem;
-  font-weight: 900;
-  padding: 0 0.55rem 0 0.7rem;
-  cursor: pointer;
-  transition:
-    background 160ms ease,
-    border-color 160ms ease,
-    transform 160ms ease;
+.controlCounter {
+  display: grid;
+  gap: 0.18rem;
+  color: #263446;
 }
 
-.rowActions button:hover:not(:disabled) {
-  transform: translateY(-1px);
-  border-color: rgba(21, 80, 160, 0.24);
-  background: #edf4ff;
+.controlCounter strong {
+  display: block;
+  color: inherit;
+  font-size: 0.92rem;
+  font-weight: 800;
+  line-height: 1.05;
 }
 
-.rowActions button:disabled {
-  cursor: not-allowed;
-  opacity: 0.48;
+.controlCounter span {
+  display: block;
+  margin: 0;
+  color: inherit;
+  font-size: 0.68rem;
+  font-weight: 500;
+  line-height: 1.1;
+  opacity: 0.78;
+}
+
+.controlCounter_warning {
+  color: #b7791f;
+}
+
+.controlCounter_danger {
+  color: #c0392b;
+}
+
+.flatMetrics {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(4.6rem, 1fr));
+  gap: 0.75rem;
+  max-width: 11rem;
+}
+
+.flatMetric {
+  display: grid !important;
+  gap: 0.18rem;
+  margin: 0 !important;
+  color: var(--text);
+}
+
+.flatMetric strong {
+  display: block;
+  color: var(--text);
+  font-size: 0.92rem;
+  font-weight: 700;
+  line-height: 1.05;
+}
+
+.flatMetric small {
+  display: block;
+  color: var(--text-muted);
+  font-size: 0.68rem;
+  font-weight: 500;
+  line-height: 1.1;
 }
 
 .inlineStats {
@@ -428,26 +464,6 @@
   overflow: hidden;
 }
 
-.confirmSummary {
-  display: grid;
-  grid-template-columns: auto 1fr;
-  gap: 0.55rem 1rem;
-  border: 1px solid rgba(16, 33, 62, 0.08);
-  border-radius: 0.75rem;
-  background: #f8fafc;
-  padding: 0.85rem;
-}
-
-.confirmSummary span {
-  color: var(--text-muted);
-  font-weight: 800;
-}
-
-.confirmSummary strong {
-  color: var(--text);
-  font-weight: 900;
-}
-
 .skeletonTable span {
   display: block;
   border-radius: 0.9rem;
@@ -468,15 +484,8 @@
 @media (max-width: 760px) {
   .toolbar,
   .filterGrid,
-  .authorizationToolbar,
-  .authorizationActions {
+  .summaryCards {
     grid-template-columns: 1fr;
-  }
-
-  .primaryButton,
-  .secondaryButton,
-  .dangerButton {
-    width: 100%;
   }
 }
 

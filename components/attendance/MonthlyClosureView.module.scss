@@ -90,6 +90,73 @@
   min-width: 0;
 }
 
+.crossActions {
+  align-self: stretch;
+  align-items: end;
+}
+
+.toolbar .switchControl {
+  min-height: 2.55rem;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  border: 1px solid rgba(16, 33, 62, 0.1);
+  border-radius: 999px;
+  background: #ffffff;
+  color: #10213e;
+  padding: 0 0.85rem 0 0.55rem;
+  cursor: pointer;
+  user-select: none;
+}
+
+.toolbar .switchControl input {
+  position: absolute;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.toolbar .switchControl > span {
+  position: relative;
+  width: 2.3rem;
+  height: 1.28rem;
+  flex: 0 0 auto;
+  border-radius: 999px;
+  background: #d9e2ee;
+  transition: background 160ms ease;
+}
+
+.toolbar .switchControl > span::after {
+  content: "";
+  position: absolute;
+  top: 0.18rem;
+  left: 0.18rem;
+  width: 0.92rem;
+  height: 0.92rem;
+  border-radius: 50%;
+  background: #ffffff;
+  box-shadow: 0 3px 8px rgba(16, 33, 62, 0.2);
+  transition: transform 160ms ease;
+}
+
+.toolbar .switchControl input:checked + span {
+  background: #1f5c9a;
+}
+
+.toolbar .switchControl input:checked + span::after {
+  transform: translateX(1.02rem);
+}
+
+.toolbar .switchControl strong {
+  font-size: var(--font-size-sm);
+  font-weight: 900;
+  white-space: nowrap;
+}
+
+.toolbar .switchControl:has(input:disabled) {
+  cursor: not-allowed;
+  opacity: 0.58;
+}
+
 .secondaryButton {
   border: 1px solid rgba(16, 33, 62, 0.12);
   background: white;
@@ -133,6 +200,100 @@
   color: #10213e;
   font-size: clamp(1.05rem, 1.7vw, 1.45rem);
   font-weight: 950;
+}
+
+.areaSection {
+  display: grid;
+  gap: 0.75rem;
+  border: 1px solid rgba(16, 33, 62, 0.08);
+  border-radius: var(--radius-panel);
+  background: rgba(255, 255, 255, 0.96);
+  box-shadow: var(--shadow-panel);
+  padding: 1rem;
+}
+
+.sectionHeader {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  align-items: end;
+}
+
+.sectionHeader span,
+.sectionHeader small {
+  display: block;
+  color: var(--text-muted);
+  font-size: var(--font-size-sm);
+  font-weight: 800;
+}
+
+.sectionHeader strong {
+  display: block;
+  margin-top: 0.12rem;
+  color: #10213e;
+  font-size: 1.05rem;
+  font-weight: 850;
+}
+
+.areaGrid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.7rem;
+}
+
+.areaGrid article {
+  min-width: 0;
+  display: grid;
+  gap: 0.7rem;
+  border: 1px solid rgba(16, 33, 62, 0.08);
+  border-radius: 0.75rem;
+  background: #f8fafc;
+  padding: 0.85rem;
+}
+
+.areaGrid article > div:first-child {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.7rem;
+  align-items: baseline;
+}
+
+.areaGrid strong {
+  color: #10213e;
+  font-size: 0.95rem;
+  font-weight: 820;
+}
+
+.areaGrid span,
+.areaGrid small {
+  color: var(--text-muted);
+  font-size: var(--font-size-sm);
+  font-weight: 650;
+}
+
+.areaGrid dl {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.45rem 0.75rem;
+  margin: 0;
+}
+
+.areaGrid dl div {
+  min-width: 0;
+}
+
+.areaGrid dt {
+  color: var(--text-muted);
+  font-size: 0.68rem;
+  font-weight: 760;
+  text-transform: uppercase;
+}
+
+.areaGrid dd {
+  margin: 0.08rem 0 0;
+  color: #10213e;
+  font-size: 0.86rem;
+  font-weight: 620;
 }
 
 .exportButton {
@@ -283,6 +444,10 @@
   border-collapse: collapse;
 }
 
+.payrollTableShell table {
+  min-width: 760px;
+}
+
 .tableScroller th,
 .tableScroller td {
   padding: 0.68rem 0.8rem;
@@ -325,6 +490,81 @@
   color: #10213e;
   font-size: 0.94rem;
   font-weight: 850;
+}
+
+.dniValue {
+  color: #10213e;
+  font-size: 0.88rem;
+  font-weight: 650;
+  font-variant-numeric: tabular-nums;
+}
+
+.rowSwitch {
+  display: inline-grid;
+  grid-template-columns: auto 1fr;
+  gap: 0.16rem 0.5rem;
+  align-items: center;
+  cursor: pointer;
+}
+
+.rowSwitch input {
+  position: absolute;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.rowSwitch > span {
+  position: relative;
+  grid-row: span 2;
+  width: 2.15rem;
+  height: 1.2rem;
+  border-radius: 999px;
+  background: #d9e2ee;
+  transition: background 160ms ease;
+}
+
+.rowSwitch > span::after {
+  content: "";
+  position: absolute;
+  top: 0.17rem;
+  left: 0.17rem;
+  width: 0.86rem;
+  height: 0.86rem;
+  border-radius: 50%;
+  background: #ffffff;
+  box-shadow: 0 3px 8px rgba(16, 33, 62, 0.2);
+  transition: transform 160ms ease;
+}
+
+.rowSwitch input:checked + span {
+  background: #1f5c9a;
+}
+
+.rowSwitch input:checked + span::after {
+  transform: translateX(0.95rem);
+}
+
+.rowSwitch strong {
+  color: #10213e;
+  font-size: 0.82rem;
+  font-weight: 900;
+}
+
+.rowSwitch small {
+  color: var(--text-muted);
+  font-size: 0.72rem;
+  font-weight: 760;
+}
+
+.rowSwitch:has(input:disabled) {
+  cursor: not-allowed;
+  opacity: 0.58;
+}
+
+.notAvailable {
+  color: var(--text-muted);
+  font-size: var(--font-size-sm);
+  font-weight: 760;
 }
 
 .metricColumn {
@@ -413,9 +653,14 @@
     grid-template-columns: 1fr;
   }
 
+  .areaGrid {
+    grid-template-columns: 1fr;
+  }
+
   .secondaryButton,
   .exportButton,
   .saveButton,
+  .switchControl,
   .viewModeButton {
     width: 100%;
     flex-basis: auto;
@@ -425,6 +670,10 @@
 @media (max-width: 1180px) {
   .summaryGrid {
     grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .areaGrid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
 

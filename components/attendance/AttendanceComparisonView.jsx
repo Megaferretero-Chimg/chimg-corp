@@ -1,10 +1,9 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { AlertTriangle, CheckCircle2, RefreshCw } from "lucide-react";
+import { AlertTriangle } from "lucide-react";
 
-import ConfirmDialog from "@/components/ui/ConfirmDialog";
 import { formatEcuadorMonthKey } from "@/lib/datetime/ecuador";
 import { planningModulePath } from "@/lib/modules/planning/routes";
 import styles from "./AttendanceComparisonView.module.scss";
@@ -61,6 +60,24 @@ function minutes(value) {
   return Math.max(0, Math.round(Number(value) || 0));
 }
 
+function formatMinutes(value) {
+  const totalMinutes = minutes(value);
+  const hours = Math.floor(totalMinutes / 60);
+  const rest = totalMinutes % 60;
+
+  if (!totalMinutes) return "0m";
+  if (!hours) return `${rest}m`;
+  return rest ? `${hours}h ${rest}m` : `${hours}h`;
+}
+
+function moneyLabel(value) {
+  return new Intl.NumberFormat("es-EC", {
+    style: "currency",
+    currency: "USD",
+    minimumFractionDigits: 2,
+  }).format(Number(value) || 0);
+}
+
 function normalizeSearch(value) {
   return String(value || "")
     .normalize("NFD")
@@ -69,91 +86,16 @@ function normalizeSearch(value) {
     .trim();
 }
 
-function isExtraordinaryDay(day) {
-  return ["holiday", "weekend_overtime", "off_day"].includes(day?.dayType);
-}
+function operationalAlertCount(summary = {}) {
+  if (summary.operationalAlertDays !== undefined) {
+    return Number(summary.operationalAlertDays) || 0;
+  }
 
-function detectedLateIssueMinutes(day) {
-  if (isExtraordinaryDay(day)) return 0;
-
-  return Math.max(
-    0,
-    (Number(day?.lateMinutes) || 0) + (Number(day?.lunchOverageRemainderMinutes) || 0),
-    Number(day?.authorization?.detectedLateMinutes) || 0,
+  return (
+    (Number(summary.absentDays) || 0) +
+    (Number(summary.incompletePunchDays ?? summary.missingPunchDays) || 0) +
+    (Number(summary.unplannedWorkDays) || 0)
   );
-}
-
-function currentAuthorizedSupplementaryMinutes(day) {
-  return minutes(day?.authorization?.authorizedSupplementaryMinutes ?? day?.supplementaryMinutes);
-}
-
-function currentAuthorizedExtraordinaryMinutes(day) {
-  return minutes(day?.authorization?.authorizedExtraordinaryMinutes ?? day?.extraordinaryMinutes);
-}
-
-function detectedSupplementaryMinutes(day) {
-  return minutes(day?.detectedSupplementaryMinutes);
-}
-
-function detectedExtraordinaryMinutes(day) {
-  return minutes(day?.detectedExtraordinaryMinutes);
-}
-
-function buildDayDecisionPayload(employeeId, day, type) {
-  const detectedSupplementary = detectedSupplementaryMinutes(day);
-  const detectedExtraordinary = detectedExtraordinaryMinutes(day);
-  const authorizeSupplementary = ["all", "supplementary"].includes(type);
-  const authorizeExtraordinary = ["all", "extraordinary"].includes(type);
-
-  return {
-    employeeId,
-    dateKey: day.dateKey,
-    decision: "custom",
-    detectedSupplementaryMinutes: detectedSupplementary,
-    detectedExtraordinaryMinutes: detectedExtraordinary,
-    authorizedSupplementaryMinutes: authorizeSupplementary
-      ? detectedSupplementary
-      : currentAuthorizedSupplementaryMinutes(day),
-    authorizedExtraordinaryMinutes: authorizeExtraordinary
-      ? detectedExtraordinary
-      : currentAuthorizedExtraordinaryMinutes(day),
-    detectedLateMinutes: detectedLateIssueMinutes(day),
-    adjustedLateMinutes: minutes(day?.authorization?.adjustedLateMinutes ?? detectedLateIssueMinutes(day)),
-    detectedEarlyLeaveMinutes: minutes(day?.authorization?.detectedEarlyLeaveMinutes ?? day?.earlyLeaveMinutes),
-    adjustedEarlyLeaveMinutes: minutes(day?.authorization?.adjustedEarlyLeaveMinutes ?? day?.earlyLeaveMinutes),
-    note: type === "all"
-      ? "Autorización desde comparativo: todas las horas detectadas."
-      : type === "supplementary"
-        ? "Autorización desde comparativo: suplementarias detectadas."
-        : "Autorización desde comparativo: extraordinarias detectadas.",
-  };
-}
-
-function authorizationTypeLabel(type) {
-  const labels = {
-    all: "Autorizar todo",
-    supplementary: "Autorizar suplementarias",
-    extraordinary: "Autorizar extraordinarias",
-  };
-
-  return labels[type] || "Autorizar";
-}
-
-function authorizableDaysForRow(row, type) {
-  return (row.days || []).filter((day) => {
-    if (day.authorization?.isSaved) return false;
-    if (type === "supplementary") {
-      return detectedSupplementaryMinutes(day) > currentAuthorizedSupplementaryMinutes(day);
-    }
-    if (type === "extraordinary") {
-      return detectedExtraordinaryMinutes(day) > currentAuthorizedExtraordinaryMinutes(day);
-    }
-
-    return (
-      detectedSupplementaryMinutes(day) > currentAuthorizedSupplementaryMinutes(day) ||
-      detectedExtraordinaryMinutes(day) > currentAuthorizedExtraordinaryMinutes(day)
-    );
-  });
 }
 
 function MetricColumn({ label, value, tone = "neutral" }) {
@@ -161,6 +103,24 @@ function MetricColumn({ label, value, tone = "neutral" }) {
     <span className={`${styles.metricItem} ${styles[`metricItem_${tone}`]}`}>
       <small>{label}</small>
       <strong>{value}</strong>
+    </span>
+  );
+}
+
+function ControlCounter({ label, value, tone = "neutral" }) {
+  return (
+    <div className={`${styles.controlCounter} ${styles[`controlCounter_${tone}`]}`}>
+      <strong>{value}</strong>
+      <span>{label}</span>
+    </div>
+  );
+}
+
+function FlatMetric({ label, value }) {
+  return (
+    <span className={styles.flatMetric}>
+      <strong>{value}</strong>
+      <small>{label}</small>
     </span>
   );
 }
@@ -176,12 +136,7 @@ export default function AttendanceComparisonView() {
   const [employeeSearch, setEmployeeSearch] = useState("");
   const [isLoadingCatalogs, setIsLoadingCatalogs] = useState(true);
   const [isLoadingComparison, setIsLoadingComparison] = useState(true);
-  const [isResettingDecisions, setIsResettingDecisions] = useState(false);
-  const [pendingAuthorization, setPendingAuthorization] = useState(null);
-  const [isAuthorizing, setIsAuthorizing] = useState(false);
-  const [showResetConfirm, setShowResetConfirm] = useState(false);
   const [error, setError] = useState("");
-  const isLoading = isLoadingCatalogs || isLoadingComparison || isResettingDecisions || isAuthorizing;
 
   const filteredEmployees = useMemo(
     () =>
@@ -261,11 +216,48 @@ export default function AttendanceComparisonView() {
 
     return [...groups.values()].sort((left, right) => left.label.localeCompare(right.label, "es"));
   }, [visibleRows]);
-  const globalAuthorizationCounts = useMemo(() => ({
-    all: visibleRows.reduce((total, row) => total + authorizableDaysForRow(row, "all").length, 0),
-    supplementary: visibleRows.reduce((total, row) => total + authorizableDaysForRow(row, "supplementary").length, 0),
-    extraordinary: visibleRows.reduce((total, row) => total + authorizableDaysForRow(row, "extraordinary").length, 0),
-  }), [visibleRows]);
+  const summaryCounters = useMemo(() => {
+    const totals = visibleRows.reduce((accumulator, row) => {
+      const supplementaryMinutes = minutes(row.summary?.supplementaryMinutes);
+      const extraordinaryMinutes = minutes(row.summary?.extraordinaryMinutes);
+      const hourlyRate = Number(row.summary?.hourlyRateRaw) || 0;
+      const supplementaryMultiplier = Number(row.summary?.supplementaryMultiplier) || 0.5;
+      const extraordinaryMultiplier = Number(row.summary?.extraordinaryMultiplier) || 1;
+      const plannedSalary = Number(row.summary?.salaryPlanned) || 0;
+      const realSalary = Number(row.summary?.salaryReal) || 0;
+
+      accumulator.supplementaryMinutes += supplementaryMinutes;
+      accumulator.extraordinaryMinutes += extraordinaryMinutes;
+      accumulator.supplementaryValue += (supplementaryMinutes / 60) * hourlyRate * supplementaryMultiplier;
+      accumulator.extraordinaryValue += (extraordinaryMinutes / 60) * hourlyRate * extraordinaryMultiplier;
+      accumulator.excessValue += Math.max(0, realSalary - plannedSalary);
+      accumulator.salaryPlanned += plannedSalary;
+      accumulator.salaryReal += realSalary;
+      accumulator.salaryTotal += Number(row.summary?.salaryProjected) || 0;
+      return accumulator;
+    }, {
+      supplementaryMinutes: 0,
+      extraordinaryMinutes: 0,
+      supplementaryValue: 0,
+      extraordinaryValue: 0,
+      excessValue: 0,
+      salaryPlanned: 0,
+      salaryReal: 0,
+      salaryTotal: 0,
+    });
+
+    return {
+      ...totals,
+      supplementaryLabel: formatMinutes(totals.supplementaryMinutes),
+      extraordinaryLabel: formatMinutes(totals.extraordinaryMinutes),
+      supplementaryValueLabel: moneyLabel(totals.supplementaryValue),
+      extraordinaryValueLabel: moneyLabel(totals.extraordinaryValue),
+      excessValueLabel: moneyLabel(totals.excessValue),
+      salaryPlannedLabel: moneyLabel(totals.salaryPlanned),
+      salaryRealLabel: moneyLabel(totals.salaryReal),
+      salaryTotalLabel: moneyLabel(totals.salaryTotal),
+    };
+  }, [visibleRows]);
 
   const employeeDatalistId = "attendance-comparison-employees";
   const selectedEmployeeName = useMemo(
@@ -287,7 +279,7 @@ export default function AttendanceComparisonView() {
     }
   }
 
-  async function loadCatalogs() {
+  const loadCatalogs = useCallback(async () => {
     try {
       setIsLoadingCatalogs(true);
       const [employeesResponse, branchesResponse] = await Promise.all([
@@ -314,20 +306,21 @@ export default function AttendanceComparisonView() {
     } finally {
       setIsLoadingCatalogs(false);
     }
-  }
+  }, []);
 
-  async function loadComparison(nextFilters = filters) {
+  const loadComparison = useCallback(async (nextFilters) => {
     try {
       setIsLoadingComparison(true);
       setError("");
 
+      const targetFilters = nextFilters || initialFiltersRef.current;
       const params = new URLSearchParams();
-      params.set("month", nextFilters.month);
+      params.set("month", targetFilters.month);
 
-      if (nextFilters.branchCode) params.set("branchCode", nextFilters.branchCode);
-      if (nextFilters.areaCode) params.set("areaCode", nextFilters.areaCode);
-      if (nextFilters.roleCode) params.set("roleCode", nextFilters.roleCode);
-      if (nextFilters.employeeId) params.set("employeeId", nextFilters.employeeId);
+      if (targetFilters.branchCode) params.set("branchCode", targetFilters.branchCode);
+      if (targetFilters.areaCode) params.set("areaCode", targetFilters.areaCode);
+      if (targetFilters.roleCode) params.set("roleCode", targetFilters.roleCode);
+      if (targetFilters.employeeId) params.set("employeeId", targetFilters.employeeId);
 
       const response = await fetch(`/api/attendance/comparison?${params.toString()}`);
       const payload = await response.json();
@@ -342,7 +335,7 @@ export default function AttendanceComparisonView() {
     } finally {
       setIsLoadingComparison(false);
     }
-  }
+  }, []);
 
   function handleFilterChange(key, value) {
     const nextValues = { [key]: value };
@@ -393,101 +386,6 @@ export default function AttendanceComparisonView() {
     return `${planningModulePath(`/attendance/comparison/${employeeId}`)}?${params.toString()}`;
   }
 
-  async function resetMonthDecisions() {
-    try {
-      setIsResettingDecisions(true);
-      setError("");
-
-      const response = await fetch("/api/attendance/day-decisions", {
-        method: "DELETE",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          scope: "month",
-          month: filters.month,
-          branchCode: filters.branchCode,
-          areaCode: filters.areaCode,
-          roleCode: filters.roleCode,
-          employeeId: filters.employeeId,
-        }),
-      });
-      const payload = await response.json();
-
-      if (!response.ok) {
-        throw new Error(payload.error || "No se pudieron reiniciar las decisiones.");
-      }
-
-      setShowResetConfirm(false);
-      await loadComparison(filters);
-    } catch (requestError) {
-      setError(requestError.message);
-    } finally {
-      setIsResettingDecisions(false);
-    }
-  }
-
-  function openAuthorizationConfirm(type, row = null) {
-    const days = row
-      ? authorizableDaysForRow(row, type)
-      : visibleRows.flatMap((visibleRow) => authorizableDaysForRow(visibleRow, type).map((day) => ({
-        ...day,
-        employeeId: visibleRow.employee.id,
-      })));
-
-    if (!days.length) return;
-
-    setPendingAuthorization({
-      type,
-      scope: row ? "employee" : "global",
-      row,
-      daysCount: days.length,
-    });
-  }
-
-  async function applyPendingAuthorization() {
-    if (!pendingAuthorization) return;
-
-    const targetRows = pendingAuthorization.row ? [pendingAuthorization.row] : visibleRows;
-    const payloads = targetRows.flatMap((row) =>
-      authorizableDaysForRow(row, pendingAuthorization.type).map((day) =>
-        buildDayDecisionPayload(row.employee.id, day, pendingAuthorization.type),
-      ),
-    );
-
-    if (!payloads.length) {
-      setPendingAuthorization(null);
-      return;
-    }
-
-    try {
-      setIsAuthorizing(true);
-      setError("");
-
-      for (const payload of payloads) {
-        const response = await fetch("/api/attendance/day-decisions", {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify(payload),
-        });
-        const result = await response.json();
-
-        if (!response.ok) {
-          throw new Error(result.error || "No se pudo guardar la autorización.");
-        }
-      }
-
-      setPendingAuthorization(null);
-      await loadComparison(filters);
-    } catch (requestError) {
-      setError(requestError.message);
-    } finally {
-      setIsAuthorizing(false);
-    }
-  }
-
   useEffect(() => {
     const timeoutId = window.setTimeout(() => {
       loadCatalogs();
@@ -497,16 +395,10 @@ export default function AttendanceComparisonView() {
     return () => {
       window.clearTimeout(timeoutId);
     };
-  }, []);
+  }, [loadCatalogs, loadComparison]);
 
   function renderComparisonRows(rowsToRender) {
     return rowsToRender.map((row) => {
-      const rowCounts = {
-        all: authorizableDaysForRow(row, "all").length,
-        supplementary: authorizableDaysForRow(row, "supplementary").length,
-        extraordinary: authorizableDaysForRow(row, "extraordinary").length,
-      };
-
       return (
         <tr
           key={row.employee.id}
@@ -526,53 +418,33 @@ export default function AttendanceComparisonView() {
             <span>{row.employee.branchName} · {row.employee.areaName} · {row.employee.roleName}</span>
           </td>
           <td>
-            <div className={styles.metricColumn}>
-              <MetricColumn label="Picadas" value={row.summary.missingPunchDays || 0} tone="warning" />
-              <MetricColumn label="Atrasos" value={row.summary.lateDays || 0} tone="danger" />
+            <div className={styles.controlCounters}>
+              <ControlCounter label="Atrasos" value={row.summary.lateDays || 0} tone="warning" />
+              <ControlCounter label="Alertas" value={operationalAlertCount(row.summary)} tone="danger" />
             </div>
           </td>
           <td>
-            <div className={styles.metricColumn}>
-              <MetricColumn label="Plan." value={minutesBadge(row.summary.plannedRegularLabel)} tone="planned" />
-              <MetricColumn label="Real" value={minutesBadge(row.summary.regularWorkedLabel)} tone="worked" />
+            <div className={styles.flatMetrics}>
+              <FlatMetric label="Planificado" value={minutesBadge(row.summary.plannedRegularLabel)} />
+              <FlatMetric label="Registrado" value={minutesBadge(row.summary.regularWorkedLabel)} />
             </div>
           </td>
           <td>
-            <div className={styles.metricColumn}>
-              <MetricColumn label="Plan." value={minutesBadge(row.summary.plannedSupplementaryLabel)} tone="planned" />
-              <MetricColumn label="Real" value={minutesBadge(row.summary.detectedSupplementaryLabel)} tone="info" />
-              <MetricColumn label="Aprob." value={minutesBadge(row.summary.supplementaryLabel)} tone="worked" />
+            <div className={styles.flatMetrics}>
+              <FlatMetric label="Planificado" value={minutesBadge(row.summary.plannedSupplementaryLabel)} />
+              <FlatMetric label="Registrado" value={minutesBadge(row.summary.detectedSupplementaryLabel)} />
             </div>
           </td>
           <td>
-            <div className={styles.metricColumn}>
-              <MetricColumn label="Plan." value={minutesBadge(row.summary.plannedExtraordinaryLabel)} tone="planned" />
-              <MetricColumn label="Real" value={minutesBadge(row.summary.detectedExtraordinaryLabel)} tone="accent" />
-              <MetricColumn label="Aprob." value={minutesBadge(row.summary.extraordinaryLabel)} tone="worked" />
+            <div className={styles.flatMetrics}>
+              <FlatMetric label="Planificado" value={minutesBadge(row.summary.plannedExtraordinaryLabel)} />
+              <FlatMetric label="Registrado" value={minutesBadge(row.summary.detectedExtraordinaryLabel)} />
             </div>
           </td>
           <td>
-            <div className={styles.metricColumn}>
-              <MetricColumn label="Plan." value={row.summary.salaryPlannedLabel} tone="planned" />
-              <MetricColumn label="Real" value={row.summary.salaryRealLabel} tone="accent" />
-              <MetricColumn label="Aprob." value={row.summary.salaryProjectedLabel} tone="worked" />
-            </div>
-          </td>
-          <td>
-            <div
-              className={styles.rowActions}
-              onClick={(event) => event.stopPropagation()}
-              onKeyDown={(event) => event.stopPropagation()}
-            >
-              <button type="button" onClick={() => openAuthorizationConfirm("supplementary", row)} disabled={isLoading || !rowCounts.supplementary}>
-                Sup.
-              </button>
-              <button type="button" onClick={() => openAuthorizationConfirm("extraordinary", row)} disabled={isLoading || !rowCounts.extraordinary}>
-                Ext.
-              </button>
-              <button type="button" onClick={() => openAuthorizationConfirm("all", row)} disabled={isLoading || !rowCounts.all}>
-                Todo
-              </button>
+            <div className={styles.flatMetrics}>
+              <FlatMetric label="Planificado" value={row.summary.salaryPlannedLabel} />
+              <FlatMetric label="Registrado" value={row.summary.salaryRealLabel} />
             </div>
           </td>
         </tr>
@@ -589,19 +461,18 @@ export default function AttendanceComparisonView() {
             <thead>
               <tr>
                 <th>Empleado</th>
-                <th>Novedades</th>
+                <th>Control</th>
                 <th>Horas laborables</th>
                 <th>Suplementarias</th>
                 <th>Extraordinarias</th>
                 <th>Sueldo</th>
-                <th>Autorizar</th>
               </tr>
             </thead>
             <tbody>
               {renderComparisonRows(rowsToRender)}
               {!rowsToRender.length ? (
                 <tr>
-                  <td colSpan={7} className={styles.emptyCell}>
+                  <td colSpan={6} className={styles.emptyCell}>
                     {emptyText}
                   </td>
                 </tr>
@@ -690,29 +561,33 @@ export default function AttendanceComparisonView() {
             </button>
           </label>
         </div>
+      </div>
 
-        <div className={styles.authorizationToolbar}>
-          <div>
-            <strong>Autorización global</strong>
-            <span>Se aplica a los empleados visibles y omite días con decisión guardada.</span>
+      <div className={styles.summaryCards}>
+        <article>
+          <span>HS</span>
+          <strong>{summaryCounters.supplementaryValueLabel}</strong>
+          <small>{summaryCounters.supplementaryLabel} suplementarias</small>
+        </article>
+        <article>
+          <span>HE</span>
+          <strong>{summaryCounters.extraordinaryValueLabel}</strong>
+          <small>{summaryCounters.extraordinaryLabel} extraordinarias</small>
+        </article>
+        <article>
+          <span>Excedente</span>
+          <strong>{summaryCounters.excessValueLabel}</strong>
+          <small>Registrado vs plan</small>
+        </article>
+        <article className={styles.salarySummaryCard}>
+          <span>Total sueldos</span>
+          <div className={styles.salarySummaryValues}>
+            <span className={styles.salarySummarySecondary}>{summaryCounters.salaryPlannedLabel}</span>
+            <small>Planificado</small>
+            <strong>{summaryCounters.salaryRealLabel}</strong>
+            <small>Registrado</small>
           </div>
-          <div className={styles.authorizationActions}>
-            <button type="button" className={styles.primaryButton} onClick={() => openAuthorizationConfirm("all")} disabled={isLoading || !globalAuthorizationCounts.all}>
-              {isAuthorizing ? <RefreshCw size={16} /> : <CheckCircle2 size={16} />}
-              Todo
-            </button>
-            <button type="button" className={styles.secondaryButton} onClick={() => openAuthorizationConfirm("supplementary")} disabled={isLoading || !globalAuthorizationCounts.supplementary}>
-              Suplementarias
-            </button>
-            <button type="button" className={styles.secondaryButton} onClick={() => openAuthorizationConfirm("extraordinary")} disabled={isLoading || !globalAuthorizationCounts.extraordinary}>
-              Extraordinarias
-            </button>
-            <button type="button" className={styles.dangerButton} onClick={() => setShowResetConfirm(true)} disabled={isLoading}>
-              {isResettingDecisions ? <RefreshCw size={16} /> : null}
-              Reiniciar
-            </button>
-          </div>
-        </div>
+        </article>
       </div>
 
       {error ? (
@@ -750,45 +625,6 @@ export default function AttendanceComparisonView() {
         </div>
       )}
 
-      <ConfirmDialog
-        isOpen={Boolean(pendingAuthorization)}
-        title={authorizationTypeLabel(pendingAuthorization?.type)}
-        message={pendingAuthorization?.scope === "employee"
-          ? `Se guardará esta autorización para ${pendingAuthorization.daysCount} días pendientes de ${pendingAuthorization.row?.employee?.fullName || "este empleado"}.`
-          : `Se guardará esta autorización para ${pendingAuthorization?.daysCount || 0} días pendientes de los empleados visibles.`}
-        confirmLabel={authorizationTypeLabel(pendingAuthorization?.type)}
-        cancelLabel="Cancelar"
-        tone="default"
-        isPending={isAuthorizing}
-        confirmDisabled={!pendingAuthorization?.daysCount}
-        onCancel={() => {
-          if (!isAuthorizing) setPendingAuthorization(null);
-        }}
-        onConfirm={applyPendingAuthorization}
-      >
-        <div className={styles.confirmSummary}>
-          <span>Alcance</span>
-          <strong>{pendingAuthorization?.scope === "employee" ? "Empleado" : "Global visible"}</strong>
-          <span>Días</span>
-          <strong>{pendingAuthorization?.daysCount || 0}</strong>
-          <span>Acción</span>
-          <strong>{authorizationTypeLabel(pendingAuthorization?.type)}</strong>
-        </div>
-      </ConfirmDialog>
-
-      <ConfirmDialog
-        isOpen={showResetConfirm}
-        title="Reiniciar decisiones"
-        message="Se eliminarán todas las decisiones guardadas del mes para los filtros actuales. Los avisos y cálculos volverán al estado automático."
-        confirmLabel="Reiniciar decisiones"
-        cancelLabel="Cancelar"
-        tone="danger"
-        isPending={isResettingDecisions}
-        onCancel={() => {
-          if (!isResettingDecisions) setShowResetConfirm(false);
-        }}
-        onConfirm={resetMonthDecisions}
-      />
     </section>
   );
 }

@@ -1069,6 +1069,8 @@ export default function SchedulePlanner({ initialFilters = {} }) {
   const [selectedOverlay, setSelectedOverlay] = useState(null);
   const [notice, setNotice] = useState(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [isAssignmentsLoading, setIsAssignmentsLoading] = useState(false);
+  const [loadedAssignmentsKey, setLoadedAssignmentsKey] = useState("");
   const [isPending, startTransition] = useTransition();
   const draftRevisionRef = useRef(0);
   const noticeExitTimeoutRef = useRef(null);
@@ -1157,6 +1159,9 @@ export default function SchedulePlanner({ initialFilters = {} }) {
     [areaCode, areaOptions],
   );
   const hasPlanningScope = Boolean(branchCode && areaCode);
+  const assignmentsScopeKey = `${monthKey}|${branchCode}|${areaCode}|${roleCode}`;
+  const hasLoadedCurrentAssignments = loadedAssignmentsKey === assignmentsScopeKey;
+  const shouldShowScopedLoading = hasPlanningScope && (isAssignmentsLoading || !hasLoadedCurrentAssignments);
 
   const filteredEmployees = useMemo(
     () =>
@@ -1527,6 +1532,7 @@ export default function SchedulePlanner({ initialFilters = {} }) {
       const requestDraftRevision = draftRevisionRef.current;
 
       try {
+        setIsAssignmentsLoading(true);
         const params = new URLSearchParams({ month: monthKey });
 
         if (branchCode) params.set("branchCode", branchCode);
@@ -1560,9 +1566,12 @@ export default function SchedulePlanner({ initialFilters = {} }) {
           setDraftDayNotes(buildDraftDayNotes(nextAssignments));
           setClearScheduleTargets([]);
           setHasDraftChanges(false);
+          setLoadedAssignmentsKey(assignmentsScopeKey);
         }
       } catch (error) {
         if (!isCancelled) showNotice("error", error.message);
+      } finally {
+        if (!isCancelled) setIsAssignmentsLoading(false);
       }
     }
 
@@ -1571,7 +1580,7 @@ export default function SchedulePlanner({ initialFilters = {} }) {
     return () => {
       isCancelled = true;
     };
-  }, [areaCode, baseShiftOptions, branchCode, employees, isLoading, monthKey, roleCode, showNotice, weekOptions]);
+  }, [areaCode, assignmentsScopeKey, baseShiftOptions, branchCode, employees, isLoading, monthKey, roleCode, showNotice, weekOptions]);
 
   function setCell(employeeId, dateKey, shiftKey) {
     markDraftEdited();
@@ -2202,7 +2211,45 @@ export default function SchedulePlanner({ initialFilters = {} }) {
         </section>
       ) : null}
 
-      {hasPlanningScope ? (
+      {shouldShowScopedLoading ? (
+        <section className={`${styles.loadingScene} ${styles.scopedLoadingScene} page-entrance`} aria-live="polite">
+          <div className={styles.loadingWeekToolbar}>
+            <div className={styles.loadingWeekTabs}>
+              {Array.from({ length: 4 }, (_, index) => <span key={index} className={styles.skeletonWeekTab} />)}
+            </div>
+            <span className={styles.skeletonButton} />
+          </div>
+          <div className={styles.loadingImportPanel}>
+            <div>
+              <span className={styles.skeletonTiny} />
+              <span className={styles.skeletonTitle} />
+            </div>
+            <span className={styles.skeletonButton} />
+          </div>
+          <div className={styles.loadingMetrics}>
+            {Array.from({ length: 3 }, (_, index) => (
+              <article key={index}>
+                <span className={styles.skeletonTiny} />
+                <strong className={styles.skeletonValue} />
+              </article>
+            ))}
+          </div>
+          <div className={styles.loadingTable}>
+            <div className={styles.loadingTableHeader}>
+              {Array.from({ length: 10 }, (_, index) => <span key={index} className={styles.skeletonTitle} />)}
+            </div>
+            {Array.from({ length: 6 }, (_, rowIndex) => (
+              <div key={rowIndex} className={styles.skeletonRow}>
+                <span className={styles.skeletonPerson} />
+                {Array.from({ length: 8 }, (_, cellIndex) => <span key={cellIndex} className={styles.skeletonCell} />)}
+                <span className={styles.skeletonButton} />
+              </div>
+            ))}
+          </div>
+        </section>
+      ) : null}
+
+      {hasPlanningScope && !shouldShowScopedLoading ? (
         <>
       <section className={`${styles.scopeHeader} page-entrance page-entrance-delay-sm`}>
         <div>
@@ -2319,8 +2366,8 @@ export default function SchedulePlanner({ initialFilters = {} }) {
               <article key={dateKey}>
                 <strong>{DAY_LABELS[getDayOfWeek(dateKey)]} {dateKey.slice(8)}</strong>
                 {roles.length ? (
-                  roles.map((role) => (
-                    <span key={role.roleName}>{role.roleName}: {role.count}</span>
+                  roles.map((role, roleIndex) => (
+                    <span key={`${role.roleCode || role.roleName}-${roleIndex}`}>{role.roleName}: {role.count}</span>
                   ))
                 ) : (
                   <span>Sin cobertura</span>

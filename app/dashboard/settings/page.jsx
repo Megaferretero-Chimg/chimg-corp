@@ -9,7 +9,7 @@ export const metadata = {
 export default function SettingsPage() {
   return (
     <DashboardShell
-      title="Configuracion operativa"
+      title="Configuracion"
       description="Parametros propios del modulo de planificacion y control operativo."
     >
       <ModuleScaffold

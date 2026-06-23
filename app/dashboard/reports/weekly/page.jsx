@@ -1,21 +1,12 @@
-import DashboardShell from "@/components/dashboard/DashboardShell";
-import ModuleScaffold from "@/components/dashboard/ModuleScaffold";
+import { redirect } from "next/navigation";
 
-export const metadata = {
-  title: "Reporte semanal | Control de Asistencia",
-};
+import { planningModulePath } from "@/lib/modules/planning/routes";
 
-export default function ReportsWeeklyPage() {
-  return (
-    <DashboardShell
-      title="Reporte semanal"
-      description="Página base para seguimiento operativo por semana."
-    >
-      <ModuleScaffold
-        eyebrow="Reportes"
-        title="Seguimiento semanal"
-        description="Aquí luego mostraremos comparativos semanales para detectar desviaciones tempranas."
-      />
-    </DashboardShell>
-  );
+export default async function ReportsWeeklyPage({ searchParams }) {
+  const resolvedSearchParams = await searchParams;
+  const params = new URLSearchParams();
+
+  if (resolvedSearchParams?.month) params.set("month", resolvedSearchParams.month);
+
+  redirect(`${planningModulePath("/reports/monthly")}${params.size ? `?${params.toString()}` : ""}`);
 }

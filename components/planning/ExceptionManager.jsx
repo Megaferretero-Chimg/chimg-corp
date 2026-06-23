@@ -38,6 +38,8 @@ const ADJUSTMENT_TYPES = [
   { value: "partial_day", label: "Rango de horas" },
   { value: "other", label: "Informativo" },
 ];
+const EXCEPTIONS_PAGE_SIZE = 10;
+const HUMAN_RESOURCES_APPROVER_NAMES = ["ADRIANA", "JAHETH"];
 
 const EMPTY_FORM = {
   id: "",
@@ -142,6 +144,7 @@ export default function ExceptionManager({
   const [form, setForm] = useState(EMPTY_FORM);
   const [isEditorOpen, setIsEditorOpen] = useState(false);
   const [exceptionToDelete, setExceptionToDelete] = useState(null);
+  const [currentPage, setCurrentPage] = useState(1);
   const [notice, setNotice] = useState(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isPending, startTransition] = useTransition();
@@ -209,30 +212,39 @@ export default function ExceptionManager({
   const approverOptions = useMemo(
     () =>
       activeEmployees.filter((employee) => {
-        const roleText = [
-          employee.roleCode,
-          employee.roleName,
-          ...(Array.isArray(employee.roleAssignments)
-            ? employee.roleAssignments.flatMap((assignment) => [assignment.code, assignment.name])
-            : []),
-        ].filter(Boolean).join(" ").toUpperCase();
-        const areaText = [
-          employee.areaCode,
-          employee.areaName,
-          ...(Array.isArray(employee.roleAssignments)
-            ? employee.roleAssignments.flatMap((assignment) => [assignment.areaCode, assignment.areaName])
-            : []),
-        ].filter(Boolean).join(" ").toUpperCase();
-        const isLeadership = /\b(JEFATURA|JEFE|GERENTE|GERENCIA)\b/.test(roleText) || /\bGERENCIA\b/.test(areaText);
-        const isTargetArea = /\b(GERENCIA|ALMACEN|ALMACÉN|BODEGA|ALM|BOD)\b/.test(`${areaText} ${roleText}`);
+        const fullName = String(employee.fullName || "").toUpperCase();
 
-        return isLeadership && isTargetArea;
-      }),
+        return HUMAN_RESOURCES_APPROVER_NAMES.some((name) => fullName.includes(name));
+      }).sort((left, right) => left.fullName.localeCompare(right.fullName, "es")),
     [activeEmployees],
   );
   const approvedCount = exceptions.filter((exception) => exception.resolution !== "pending" && exception.resolution !== "discount_day").length;
   const discountCount = exceptions.filter((exception) => exception.resolution === "discount_day").length;
   const pendingCount = exceptions.filter((exception) => exception.resolution === "pending").length;
+  const orderedExceptions = useMemo(
+    () =>
+      [...exceptions].sort((left, right) => {
+        const rightDate = new Date(right.dateKey || right.date || right.createdAt || 0).getTime();
+        const leftDate = new Date(left.dateKey || left.date || left.createdAt || 0).getTime();
+
+        if (rightDate !== leftDate) {
+          return rightDate - leftDate;
+        }
+
+        return String(left.employeeName || "").localeCompare(String(right.employeeName || ""), "es");
+      }),
+    [exceptions],
+  );
+  const totalPages = Math.max(1, Math.ceil(orderedExceptions.length / EXCEPTIONS_PAGE_SIZE));
+  const safeCurrentPage = Math.min(currentPage, totalPages);
+  const paginatedExceptions = orderedExceptions.slice(
+    (safeCurrentPage - 1) * EXCEPTIONS_PAGE_SIZE,
+    safeCurrentPage * EXCEPTIONS_PAGE_SIZE,
+  );
+  const paginationStart = orderedExceptions.length
+    ? (safeCurrentPage - 1) * EXCEPTIONS_PAGE_SIZE + 1
+    : 0;
+  const paginationEnd = Math.min(safeCurrentPage * EXCEPTIONS_PAGE_SIZE, orderedExceptions.length);
   const hasDateRange = Boolean(form.endDateKey);
   const needsSchedule = form.scope !== "other";
   const needsTimeRange = form.scope === "partial_day";
@@ -345,6 +357,11 @@ export default function ExceptionManager({
 
   function updateForm(field, value) {
     setForm((current) => ({ ...current, [field]: value }));
+  }
+
+  function moveMonth(getNextMonth) {
+    setCurrentPage(1);
+    setMonthDate((current) => getNextMonth(current));
   }
 
   function updateEmployee(value) {
@@ -523,14 +540,14 @@ export default function ExceptionManager({
 
           <div className={styles.actionsGroup}>
             <div className={styles.monthControls}>
-              <button type="button" onClick={() => setMonthDate((current) => subMonths(current, 1))} aria-label="Mes anterior">
+              <button type="button" onClick={() => moveMonth((current) => subMonths(current, 1))} aria-label="Mes anterior">
                 <ChevronLeft size={16} />
               </button>
               <div className={styles.monthPill}>
                 <CalendarDays size={16} />
                 <span>{monthLabel}</span>
               </div>
-              <button type="button" onClick={() => setMonthDate((current) => addMonths(current, 1))} aria-label="Mes siguiente">
+              <button type="button" onClick={() => moveMonth((current) => addMonths(current, 1))} aria-label="Mes siguiente">
                 <ChevronRight size={16} />
               </button>
             </div>
@@ -577,7 +594,7 @@ export default function ExceptionManager({
         <div className={styles.listHeader}>
           <div>
             <h3>Justificaciones registradas</h3>
-            <p>{isLoading ? "Cargando..." : `Periodo ${monthLabel}`}</p>
+            <p>{isLoading ? "Cargando..." : `Periodo ${monthLabel} · mas recientes primero`}</p>
           </div>
         </div>
 
@@ -606,7 +623,7 @@ export default function ExceptionManager({
                 </tr>
               </thead>
               <tbody>
-                {exceptions.map((exception) => (
+                {paginatedExceptions.map((exception) => (
                   <tr key={exception.id} className={styles.clickableRow} onClick={() => openEditEditor(exception)}>
                     <td>
                       <strong>{exception.employeeName}</strong>
@@ -646,6 +663,32 @@ export default function ExceptionManager({
                 ))}
               </tbody>
             </table>
+            {orderedExceptions.length > EXCEPTIONS_PAGE_SIZE ? (
+              <div className={styles.paginationBar}>
+                <span>
+                  {paginationStart}-{paginationEnd} de {orderedExceptions.length}
+                </span>
+                <div className={styles.paginationActions}>
+                  <button
+                    type="button"
+                    onClick={() => setCurrentPage((page) => Math.max(1, page - 1))}
+                    disabled={safeCurrentPage <= 1}
+                    aria-label="Pagina anterior"
+                  >
+                    <ChevronLeft size={16} />
+                  </button>
+                  <strong>Pagina {safeCurrentPage} de {totalPages}</strong>
+                  <button
+                    type="button"
+                    onClick={() => setCurrentPage((page) => Math.min(totalPages, page + 1))}
+                    disabled={safeCurrentPage >= totalPages}
+                    aria-label="Pagina siguiente"
+                  >
+                    <ChevronRight size={16} />
+                  </button>
+                </div>
+              </div>
+            ) : null}
           </div>
         ) : (
           <div className={styles.emptyState}>

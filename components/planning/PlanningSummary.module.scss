@@ -7,7 +7,7 @@
 .toolbar h2 { margin: 0.25rem 0 0; color: #10213e; font-size: var(--font-size-title-md); }
 .toolbar p { margin: 0.45rem 0 0; color: #5d6d88; font-size: var(--font-size-sm); line-height: 1.45; }
 .toolbar label { display: grid; gap: 0.4rem; color: #1c315d; font-weight: 700; min-width: 0; }
-.toolbar input, .toolbar select { width: 100%; border: 1px solid rgba(16, 33, 62, 0.12); border-radius: 8px; background-color: white; color: var(--text); padding: 0.68rem 0.75rem; outline: none; }
+.toolbar input, .toolbar select { width: 100%; border: 1px solid rgba(16, 33, 62, 0.12); border-radius: 8px; background-color: white; color: var(--text); padding: 0.68rem 0.75rem; outline: none; font-weight: 400; }
 .toolbar select { appearance: none; padding-right: 2.3rem; background-image: url("data:image/svg+xml,%3Csvg width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%235d6d88' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E"); background-position: right 0.78rem center; background-repeat: no-repeat; background-size: 1rem; }
 .summaryGrid { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 0.75rem; }
 .summaryGrid article, .summaryGrid .metricSkeleton { display: grid; gap: 0.25rem; min-width: 0; padding: 0.9rem; }

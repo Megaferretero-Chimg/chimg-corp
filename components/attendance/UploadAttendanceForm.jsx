@@ -14,6 +14,7 @@ import {
 } from "lucide-react";
 import FloatingNotice from "@/components/ui/FloatingNotice";
 import { planningModulePath } from "@/lib/modules/planning/routes";
+import { formatEcuadorMonthKey } from "@/lib/datetime/ecuador";
 import styles from "./UploadAttendanceForm.module.scss";
 
 const ACCEPTED_EXTENSIONS = [".xls", ".xlsx", ".csv", ".dat"];
@@ -62,9 +63,24 @@ function formatUploadStatus(status) {
   return STATUS_LABELS[status] || status || "N/D";
 }
 
+function formatPeriod(month, year) {
+  if (!month || !year) {
+    return "N/D";
+  }
+
+  const date = new Date(Number(year), Number(month) - 1, 1);
+
+  if (Number.isNaN(date.getTime())) {
+    return "N/D";
+  }
+
+  return format(date, "MMMM yyyy", { locale: es });
+}
+
 export default function UploadAttendanceForm() {
   const [selectedFile, setSelectedFile] = useState(null);
   const [branchCode, setBranchCode] = useState("");
+  const [monthKey, setMonthKey] = useState(() => formatEcuadorMonthKey());
   const [branches, setBranches] = useState([]);
   const [savedUpload, setSavedUpload] = useState(null);
   const [uploadsHistory, setUploadsHistory] = useState([]);
@@ -162,6 +178,11 @@ export default function UploadAttendanceForm() {
       return;
     }
 
+    if (!monthKey) {
+      showNotice("error", "Selecciona el mes al que pertenece la carga.");
+      return;
+    }
+
     setNotice(null);
 
     startTransition(async () => {
@@ -169,6 +190,7 @@ export default function UploadAttendanceForm() {
         const formData = new FormData();
         formData.append("file", selectedFile);
         formData.append("branchCode", branchCode);
+        formData.append("monthKey", monthKey);
 
         const request = await fetch("/api/attendance/upload", {
           method: "POST",
@@ -292,22 +314,35 @@ export default function UploadAttendanceForm() {
                     </p>
                   </div>
 
-                  <label className={styles.field}>
-                    <span className={styles.label}>Sucursal del biométrico</span>
-                    <select
-                      value={branchCode}
-                      onChange={(event) => setBranchCode(event.target.value)}
-                      className={styles.select}
-                      disabled={isUploadLocked}
-                    >
-                      <option value="">Selecciona una sucursal</option>
-                      {branches.map((branch) => (
-                        <option key={branch.id || branch.code} value={branch.code}>
-                          {branch.name || branch.code}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
+                  <div className={styles.fieldGrid}>
+                    <label className={styles.field}>
+                      <span className={styles.label}>Sucursal del biométrico</span>
+                      <select
+                        value={branchCode}
+                        onChange={(event) => setBranchCode(event.target.value)}
+                        className={styles.select}
+                        disabled={isUploadLocked}
+                      >
+                        <option value="">Selecciona una sucursal</option>
+                        {branches.map((branch) => (
+                          <option key={branch.id || branch.code} value={branch.code}>
+                            {branch.name || branch.code}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+
+                    <label className={styles.field}>
+                      <span className={styles.label}>Mes de la carga</span>
+                      <input
+                        type="month"
+                        value={monthKey}
+                        onChange={(event) => setMonthKey(event.target.value)}
+                        className={styles.input}
+                        disabled={isUploadLocked}
+                      />
+                    </label>
+                  </div>
 
                   <div
                     className={`${styles.dropzone} ${isDragging ? styles.dropzoneActive : ""} ${
@@ -398,7 +433,7 @@ export default function UploadAttendanceForm() {
                   <div className={styles.actions}>
                     <button
                       type="submit"
-                      disabled={!selectedFile || !branchCode || isPending || isUploadLocked}
+                      disabled={!selectedFile || !branchCode || !monthKey || isPending || isUploadLocked}
                       className={styles.submit}
                     >
                       <Upload size={16} />
@@ -413,6 +448,7 @@ export default function UploadAttendanceForm() {
                       {[
                         { label: "Archivo", value: savedUpload.fileName || "N/D" },
                         { label: "Sucursal", value: savedUpload.branchName || savedUpload.branchCode || "N/D" },
+                        { label: "Periodo", value: formatPeriod(savedUpload.month, savedUpload.year) },
                         { label: "Estado", value: formatUploadStatus(savedUpload.status) },
                         { label: "Tamaño", value: formatFileSize(savedUpload.fileSize || 0) },
                         { label: "Guardado", value: formatDateTime(savedUpload.createdAt) },
@@ -459,7 +495,7 @@ export default function UploadAttendanceForm() {
                         <div className={styles.historyItemMain}>
                           <p className={styles.historyFileName}>{upload.fileName}</p>
                           <p className={styles.historyMeta}>
-                            {[upload.branchName || upload.branchCode, formatFileSize(upload.fileSize || 0), formatDateTime(upload.createdAt)]
+                            {[upload.branchName || upload.branchCode, formatPeriod(upload.month, upload.year), formatFileSize(upload.fileSize || 0), formatDateTime(upload.createdAt)]
                               .filter(Boolean)
                               .join(" · ")}
                           </p>

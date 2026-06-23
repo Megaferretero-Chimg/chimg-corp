@@ -1,21 +1,12 @@
-import DashboardShell from "@/components/dashboard/DashboardShell";
-import ModuleScaffold from "@/components/dashboard/ModuleScaffold";
+import { redirect } from "next/navigation";
 
-export const metadata = {
-  title: "Reporte por empleado | Control de Asistencia",
-};
+import { planningModulePath } from "@/lib/modules/planning/routes";
 
-export default function ReportsEmployeesPage() {
-  return (
-    <DashboardShell
-      title="Reporte por empleado"
-      description="Página base para análisis individual."
-    >
-      <ModuleScaffold
-        eyebrow="Reportes"
-        title="Vista individual"
-        description="Este reporte servirá para auditar el desempeño y las diferencias de cada empleado a lo largo del período."
-      />
-    </DashboardShell>
-  );
+export default async function ReportsEmployeesPage({ searchParams }) {
+  const resolvedSearchParams = await searchParams;
+  const params = new URLSearchParams();
+
+  if (resolvedSearchParams?.month) params.set("month", resolvedSearchParams.month);
+
+  redirect(`${planningModulePath("/reports/monthly")}${params.size ? `?${params.toString()}` : ""}`);
 }

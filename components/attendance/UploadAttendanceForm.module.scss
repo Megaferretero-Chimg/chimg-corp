@@ -215,13 +215,21 @@
   min-width: 0;
 }
 
+.fieldGrid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(12rem, 0.42fr);
+  gap: 0.85rem;
+  align-items: end;
+}
+
 .label {
   color: var(--text-muted);
   font-size: var(--font-size-sm);
   font-weight: 700;
 }
 
-.select {
+.select,
+.input {
   width: 100%;
   min-height: 2.8rem;
   border: 1px solid var(--border);
@@ -234,6 +242,16 @@
   &:disabled {
     color: var(--text-muted);
     background: #f8fafc;
+  }
+}
+
+.input {
+  color-scheme: light;
+}
+
+@media (max-width: 720px) {
+  .fieldGrid {
+    grid-template-columns: 1fr;
   }
 }
 

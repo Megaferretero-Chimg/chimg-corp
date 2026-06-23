@@ -1,17 +1,7 @@
-import MonthlyClosureView from "@/components/attendance/MonthlyClosureView";
-import DashboardShell from "@/components/dashboard/DashboardShell";
+import { redirect } from "next/navigation";
 
-export const metadata = {
-  title: "Cierre de mes | Control de Asistencia",
-};
+import { planningModulePath } from "@/lib/modules/planning/routes";
 
 export default function AttendanceMonthlyClosurePage() {
-  return (
-    <DashboardShell
-      title="Cierre de mes"
-      description="Guarda una copia fija de las horas del mes para usarla como base de nomina."
-    >
-      <MonthlyClosureView />
-    </DashboardShell>
-  );
+  redirect(planningModulePath("/operations/monthly-summary"));
 }

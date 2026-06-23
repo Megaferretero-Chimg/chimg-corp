@@ -13,6 +13,11 @@ const monthlyAttendanceClosureRowSchema = new Schema(
       trim: true,
       uppercase: true,
     },
+    employeeDni: {
+      type: String,
+      trim: true,
+      default: "",
+    },
     branchCode: {
       type: String,
       trim: true,
@@ -176,6 +181,10 @@ const monthlyAttendanceClosureSchema = new Schema(
       type: String,
       enum: ["closed"],
       default: "closed",
+    },
+    completeBaseHours: {
+      type: Boolean,
+      default: true,
     },
     rows: {
       type: [monthlyAttendanceClosureRowSchema],

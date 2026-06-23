@@ -1,21 +1,12 @@
-import DashboardShell from "@/components/dashboard/DashboardShell";
-import ModuleScaffold from "@/components/dashboard/ModuleScaffold";
+import { redirect } from "next/navigation";
 
-export const metadata = {
-  title: "Planificado vs real | Control de Asistencia",
-};
+import { planningModulePath } from "@/lib/modules/planning/routes";
 
-export default function ReportsPlanVsRealPage() {
-  return (
-    <DashboardShell
-      title="Planificado vs real"
-      description="Página base para el comparativo final entre lo esperado y lo ocurrido."
-    >
-      <ModuleScaffold
-        eyebrow="Reportes"
-        title="Brecha entre plan y ejecución"
-        description="Este reporte será uno de los cierres más importantes del sistema, porque permitirá validar cuánto se cumplió, dónde hubo desviaciones y qué impacto generaron."
-      />
-    </DashboardShell>
-  );
+export default async function ReportsPlanVsRealPage({ searchParams }) {
+  const resolvedSearchParams = await searchParams;
+  const params = new URLSearchParams();
+
+  if (resolvedSearchParams?.month) params.set("month", resolvedSearchParams.month);
+
+  redirect(`${planningModulePath("/reports/monthly")}${params.size ? `?${params.toString()}` : ""}`);
 }

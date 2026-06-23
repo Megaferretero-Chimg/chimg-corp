@@ -169,6 +169,7 @@ export default function NormalizeAttendanceView({ uploadId }) {
   const [selectedEmployeeKey, setSelectedEmployeeKey] = useState("");
   const [toast, setToast] = useState(null);
   const toastTimeoutRef = useRef(null);
+  const employeeDetailRef = useRef(null);
 
   const totalRows = useMemo(
     () => response?.employees?.reduce((sum, employee) => sum + employee.punches.length, 0) || 0,
@@ -286,6 +287,14 @@ export default function NormalizeAttendanceView({ uploadId }) {
     } finally {
       setIsPublishingPunches(false);
     }
+  }
+
+  function handleSelectEmployee(employeeKey) {
+    setSelectedEmployeeKey(employeeKey);
+    window.requestAnimationFrame(() => {
+      employeeDetailRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+      employeeDetailRef.current?.focus({ preventScroll: true });
+    });
   }
 
   useEffect(() => {
@@ -533,11 +542,11 @@ export default function NormalizeAttendanceView({ uploadId }) {
                       <tr
                         key={`reconcile-${employeeKey}`}
                         className={isSelected ? styles.selectedEmployeeRow : ""}
-                        onClick={() => setSelectedEmployeeKey(employeeKey)}
+                        onClick={() => handleSelectEmployee(employeeKey)}
                         onKeyDown={(event) => {
                           if (event.key === "Enter" || event.key === " ") {
                             event.preventDefault();
-                            setSelectedEmployeeKey(employeeKey);
+                            handleSelectEmployee(employeeKey);
                           }
                         }}
                         role="button"
@@ -559,21 +568,7 @@ export default function NormalizeAttendanceView({ uploadId }) {
                         </td>
                         <td>{employee.punchCount || 0}</td>
                         <td>{employee.duplicateMinuteCount || 0}</td>
-                        <td>
-                          {(employee.irregularDayCount || 0) > 0 ? (
-                            <div className={styles.irregularCell}>
-                              <strong>{employee.irregularDayCount}</strong>
-                              <span>
-                                {(employee.irregularDays || [])
-                                  .slice(0, 3)
-                                  .map((day) => `${day.date} (${day.punchCount})`)
-                                  .join(", ")}
-                              </span>
-                            </div>
-                          ) : (
-                            "0"
-                          )}
-                        </td>
+                        <td>{employee.irregularDayCount || 0}</td>
                       </tr>
                       );
                     })}
@@ -602,7 +597,12 @@ export default function NormalizeAttendanceView({ uploadId }) {
               </div>
             </label>
 
-            <div className={styles.employeeList}>
+            <div
+              ref={employeeDetailRef}
+              className={styles.employeeList}
+              tabIndex={-1}
+              aria-live="polite"
+            >
               {selectedEmployee ? (
                 <article key={`${selectedEmployee.biometricCode}-${selectedEmployee.fullName}`} className={styles.employeeCard}>
                   <div className={styles.employeeHeader}>

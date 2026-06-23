@@ -1,21 +1,12 @@
-import DashboardShell from "@/components/dashboard/DashboardShell";
-import ModuleScaffold from "@/components/dashboard/ModuleScaffold";
+import { redirect } from "next/navigation";
 
-export const metadata = {
-  title: "Reporte por sucursal | Control de Asistencia",
-};
+import { planningModulePath } from "@/lib/modules/planning/routes";
 
-export default function ReportsBranchesPage() {
-  return (
-    <DashboardShell
-      title="Reporte por sucursal"
-      description="Página base para comparativos entre sedes."
-    >
-      <ModuleScaffold
-        eyebrow="Reportes"
-        title="Comparativo entre sucursales"
-        description="Aquí podremos analizar cobertura, costos, horas trabajadas y cumplimiento por sucursal."
-      />
-    </DashboardShell>
-  );
+export default async function ReportsBranchesPage({ searchParams }) {
+  const resolvedSearchParams = await searchParams;
+  const params = new URLSearchParams();
+
+  if (resolvedSearchParams?.month) params.set("month", resolvedSearchParams.month);
+
+  redirect(`${planningModulePath("/reports/monthly")}${params.size ? `?${params.toString()}` : ""}`);
 }

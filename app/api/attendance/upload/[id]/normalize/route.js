@@ -54,57 +54,8 @@ function buildReconciliationSummary(employees = []) {
   );
 }
 
-function buildNormalizedPayload(upload, normalizedSnapshot, source) {
-  const reconciliationSummary = buildReconciliationSummary(normalizedSnapshot.employees || []);
-  const publishSummary = upload.punchesPublishedAt
-    ? {
-        publishedAt: upload.punchesPublishedAt,
-        publishedEmployees: upload.publishedEmployees || 0,
-        publishedPunches: upload.publishedPunches || 0,
-        skippedDuplicatePunches: upload.skippedDuplicatePunches || 0,
-        skippedUnmatchedEmployees: upload.skippedUnmatchedEmployees || 0,
-        skippedUnmatchedPunches: upload.skippedUnmatchedPunches || 0,
-      }
-    : null;
-
-  return {
-    upload: {
-      id: upload._id.toString(),
-      fileName: upload.fileName,
-      branchCode: upload.branchCode || "",
-      branchName: upload.branchName || "",
-      createdAt: upload.createdAt,
-      status: upload.status,
-      normalizedAt: upload.normalizedAt,
-      punchesPublishedAt: upload.punchesPublishedAt || null,
-    },
-    summary: {
-      totalEmployees: normalizedSnapshot.summary.totalEmployees,
-      totalPunches: normalizedSnapshot.summary.totalPunches,
-      month: normalizedSnapshot.summary.month,
-      year: normalizedSnapshot.summary.year,
-      matchedEmployees:
-        normalizedSnapshot.summary.matchedEmployees ?? reconciliationSummary.matchedEmployees,
-      inactiveEmployees:
-        normalizedSnapshot.summary.inactiveEmployees ?? reconciliationSummary.inactiveEmployees,
-      unmatchedEmployees:
-        normalizedSnapshot.summary.unmatchedEmployees ?? reconciliationSummary.unmatchedEmployees,
-      duplicateMinutePunches:
-        normalizedSnapshot.summary.duplicateMinutePunches ??
-        reconciliationSummary.duplicateMinutePunches,
-      irregularDays:
-        normalizedSnapshot.summary.irregularDays ?? reconciliationSummary.irregularDays,
-    },
-    employees: normalizedSnapshot.employees,
-    parserLogs: normalizedSnapshot.parserLogs,
-    publishSummary,
-    source,
-  };
-}
-
 function getPunchDiagnostics(punches = []) {
   const uniquePunchesByMinute = new Map();
-  const uniquePunches = [];
 
   for (const punch of punches) {
     const minuteKey = buildPunchMinuteKey(punch.punchedAt);
@@ -114,12 +65,11 @@ function getPunchDiagnostics(punches = []) {
     }
 
     uniquePunchesByMinute.set(minuteKey, punch);
-    uniquePunches.push(punch);
   }
 
   const punchesByDay = new Map();
 
-  for (const punch of uniquePunches) {
+  for (const punch of punches) {
     const dayKey = formatEcuadorDateKey(punch.punchedAt);
 
     if (!dayKey) {
@@ -156,8 +106,80 @@ function getPunchDiagnostics(punches = []) {
     .filter(Boolean);
 
   return {
-    duplicateMinuteCount: Math.max(0, punches.length - uniquePunches.length),
+    duplicateMinuteCount: Math.max(0, punches.length - uniquePunchesByMinute.size),
     irregularDays,
+  };
+}
+
+function enrichNormalizedSnapshotDiagnostics(normalizedSnapshot = {}) {
+  const employees = (normalizedSnapshot.employees || []).map((employee) => {
+    const diagnostics = getPunchDiagnostics(employee.punches || []);
+
+    return {
+      ...employee,
+      duplicateMinuteCount: diagnostics.duplicateMinuteCount,
+      irregularDayCount: diagnostics.irregularDays.length,
+      irregularDays: diagnostics.irregularDays.slice(0, 12),
+      punchCount: employee.punches?.length ?? employee.punchCount ?? 0,
+    };
+  });
+  const reconciliationSummary = buildReconciliationSummary(employees);
+
+  return {
+    ...normalizedSnapshot,
+    employees,
+    summary: {
+      ...(normalizedSnapshot.summary || {}),
+      totalEmployees: normalizedSnapshot.summary?.totalEmployees ?? employees.length,
+      totalPunches:
+        normalizedSnapshot.summary?.totalPunches ??
+        employees.reduce((total, employee) => total + (employee.punchCount || 0), 0),
+      ...reconciliationSummary,
+    },
+  };
+}
+
+function buildNormalizedPayload(upload, normalizedSnapshot, source) {
+  const enrichedSnapshot = enrichNormalizedSnapshotDiagnostics(normalizedSnapshot);
+  const publishSummary = upload.punchesPublishedAt
+    ? {
+        publishedAt: upload.punchesPublishedAt,
+        publishedEmployees: upload.publishedEmployees || 0,
+        publishedPunches: upload.publishedPunches || 0,
+        skippedDuplicatePunches: upload.skippedDuplicatePunches || 0,
+        skippedUnmatchedEmployees: upload.skippedUnmatchedEmployees || 0,
+        skippedUnmatchedPunches: upload.skippedUnmatchedPunches || 0,
+      }
+    : null;
+
+  return {
+    upload: {
+      id: upload._id.toString(),
+      fileName: upload.fileName,
+      branchCode: upload.branchCode || "",
+      branchName: upload.branchName || "",
+      month: upload.month || null,
+      year: upload.year || null,
+      createdAt: upload.createdAt,
+      status: upload.status,
+      normalizedAt: upload.normalizedAt,
+      punchesPublishedAt: upload.punchesPublishedAt || null,
+    },
+    summary: {
+      totalEmployees: enrichedSnapshot.summary.totalEmployees,
+      totalPunches: enrichedSnapshot.summary.totalPunches,
+      month: enrichedSnapshot.summary.month,
+      year: enrichedSnapshot.summary.year,
+      matchedEmployees: enrichedSnapshot.summary.matchedEmployees,
+      inactiveEmployees: enrichedSnapshot.summary.inactiveEmployees,
+      unmatchedEmployees: enrichedSnapshot.summary.unmatchedEmployees,
+      duplicateMinutePunches: enrichedSnapshot.summary.duplicateMinutePunches,
+      irregularDays: enrichedSnapshot.summary.irregularDays,
+    },
+    employees: enrichedSnapshot.employees,
+    parserLogs: enrichedSnapshot.parserLogs,
+    publishSummary,
+    source,
   };
 }
 
@@ -307,6 +329,8 @@ export async function GET(_request, context) {
       fileName: upload.fileName,
       branchCode: upload.branchCode || "",
       branchName: upload.branchName || "",
+      month: upload.month || null,
+      year: upload.year || null,
     });
 
     const normalizedSnapshot = await buildNormalizedSnapshot(parsedFile);
@@ -359,6 +383,8 @@ export async function POST(_request, context) {
       fileName: upload.fileName,
       branchCode: upload.branchCode || "",
       branchName: upload.branchName || "",
+      month: upload.month || null,
+      year: upload.year || null,
     });
 
     upload.normalizedSnapshot = await buildNormalizedSnapshot(parsedFile);
