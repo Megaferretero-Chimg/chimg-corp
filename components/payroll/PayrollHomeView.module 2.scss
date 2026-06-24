@@ -1,0 +1,203 @@
+.panel {
+  display: grid;
+  gap: 1rem;
+}
+
+.controlBand {
+  display: flex;
+  align-items: end;
+  justify-content: space-between;
+  gap: 1rem;
+  border: 1px solid rgba(16, 33, 62, 0.08);
+  border-radius: 1rem;
+  background: #ffffff;
+  padding: 1.15rem;
+
+  h2 {
+    margin: 0.15rem 0 0;
+    color: #10213e;
+    font-size: var(--font-size-title-xl);
+  }
+
+  label {
+    min-width: 190px;
+    display: grid;
+    gap: 0.35rem;
+  }
+
+  label span {
+    color: #52698d;
+    font-size: var(--font-size-xs);
+    font-weight: 800;
+    text-transform: uppercase;
+  }
+
+  input {
+    min-height: 2.8rem;
+    border: 1px solid rgba(16, 33, 62, 0.12);
+    border-radius: 0.85rem;
+    background: #fbfdff;
+    color: #10213e;
+    padding: 0.72rem 0.85rem;
+  }
+}
+
+.eyebrow {
+  color: #6a7ea2;
+  font-size: var(--font-size-micro);
+  font-weight: 900;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.heroGrid,
+.statusGrid,
+.actionGrid {
+  display: grid;
+  gap: 0.85rem;
+}
+
+.heroGrid {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.heroCard,
+.statusCard,
+.actionCard {
+  min-width: 0;
+  border: 1px solid rgba(16, 33, 62, 0.08);
+  border-radius: 1rem;
+  background: #ffffff;
+  padding: 1rem;
+}
+
+.heroCard {
+  display: grid;
+  gap: 0.25rem;
+
+  span,
+  small {
+    color: #52698d;
+    font-weight: 700;
+  }
+
+  span {
+    font-size: var(--font-size-xs);
+    text-transform: uppercase;
+  }
+
+  strong {
+    color: #10213e;
+    font-size: var(--font-size-title-xl);
+    line-height: 1.15;
+  }
+
+  small {
+    font-size: var(--font-size-sm);
+  }
+}
+
+.warningCard {
+  background: #fff8ed;
+  border-color: rgba(217, 111, 0, 0.18);
+
+  strong {
+    color: #9a4b00;
+  }
+}
+
+.statusGrid {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.statusCard {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 0.75rem;
+  align-items: start;
+  color: #245081;
+
+  span,
+  small {
+    color: #6a7ea2;
+    font-size: var(--font-size-xs);
+    font-weight: 700;
+  }
+
+  span,
+  strong,
+  small {
+    display: block;
+  }
+
+  span {
+    text-transform: uppercase;
+  }
+
+  strong {
+    margin: 0.2rem 0;
+    color: #10213e;
+    font-size: var(--font-size-title-md);
+  }
+}
+
+.notice {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  border: 1px solid rgba(217, 111, 0, 0.18);
+  border-radius: 1rem;
+  background: #fff8ed;
+  color: #9a4b00;
+  padding: 0.9rem 1rem;
+  font-weight: 700;
+}
+
+.actionGrid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.actionCard {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  gap: 0.8rem;
+  align-items: center;
+  color: #21598c;
+  text-decoration: none;
+
+  strong,
+  span {
+    display: block;
+  }
+
+  strong {
+    color: #10213e;
+    font-size: var(--font-size-base);
+  }
+
+  span {
+    margin-top: 0.16rem;
+    color: #6a7ea2;
+    font-size: var(--font-size-sm);
+  }
+}
+
+.loading {
+  color: #52698d;
+  font-size: var(--font-size-sm);
+  font-weight: 700;
+  text-align: right;
+}
+
+@media (max-width: 900px) {
+  .controlBand {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .heroGrid,
+  .statusGrid,
+  .actionGrid {
+    grid-template-columns: 1fr;
+  }
+}
