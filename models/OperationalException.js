@@ -38,7 +38,7 @@ const operationalExceptionSchema = new Schema(
     },
     type: {
       type: String,
-      enum: ["absence", "sick_leave", "permission", "schedule_change", "replacement", "medical_appointment", "early_leave", "late_arrival", "missing_punch", "outside_work", "material_pickup", "field_visit", "other"],
+      enum: ["absence", "sick_leave", "permission", "schedule_change", "replacement", "medical_appointment", "early_leave", "late_arrival", "missing_punch", "outside_work", "outside_work_punch", "material_pickup", "field_visit", "other"],
       required: true,
     },
     scope: {
@@ -98,6 +98,16 @@ const operationalExceptionSchema = new Schema(
       type: Number,
       min: 0,
       default: 0,
+    },
+    manualPunch: {
+      type: Schema.Types.ObjectId,
+      ref: "AttendancePunch",
+      default: null,
+    },
+    manualPunchTime: {
+      type: String,
+      trim: true,
+      default: "",
     },
     destination: {
       type: String,

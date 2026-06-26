@@ -1,24 +1,21 @@
 import DashboardShell from "@/components/dashboard/DashboardShell";
-import OperationalReview from "@/components/planning/OperationalReview";
+import ModuleScaffold from "@/components/dashboard/ModuleScaffold";
 
 export const metadata = {
   title: "Revision operativa | Control de Asistencia",
 };
 
-export default async function PlanningWeeklyPage({ searchParams }) {
-  const {
-    month = "",
-    branchCode = "",
-    areaCode = "",
-    roleCode = "",
-  } = await searchParams;
-
+export default function PlanningWeeklyPage() {
   return (
     <DashboardShell
       title="Revision operativa"
       description="Resumen mensual de horarios programados, cobertura semanal, dias extra y pendientes por empleado."
     >
-      <OperationalReview initialFilters={{ month, branchCode, areaCode, roleCode }} />
+      <ModuleScaffold
+        eyebrow="Planificacion"
+        title="Revision operativa semanal"
+        description="Este espacio queda reservado para revisar cobertura semanal, dias extra y pendientes por empleado sin bloquear el build del sistema."
+      />
     </DashboardShell>
   );
 }

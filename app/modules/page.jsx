@@ -3,6 +3,7 @@ import { Building2, CalendarRange } from "lucide-react";
 
 import LogoutButton from "@/components/auth/LogoutButton";
 import TransitionLink from "@/components/navigation/TransitionLink";
+import { isPlanningExceptionsUser, requireAuthenticatedUser } from "@/lib/access-control";
 import styles from "./page.module.scss";
 
 const modules = [
@@ -28,7 +29,12 @@ export const metadata = {
   title: "Selección de módulo | Control de Asistencia",
 };
 
-export default function ModulesPage() {
+export default async function ModulesPage() {
+  const user = await requireAuthenticatedUser();
+  const visibleModules = isPlanningExceptionsUser(user)
+    ? modules.filter((module) => module.href === "/modules/planning")
+    : modules;
+
   return (
     <main className={styles.page}>
       <section className={styles.shell}>
@@ -58,7 +64,7 @@ export default function ModulesPage() {
         </header>
 
         <section className={styles.grid}>
-          {modules.map((module) => (
+          {visibleModules.map((module) => (
             <article key={module.href} className={styles.card}>
               <div className={styles.cardGlow} />
               <div className={styles.cardTop}>

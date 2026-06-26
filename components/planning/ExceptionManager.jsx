@@ -17,6 +17,7 @@ import {
 import CatalogDrawer from "@/components/catalog/CatalogDrawer";
 import ConfirmDialog from "@/components/ui/ConfirmDialog";
 import FloatingNotice from "@/components/ui/FloatingNotice";
+import { PLANNING_EXCEPTIONS_ACCESS_ROLE } from "@/lib/access-roles";
 import styles from "./ExceptionManager.module.scss";
 
 const DEFAULT_TYPES = [
@@ -38,6 +39,7 @@ const ADJUSTMENT_TYPES = [
   { value: "partial_day", label: "Rango de horas" },
   { value: "other", label: "Informativo" },
 ];
+const OUTSIDE_WORK_PUNCH_TYPE = "outside_work_punch";
 const EXCEPTIONS_PAGE_SIZE = 10;
 const HUMAN_RESOURCES_APPROVER_NAMES = ["ADRIANA", "JAHETH"];
 
@@ -55,6 +57,7 @@ const EMPTY_FORM = {
   plannedLunchStartTime: "",
   plannedLunchEndTime: "",
   plannedLunchDurationMinutes: 0,
+  manualPunchTime: "",
   destination: "",
   countsAsWorkedTime: false,
   allowSupplementaryTime: false,
@@ -84,6 +87,7 @@ function buildExceptionForm(exception) {
     plannedLunchStartTime: exception.plannedLunchStartTime || "",
     plannedLunchEndTime: exception.plannedLunchEndTime || "",
     plannedLunchDurationMinutes: Number(exception.plannedLunchDurationMinutes) || 0,
+    manualPunchTime: exception.manualPunchTime || "",
     destination: exception.destination || "",
     countsAsWorkedTime: Boolean(exception.countsAsWorkedTime),
     allowSupplementaryTime: Boolean(exception.allowSupplementaryTime),
@@ -134,6 +138,7 @@ export default function ExceptionManager({
   eyebrow = "Control operativo",
   title = "Ajustes y excepciones",
   description = "Registra novedades reales por empleado y deja trazabilidad de la resolucion tomada.",
+  currentUserAccessRole = "",
 }) {
   const [monthDate, setMonthDate] = useState(() => new Date());
   const [employees, setEmployees] = useState([]);
@@ -152,6 +157,7 @@ export default function ExceptionManager({
   const noticeRemoveTimeoutRef = useRef(null);
   const monthKey = format(monthDate, "yyyy-MM");
   const monthLabel = format(monthDate, "MMMM yyyy", { locale: es });
+  const isLimitedExceptionUser = currentUserAccessRole === PLANNING_EXCEPTIONS_ACCESS_ROLE;
 
   const activeEmployees = useMemo(
     () => employees.filter((employee) => employee.isActive !== false),
@@ -246,13 +252,15 @@ export default function ExceptionManager({
     : 0;
   const paginationEnd = Math.min(safeCurrentPage * EXCEPTIONS_PAGE_SIZE, orderedExceptions.length);
   const hasDateRange = Boolean(form.endDateKey);
-  const needsSchedule = form.scope !== "other";
+  const createsManualPunch = form.type === OUTSIDE_WORK_PUNCH_TYPE;
+  const needsSchedule = form.scope !== "other" && !createsManualPunch;
   const needsTimeRange = form.scope === "partial_day";
   const canSave = Boolean(
     form.employeeId
     && form.type
     && form.dateKey
     && form.notes.trim()
+    && (!createsManualPunch || form.manualPunchTime)
     && (!needsSchedule || (form.plannedStartTime && form.plannedEndTime))
     && (!needsTimeRange || (form.startTime && form.endTime)),
   );
@@ -390,7 +398,17 @@ export default function ExceptionManager({
   }
 
   function updateType(value) {
-    setForm((current) => ({ ...current, type: value }));
+    setForm((current) => ({
+      ...current,
+      type: value,
+      scope: value === OUTSIDE_WORK_PUNCH_TYPE ? "other" : current.scope,
+      resolution: isLimitedExceptionUser
+        ? "pending"
+        : value === OUTSIDE_WORK_PUNCH_TYPE
+          ? "approved_work_time"
+          : current.resolution,
+      manualPunchTime: value === OUTSIDE_WORK_PUNCH_TYPE ? current.manualPunchTime : "",
+    }));
   }
 
   function updateAdjustmentType(value) {
@@ -399,7 +417,11 @@ export default function ExceptionManager({
       scope: value,
       startTime: value === "partial_day" ? current.startTime : "",
       endTime: value === "partial_day" ? current.endTime : "",
-      resolution: value === "other" ? "approved_work_time" : current.resolution,
+      resolution: isLimitedExceptionUser
+        ? "pending"
+        : value === "other"
+          ? "approved_work_time"
+          : current.resolution,
       countsAsWorkedTime: value === "partial_day" && current.resolution !== "discount_day",
     }));
   }
@@ -428,6 +450,10 @@ export default function ExceptionManager({
   function describeExceptionTime(exception) {
     const range = exception.endDateKey ? `${exception.dateKey} hasta ${exception.endDateKey}` : exception.dateKey;
 
+    if (exception.type === OUTSIDE_WORK_PUNCH_TYPE && exception.manualPunchTime) {
+      return `${range} · picada ${exception.manualPunchTime}`;
+    }
+
     return range;
   }
 
@@ -435,11 +461,17 @@ export default function ExceptionManager({
     setForm({
       ...EMPTY_FORM,
       dateKey: format(new Date(), "yyyy-MM-dd"),
+      resolution: isLimitedExceptionUser ? "pending" : EMPTY_FORM.resolution,
+      authorizedBy: "",
     });
     setIsEditorOpen(true);
   }
 
   function openEditEditor(exception) {
+    if (isLimitedExceptionUser) {
+      return;
+    }
+
     setForm(buildExceptionForm(exception));
     setIsEditorOpen(true);
   }
@@ -461,6 +493,8 @@ export default function ExceptionManager({
     const method = form.id ? "PATCH" : "POST";
     const requestBody = {
       ...form,
+      resolution: isLimitedExceptionUser ? "pending" : form.resolution,
+      authorizedBy: isLimitedExceptionUser ? "" : form.authorizedBy,
       scope: form.endDateKey && form.scope === "full_day" ? "date_range" : form.scope,
       startTime: form.scope === "partial_day" ? form.startTime : "",
       endTime: form.scope === "partial_day" ? form.endTime : "",
@@ -624,7 +658,11 @@ export default function ExceptionManager({
               </thead>
               <tbody>
                 {paginatedExceptions.map((exception) => (
-                  <tr key={exception.id} className={styles.clickableRow} onClick={() => openEditEditor(exception)}>
+                  <tr
+                    key={exception.id}
+                    className={isLimitedExceptionUser ? "" : styles.clickableRow}
+                    onClick={() => openEditEditor(exception)}
+                  >
                     <td>
                       <strong>{exception.employeeName}</strong>
                       <span>{[exception.branchName, exception.areaName, exception.roleName].filter(Boolean).join(" / ") || "Sin estructura"}</span>
@@ -644,20 +682,22 @@ export default function ExceptionManager({
                       {exception.resolutionNotes ? <small>{exception.resolutionNotes}</small> : null}
                     </td>
                     <td>
-                      <div className={styles.rowActions}>
-                        <button type="button" onClick={(event) => {
-                          event.stopPropagation();
-                          openEditEditor(exception);
-                        }} aria-label="Editar justificacion">
-                          <Edit3 size={15} />
-                        </button>
-                        <button type="button" onClick={(event) => {
-                          event.stopPropagation();
-                          setExceptionToDelete(exception);
-                        }} aria-label="Anular justificacion">
-                          <XCircle size={15} />
-                        </button>
-                      </div>
+                      {isLimitedExceptionUser ? null : (
+                        <div className={styles.rowActions}>
+                          <button type="button" onClick={(event) => {
+                            event.stopPropagation();
+                            openEditEditor(exception);
+                          }} aria-label="Editar justificacion">
+                            <Edit3 size={15} />
+                          </button>
+                          <button type="button" onClick={(event) => {
+                            event.stopPropagation();
+                            setExceptionToDelete(exception);
+                          }} aria-label="Anular justificacion">
+                            <XCircle size={15} />
+                          </button>
+                        </div>
+                      )}
                     </td>
                   </tr>
                 ))}
@@ -737,16 +777,23 @@ export default function ExceptionManager({
               </select>
             </label>
 
-            <label className={styles.field}>
-              <span>Tratamiento</span>
-              <select value={form.resolution} onChange={(event) => updateResolution(event.target.value)}>
-                {resolutions.map((resolution) => (
-                  <option key={resolution.value} value={resolution.value}>
-                    {resolution.label}
-                  </option>
-                ))}
-              </select>
-            </label>
+            {isLimitedExceptionUser ? (
+              <label className={styles.field}>
+                <span>Tratamiento</span>
+                <input value="Pendiente de revisar" readOnly />
+              </label>
+            ) : (
+              <label className={styles.field}>
+                <span>Tratamiento</span>
+                <select value={form.resolution} onChange={(event) => updateResolution(event.target.value)}>
+                  {resolutions.map((resolution) => (
+                    <option key={resolution.value} value={resolution.value}>
+                      {resolution.label}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            )}
           </div>
 
           <label className={styles.field}>
@@ -760,7 +807,18 @@ export default function ExceptionManager({
             </select>
           </label>
 
-          {form.scope !== "other" ? (
+          {createsManualPunch ? (
+            <label className={styles.field}>
+              <span>Hora de picada manual</span>
+              <input
+                type="time"
+                value={form.manualPunchTime}
+                onChange={(event) => updateForm("manualPunchTime", event.target.value)}
+              />
+            </label>
+          ) : null}
+
+          {form.scope !== "other" && !createsManualPunch ? (
             <label className={styles.field}>
               <span>Horario planificado</span>
               <select value={selectedScheduleKey} onChange={(event) => updateSchedule(event.target.value)}>
@@ -822,20 +880,22 @@ export default function ExceptionManager({
             />
           </label>
 
-          <label className={styles.field}>
-            <span>Autorizado por</span>
-            <select value={form.authorizedBy} onChange={(event) => updateForm("authorizedBy", event.target.value)}>
-              <option value="">Pendiente</option>
-              {approverOptions.map((employee) => (
-                <option key={employee.id} value={employee.fullName}>
-                  {employee.fullName}
-                </option>
-              ))}
-              {form.authorizedBy && !approverOptions.some((employee) => employee.fullName === form.authorizedBy) ? (
-                <option value={form.authorizedBy}>{form.authorizedBy}</option>
-              ) : null}
-            </select>
-          </label>
+          {isLimitedExceptionUser ? null : (
+            <label className={styles.field}>
+              <span>Autorizado por</span>
+              <select value={form.authorizedBy} onChange={(event) => updateForm("authorizedBy", event.target.value)}>
+                <option value="">Pendiente</option>
+                {approverOptions.map((employee) => (
+                  <option key={employee.id} value={employee.fullName}>
+                    {employee.fullName}
+                  </option>
+                ))}
+                {form.authorizedBy && !approverOptions.some((employee) => employee.fullName === form.authorizedBy) ? (
+                  <option value={form.authorizedBy}>{form.authorizedBy}</option>
+                ) : null}
+              </select>
+            </label>
+          )}
 
           <div className={styles.formActions}>
             <button type="button" className={styles.secondaryButton} onClick={closeEditor} disabled={isPending}>

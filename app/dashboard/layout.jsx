@@ -1,13 +1,11 @@
-import { redirect } from "next/navigation";
+import { headers } from "next/headers";
 
-import { isAuthenticated } from "@/lib/auth";
+import { requireRequestAccess } from "@/lib/access-control";
 
 export default async function DashboardLayout({ children }) {
-  const authenticated = await isAuthenticated();
+  const headerStore = await headers();
 
-  if (!authenticated) {
-    redirect("/");
-  }
+  await requireRequestAccess(headerStore.get("x-control-asistencia-path") || "/dashboard");
 
   return children;
 }

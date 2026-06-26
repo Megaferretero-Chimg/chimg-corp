@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 
 import { getAuthenticatedUser, isAuthenticated } from "@/lib/auth";
+import { PLANNING_EXCEPTIONS_ACCESS_ROLE } from "@/lib/access-roles";
 import connectToDatabase from "@/lib/db/mongodb";
 import {
   buildMonthExceptionQuery,
@@ -9,6 +10,7 @@ import {
   normalizeExceptionPayload,
   serializeOperationalException,
 } from "@/lib/planning/exceptions";
+import { syncExceptionManualPunch } from "@/lib/planning/exceptionPunches";
 import Employee from "@/models/Employee";
 import OperationalException from "@/models/OperationalException";
 
@@ -64,13 +66,31 @@ export async function POST(request) {
     const employee = await Employee.findById(employeeId).lean();
     const user = await getAuthenticatedUser();
     const registeredBy = user?.employeeName || user?.username || user?.id || "SISTEMA";
-    const payload = normalizeExceptionPayload({ ...body, registeredBy }, employee);
+    const isLimitedExceptionUser = user?.accessRole === PLANNING_EXCEPTIONS_ACCESS_ROLE;
+    const normalizedBody = isLimitedExceptionUser
+      ? {
+          ...body,
+          authorizedBy: "",
+          resolution: "pending",
+          resolutionNotes: "",
+        }
+      : body;
+    const payload = normalizeExceptionPayload({ ...normalizedBody, registeredBy }, employee);
     const exception = await OperationalException.create(payload);
+
+    try {
+      await syncExceptionManualPunch(exception);
+    } catch (syncError) {
+      await OperationalException.findByIdAndDelete(exception._id);
+      throw syncError;
+    }
+
+    const savedException = await OperationalException.findById(exception._id).lean();
 
     return NextResponse.json(
       {
         message: "Excepcion registrada correctamente.",
-        exception: serializeOperationalException(exception),
+        exception: serializeOperationalException(savedException),
       },
       { status: 201 },
     );

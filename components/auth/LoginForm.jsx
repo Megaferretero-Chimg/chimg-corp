@@ -34,7 +34,7 @@ export default function LoginForm() {
           throw new Error(payload.error || "No se pudo iniciar sesión.");
         }
 
-        router.push("/modules");
+        router.push(payload.redirectTo || "/modules");
         router.refresh();
       } catch (requestError) {
         setError(requestError.message);

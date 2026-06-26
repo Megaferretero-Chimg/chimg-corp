@@ -2,14 +2,15 @@ import Image from "next/image";
 import { redirect } from "next/navigation";
 
 import LoginForm from "@/components/auth/LoginForm";
-import { isAuthenticated } from "@/lib/auth";
+import { getDefaultLandingPathForUser } from "@/lib/access-control";
+import { getAuthenticatedUser } from "@/lib/auth";
 import styles from "./page.module.scss";
 
 export default async function HomePage() {
-  const authenticated = await isAuthenticated();
+  const user = await getAuthenticatedUser();
 
-  if (authenticated) {
-    redirect("/modules");
+  if (user) {
+    redirect(getDefaultLandingPathForUser(user));
   }
 
   return (
