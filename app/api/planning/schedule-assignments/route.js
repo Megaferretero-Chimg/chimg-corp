@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 
 import { isAuthenticated } from "@/lib/auth";
 import connectToDatabase from "@/lib/db/mongodb";
+import { buildEmployeeActiveInMonthQuery } from "@/lib/employees";
 import { parseMonthKey } from "@/lib/planning/holidays";
 import {
   buildAssignmentPayload,
@@ -435,7 +436,8 @@ export async function POST(request) {
       const branchCode = String(body?.branchCode || "").trim().toUpperCase();
       const areaCode = String(body?.areaCode || "").trim();
       const roleCode = String(body?.roleCode || "").trim();
-      const employeeQuery = { isActive: { $ne: false } };
+      const monthStart = new Date(`${monthKey}-01T00:00:00.000Z`);
+      const employeeQuery = buildEmployeeActiveInMonthQuery(monthStart);
 
       if (branchCode) {
         employeeQuery.branchCode = branchCode;

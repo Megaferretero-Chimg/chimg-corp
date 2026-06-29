@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 
 import { isAuthenticated } from "@/lib/auth";
 import connectToDatabase from "@/lib/db/mongodb";
+import { isEmployeeDismissedInMonth } from "@/lib/employees";
 import { resolveMonthlyBaseHours } from "@/lib/payroll/monthlyBaseHours";
 import { parseMonthKey } from "@/lib/planning/holidays";
 import Employee from "@/models/Employee";
@@ -127,14 +128,14 @@ export async function GET(request) {
     const employeeIds = filteredRows.map((row) => row.employee).filter(Boolean);
     const [employees, rules, payments] = await Promise.all([
       employeeIds.length
-        ? Employee.find({ _id: { $in: employeeIds } }).select({ salary: 1 }).lean()
+        ? Employee.find({ _id: { $in: employeeIds } }).select({ salary: 1, isActive: 1, terminationDate: 1 }).lean()
         : [],
       LaborRuleConfig.findOne({ key: "default" }).lean(),
       employeeIds.length
         ? PayrollPayment.find({ monthKey, employee: { $in: employeeIds }, status: "paid" }).lean()
         : [],
     ]);
-    const salaryByEmployee = new Map(employees.map((employee) => [employee._id.toString(), Number(employee.salary) || 0]));
+    const employeesById = new Map(employees.map((employee) => [employee._id.toString(), employee]));
     const paymentByEmployee = new Map(payments.map((payment) => [payment.employee?.toString?.() || "", payment]));
     const monthlyBase = await resolveMonthlyBaseHours({
       monthKey,
@@ -147,13 +148,19 @@ export async function GET(request) {
     const extraordinaryMultiplier = 1;
     const rows = filteredRows.map((row) => {
       const employeeId = row.employee?.toString?.() || "";
-      const salary = salaryByEmployee.get(employeeId) || 0;
-      const hourlyRate = salary / hourlyDivisor;
+      const employee = employeesById.get(employeeId);
+      const salary = Number(employee?.salary) || 0;
+      const hourlyRate = Number(row.hourlyRate) || salary / hourlyDivisor;
       const normalHours = (Number(row.regularWorkedMinutes) || 0) / 60;
       const supplementaryHours = (Number(row.supplementaryMinutes) || 0) / 60;
       const extraordinaryHours = (Number(row.extraordinaryMinutes) || 0) / 60;
       const lateHours = (Number(row.lateMinutes) || 0) / 60;
-      const normalCost = salary;
+      const rowSalaryBase = Number(row.salaryBase);
+      const hasClosedSalaryBase = row.salaryBase !== undefined && row.salaryBase !== null;
+      const shouldUseClosedBase = isEmployeeDismissedInMonth(employee, monthKey);
+      const normalCost = shouldUseClosedBase && hasClosedSalaryBase && Number.isFinite(rowSalaryBase)
+        ? rowSalaryBase
+        : salary;
       const supplementaryCost = supplementaryHours * hourlyRate * supplementaryMultiplier;
       const extraordinaryCost = extraordinaryHours * hourlyRate * extraordinaryMultiplier;
       const lateDeduction = lateHours * hourlyRate;
@@ -168,6 +175,8 @@ export async function GET(request) {
         areaName: row.areaName || "Sin area",
         roleCode: row.roleCode || "",
         roleName: row.roleName || "Sin rol",
+        isActive: employee?.isActive !== false,
+        terminationDate: employee?.terminationDate ? employee.terminationDate.toISOString().slice(0, 10) : "",
         salary: money(salary),
         hourlyRate: money(hourlyRate),
         normalHours: money(normalHours),

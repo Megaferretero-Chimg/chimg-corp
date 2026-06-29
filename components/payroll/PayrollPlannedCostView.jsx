@@ -7,6 +7,7 @@ import { ArrowLeft, ArrowRight, BarChart3, Building2, Clock3, DollarSign, Layers
 
 import FloatingNotice from "@/components/ui/FloatingNotice";
 import { formatEcuadorMonthKey } from "@/lib/datetime/ecuador";
+import { employeeDismissalLabel, isEmployeeDismissedInMonth } from "@/lib/employees";
 import { planningModulePath } from "@/lib/modules/planning/routes";
 import styles from "./PayrollPlannedCostView.module.scss";
 
@@ -372,8 +373,16 @@ export default function PayrollPlannedCostView({ initialFilters = {}, mode = "ov
               </tr>
             </thead>
             <tbody>
-              {sortedRows.map((row) => (
-                <tr key={row.employeeId}>
+              {sortedRows.map((row) => {
+                const isDismissed = isEmployeeDismissedInMonth(row, filters.monthKey);
+                const dismissalTitle = isDismissed ? employeeDismissalLabel(row) : undefined;
+
+                return (
+                <tr
+                  key={row.employeeId}
+                  className={isDismissed ? styles.dismissedRow : ""}
+                  title={dismissalTitle}
+                >
                   <td data-label="Empleado">
                     <strong>{row.employeeName}</strong>
                     <span>{row.branchName}</span>
@@ -403,7 +412,8 @@ export default function PayrollPlannedCostView({ initialFilters = {}, mode = "ov
                     <strong>{formatMoney(row.totalCost)}</strong>
                   </td>
                 </tr>
-              ))}
+                );
+              })}
             </tbody>
           </table>
         </div>

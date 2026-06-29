@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { getAuthenticatedUser } from "@/lib/auth";
 import { createAuditLog } from "@/lib/audit";
 import connectToDatabase from "@/lib/db/mongodb";
+import { buildEmployeeActiveInMonthQuery } from "@/lib/employees";
 import AttendanceDayDecision from "@/models/AttendanceDayDecision";
 import Employee from "@/models/Employee";
 
@@ -46,7 +47,10 @@ function parseMonthKey(value) {
 }
 
 function employeeFilterFromBody(body = {}) {
-  const query = { isActive: { $ne: false } };
+  const monthKey = String(body?.month || body?.dateKey || "").trim().slice(0, 7);
+  const query = /^\d{4}-\d{2}$/.test(monthKey)
+    ? buildEmployeeActiveInMonthQuery(new Date(`${monthKey}-01T00:00:00.000Z`))
+    : { isActive: { $ne: false } };
   const employeeId = String(body?.employeeId || "").trim();
   const branchCode = String(body?.branchCode || "").trim().toUpperCase();
   const areaCode = String(body?.areaCode || "").trim().toUpperCase();

@@ -6,6 +6,7 @@ import { useEffect, useMemo, useState, useTransition } from "react";
 import { AlertTriangle, ArrowRight, CalendarDays, CheckCircle2, FileSearch, RefreshCw, Save, UserRound } from "lucide-react";
 
 import { formatEcuadorMonthKey } from "@/lib/datetime/ecuador";
+import { isEmployeeActiveInMonth } from "@/lib/employees";
 import { planningModulePath } from "@/lib/modules/planning/routes";
 import styles from "./EmployeeMonthlySummaryView.module.scss";
 
@@ -71,7 +72,10 @@ export default function EmployeeMonthlySummaryView({
   const [isPending, startTransition] = useTransition();
 
   const row = payload?.rows?.[0] || null;
-  const activeEmployees = useMemo(() => employees.filter((employee) => employee.isActive !== false), [employees]);
+  const activeEmployees = useMemo(
+    () => employees.filter((employee) => isEmployeeActiveInMonth(employee, month)),
+    [employees, month],
+  );
   const selectedEmployee = useMemo(
     () => employees.find((employee) => employee.id === employeeId) || row?.employee || null,
     [employeeId, employees, row],
@@ -108,7 +112,7 @@ export default function EmployeeMonthlySummaryView({
             return currentEmployeeId;
           }
 
-          const firstActive = nextEmployees.find((employee) => employee.isActive !== false) || nextEmployees[0];
+          const firstActive = nextEmployees.find((employee) => isEmployeeActiveInMonth(employee, month)) || nextEmployees[0];
           return firstActive.id;
         });
       } catch (requestError) {
@@ -123,7 +127,7 @@ export default function EmployeeMonthlySummaryView({
     return () => {
       ignore = true;
     };
-  }, []);
+  }, [month]);
 
   useEffect(() => {
     if (!employeeId || !month) {

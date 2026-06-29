@@ -12,6 +12,7 @@ import {
   setEcuadorTime,
 } from "@/lib/datetime/ecuador";
 import connectToDatabase from "@/lib/db/mongodb";
+import { buildEmployeeActiveInMonthQuery, isEmployeeDismissedInMonth } from "@/lib/employees";
 import { buildGeneratedDays } from "@/lib/planning/scheduleAssignments";
 import AttendanceDayDecision from "@/models/AttendanceDayDecision";
 import { parseMonthKey } from "@/lib/planning/holidays";
@@ -39,6 +40,7 @@ const ATTENDANCE_ISSUE_TAGS = new Set([
   "Atraso",
   "Salida anticipada",
 ]);
+const UNPLANNED_WORK_TAGS = new Set(["No planificado", "Trabajo sin horario"]);
 const WEEKDAY_LABEL_FORMATTER = new Intl.DateTimeFormat("es-EC", {
   weekday: "short",
   timeZone: "America/Guayaquil",
@@ -270,15 +272,25 @@ function resolvePlannedExtraordinaryMinutes(day) {
     return 0;
   }
 
-  if (day?.dayType === "weekend_overtime") {
-    return Number(day.scheduledWorkedMinutes) || resolveScheduledNetMinutes(day);
+  const plannedDayType = day?.plannedDayType || day?.dayType;
+
+  if (plannedDayType === "weekend_overtime") {
+    return Number(day.originalScheduledWorkedMinutes) || Number(day.scheduledWorkedMinutes) || resolveScheduledNetMinutes(day);
   }
 
-  if (day?.dayType === "holiday") {
-    return resolveScheduledNetMinutes(day);
+  if (plannedDayType === "holiday") {
+    return Number(day.originalScheduledWorkedMinutes) || resolveScheduledNetMinutes(day);
   }
 
   return 0;
+}
+
+function resolvePlannedRegularMinutes(day) {
+  return Number(day?.originalPlannedRegularMinutes ?? day?.plannedRegularMinutes) || 0;
+}
+
+function resolvePlannedSupplementaryMinutes(day) {
+  return Number(day?.originalPlannedSupplementaryMinutes ?? day?.plannedSupplementaryMinutes) || 0;
 }
 
 function resolveActualLunchMinutes(sortedPunches) {
@@ -540,6 +552,16 @@ function resolveEmploymentStartDateKey(employee = {}) {
   return formatEcuadorDateKey(date);
 }
 
+function resolveTerminationDateKey(employee = {}) {
+  const value = employee.terminationDate || null;
+  if (!value) return "";
+
+  const date = value instanceof Date ? value : new Date(value);
+  if (Number.isNaN(date.getTime())) return "";
+
+  return formatEcuadorDateKey(date);
+}
+
 function applyEmploymentStartDay(day, employmentStartDateKey = "") {
   if (!employmentStartDateKey || day.dateKey >= employmentStartDateKey) return day;
 
@@ -551,6 +573,20 @@ function applyEmploymentStartDay(day, employmentStartDateKey = "") {
     lunchDurationMinutes: 0,
     authorizedExtraMinutes: 0,
     source: "employment_pending",
+  };
+}
+
+function applyEmploymentEndDay(day, terminationDateKey = "") {
+  if (!terminationDateKey || day.dateKey <= terminationDateKey) return day;
+
+  return {
+    ...day,
+    dayType: "off_day",
+    startTime: "",
+    endTime: "",
+    lunchDurationMinutes: 0,
+    authorizedExtraMinutes: 0,
+    source: "employment_ended",
   };
 }
 
@@ -581,7 +617,7 @@ function isRestOrWeekendDay(day) {
 function hasWorkWithoutScheduleTag(day) {
   const tags = day?.tags || [];
 
-  return tags.includes("Trabajo sin horario");
+  return tags.some((tag) => UNPLANNED_WORK_TAGS.has(tag));
 }
 
 function buildDayDecisionMap(decisions = []) {
@@ -802,6 +838,82 @@ function applyWeeklyExtraDayTypes(days = []) {
           dayType: "weekend_overtime",
           authorizedExtraMinutes: resolveScheduledNetMinutes(day),
           source: day.source || "weekly_extra_rule",
+        });
+      });
+  });
+
+  return days.map((day) => byDate.get(day.dateKey) || day);
+}
+
+function applyWeeklyExtraByAttendance(days = []) {
+  const weeks = new Map();
+
+  days.forEach((day) => {
+    const key = weekStartKey(day.dateKey);
+
+    if (!weeks.has(key)) {
+      weeks.set(key, []);
+    }
+
+    weeks.get(key).push(day);
+  });
+
+  const byDate = new Map();
+
+  weeks.forEach((weekDays) => {
+    let actualWorkedDayCount = 0;
+
+    [...weekDays]
+      .sort((left, right) => String(left.dateKey || "").localeCompare(String(right.dateKey || "")))
+      .forEach((day) => {
+        const workedMinutes = Math.max(0, Number(day.workedMinutes) || 0);
+        const isWorkedAttendanceDay = workedMinutes > 0 && !["holiday", "vacation"].includes(day.dayType);
+
+        if (!isWorkedAttendanceDay) {
+          byDate.set(day.dateKey, day);
+          return;
+        }
+
+        actualWorkedDayCount += 1;
+
+        if (actualWorkedDayCount <= 5) {
+          const plannedRegularMinutes = Math.max(
+            Number(day.plannedRegularMinutes) || 0,
+            Math.min(workedMinutes, REGULAR_DAY_MINUTES),
+          );
+          const scheduledWorkedMinutes = Math.max(Number(day.scheduledWorkedMinutes) || 0, workedMinutes);
+
+          byDate.set(day.dateKey, {
+            ...day,
+            dayType: "workday",
+            dayTypeLabel: dayTypeLabel("workday"),
+            scheduleLabel: day.scheduleLabel || dayTypeLabel("workday"),
+            plannedRegularMinutes,
+            plannedRegularLabel: plannedRegularMinutes ? minutesLabel(plannedRegularMinutes) : "--",
+            plannedSupplementaryMinutes: Number(day.plannedSupplementaryMinutes) || 0,
+            plannedSupplementaryLabel: day.plannedSupplementaryMinutes ? minutesLabel(day.plannedSupplementaryMinutes) : "--",
+            scheduledWorkedMinutes,
+            scheduledWorkedLabel: scheduledWorkedMinutes ? minutesLabel(scheduledWorkedMinutes) : "--",
+            authorizedExtraMinutes: 0,
+            weeklyAttendanceClassification: "regular",
+          });
+          return;
+        }
+
+        byDate.set(day.dateKey, {
+          ...day,
+          dayType: "weekend_overtime",
+          dayTypeLabel: dayTypeLabel("weekend_overtime"),
+          scheduleLabel: dayTypeLabel("weekend_overtime"),
+          plannedRegularMinutes: 0,
+          plannedRegularLabel: "--",
+          plannedSupplementaryMinutes: 0,
+          plannedSupplementaryLabel: "--",
+          scheduledWorkedMinutes: workedMinutes,
+          scheduledWorkedLabel: minutesLabel(workedMinutes),
+          authorizedExtraMinutes: workedMinutes,
+          weeklyAttendanceClassification: "extra",
+          source: day.source || "weekly_attendance_rule",
         });
       });
   });
@@ -1416,11 +1528,11 @@ function applyMonthlyHourTarget(days) {
 
       nextDay.extraordinaryMinutes = workedMinutes;
       nextDay.extraordinaryLabel = minutesLabel(workedMinutes);
-      nextDay.tags = [...nextDay.tags.filter((tag) => tag !== "Trabajo sin horario"), "Extraordinaria"];
+      nextDay.tags = [...nextDay.tags.filter((tag) => !UNPLANNED_WORK_TAGS.has(tag)), "Extraordinaria"];
       return nextDay;
     }
 
-    if (hasWorkWithoutScheduleTag(nextDay)) {
+    if (hasWorkWithoutScheduleTag(nextDay) && nextDay.weeklyAttendanceClassification !== "regular") {
       nextDay.hasIssue = nextDay.tags.some(isAttendanceIssueTag);
       return nextDay;
     }
@@ -1558,7 +1670,7 @@ function compareDay(day, punches, laborRules, employee = {}) {
   }
 
   if (!isWorkingDay && day?.dayType !== "holiday" && punchCount > 0 && !shouldUsePlannedAttendance && !shouldIgnorePunchesForPayroll) {
-    tags.push("Trabajo sin horario");
+    tags.push("No planificado");
   }
 
   if (isWorkingDay && scheduleStart && firstPunch && firstPunch.punchedAt > scheduleStart && !shouldUsePlannedAttendance && !hasInsufficientTwoPunchSpan && scheduleAffectsSalary) {
@@ -1631,6 +1743,11 @@ function compareDay(day, punches, laborRules, employee = {}) {
     scheduledWorkedMinutes: plannedMinutes.scheduledWorkedMinutes,
     plannedRegularMinutes: plannedMinutes.plannedRegularMinutes,
     plannedSupplementaryMinutes: plannedMinutes.plannedSupplementaryMinutes,
+    plannedDayType: day.dayType || "off_day",
+    originalScheduledWorkedMinutes: plannedMinutes.scheduledWorkedMinutes,
+    originalPlannedRegularMinutes: plannedMinutes.plannedRegularMinutes,
+    originalPlannedSupplementaryMinutes: plannedMinutes.plannedSupplementaryMinutes,
+    originalAuthorizedExtraMinutes: Number(day.authorizedExtraMinutes) || 0,
     payrollPolicy,
     scheduledWorkedLabel: plannedMinutes.scheduledWorkedMinutes ? minutesLabel(plannedMinutes.scheduledWorkedMinutes) : "--",
     plannedRegularLabel: plannedMinutes.plannedRegularMinutes ? minutesLabel(plannedMinutes.plannedRegularMinutes) : "--",
@@ -1721,12 +1838,7 @@ export async function GET(request) {
     const start = makeEcuadorDate(year, monthIndex, 1);
     const end = makeEcuadorDate(year, monthIndex + 1, 1);
     const { contextStart, contextEnd } = getWeekContextRange(start, end);
-    const employeeQuery = {
-      $or: [
-        { isActive: { $ne: false } },
-        { terminationDate: { $gte: start } },
-      ],
-    };
+    const employeeQuery = buildEmployeeActiveInMonthQuery(start);
 
     if (branchCode) {
       employeeQuery.branchCode = branchCode;
@@ -1864,8 +1976,9 @@ export async function GET(request) {
     const rows = employees.map((employee) => {
       const employeeKey = toId(employee);
       const employmentStartDateKey = resolveEmploymentStartDateKey(employee);
+      const terminationDateKey = resolveTerminationDateKey(employee);
       const employeeVisibleReferenceDays = visibleReferenceDays
-        .map((day) => applyEmploymentStartDay(day, employmentStartDateKey));
+        .map((day) => applyEmploymentEndDay(applyEmploymentStartDay(day, employmentStartDateKey), terminationDateKey));
       const baseLaborDays = countBaseLaborDays(employeeVisibleReferenceDays);
       const regularTargetMinutes = baseLaborDays * REGULAR_DAY_MINUTES;
       const vacationDateKeys = vacationDateKeysByEmployee.get(employeeKey) || new Set();
@@ -1876,9 +1989,12 @@ export async function GET(request) {
           ...(manualDaysByEmployeeDate.get(`${employeeKey}|${referenceDay.dateKey}`) || {}),
         };
 
-        return applyExceptionPlannedSchedule(
-          applyVacationDay(applyEmploymentStartDay(assignedDay, employmentStartDateKey), vacationDateKeys),
-          exceptionPlannedSchedulesByEmployeeDate.get(`${employeeKey}|${referenceDay.dateKey}`),
+        return applyEmploymentEndDay(
+          applyExceptionPlannedSchedule(
+            applyVacationDay(applyEmploymentStartDay(assignedDay, employmentStartDateKey), vacationDateKeys),
+            exceptionPlannedSchedulesByEmployeeDate.get(`${employeeKey}|${referenceDay.dateKey}`),
+          ),
+          terminationDateKey,
         );
       });
       const comparableDays = applyWeeklyExtraDayTypes(
@@ -1893,7 +2009,8 @@ export async function GET(request) {
           discountedWorkIntervalsByEmployeeDate.get(`${employeeKey}|${day.dateKey}`) || [],
         ),
       );
-      const visibleDays = comparedDays.filter((day) => monthKeyFromDateKey(day.dateKey) === monthKey);
+      const attendanceClassifiedDays = applyWeeklyExtraByAttendance(comparedDays);
+      const visibleDays = attendanceClassifiedDays.filter((day) => monthKeyFromDateKey(day.dateKey) === monthKey);
       const classifiedDays = applyMonthlyHourTarget(visibleDays);
       const days = classifiedDays.map((day) =>
         applyDayDecision(day, dayDecisionsByEmployeeDate.get(`${employeeKey}|${day.dateKey}`)),
@@ -1917,7 +2034,7 @@ export async function GET(request) {
         if (day.lateMinutes > 0) totals.lateDays += 1;
         if (day.earlyLeaveMinutes > 0) totals.earlyLeaveDays += 1;
         if (day.tags.includes("Picadas adicionales")) totals.extraPunchDays += 1;
-        if (day.tags.includes("Trabajo sin horario")) {
+        if (day.tags.some((tag) => UNPLANNED_WORK_TAGS.has(tag))) {
           totals.unplannedWorkDays += 1;
         }
         if (day.supplementaryMinutes > 0 || day.additionalSupplementaryMinutes > 0 || day.extraordinaryMinutes > 0) {
@@ -1926,8 +2043,8 @@ export async function GET(request) {
         if (day.hasIssue) totals.issueDays += 1;
         totals.operationalAlertDays = totals.absentDays + totals.incompletePunchDays + totals.unplannedWorkDays;
 
-        totals.plannedRegularMinutes += day.plannedRegularMinutes;
-        totals.plannedSupplementaryMinutes += day.plannedSupplementaryMinutes;
+        totals.plannedRegularMinutes += resolvePlannedRegularMinutes(day);
+        totals.plannedSupplementaryMinutes += resolvePlannedSupplementaryMinutes(day);
         totals.plannedExtraordinaryMinutes += resolvePlannedExtraordinaryMinutes(day);
         totals.lateMinutes += day.lateMinutes;
         totals.earlyLeaveMinutes += day.earlyLeaveMinutes;
@@ -1950,7 +2067,12 @@ export async function GET(request) {
         ...day,
         pay: buildDailyPay(day, hourlyRate),
       }));
-      const salaryExpected = salary;
+      const isDismissedInPayrollMonth = isEmployeeDismissedInMonth(employee, monthKey);
+      const workedRegularSalary = Math.min(
+        salary,
+        (Math.max(0, Number(summary.regularWorkedMinutes) || 0) / 60) * hourlyRate,
+      );
+      const salaryExpected = isDismissedInPayrollMonth ? workedRegularSalary : salary;
       const additionalPayrollTotal = daysWithPay.reduce((total, day) => {
         const items = day.pay?.items || [];
 
@@ -1963,9 +2085,9 @@ export async function GET(request) {
       const realPayrollTotal =
         (summary.detectedSupplementaryMinutes / 60) * hourlyRate * SUPPLEMENTARY_SURCHARGE_MULTIPLIER +
         (summary.detectedExtraordinaryMinutes / 60) * hourlyRate * EXTRAORDINARY_SURCHARGE_MULTIPLIER;
-      const salaryPlanned = salary + plannedPayrollTotal;
-      const salaryReal = salary + realPayrollTotal;
-      const salaryProjected = salary + additionalPayrollTotal;
+      const salaryPlanned = salaryExpected + plannedPayrollTotal;
+      const salaryReal = salaryExpected + realPayrollTotal;
+      const salaryProjected = salaryExpected + additionalPayrollTotal;
 
       return {
         employee: {
@@ -1978,6 +2100,8 @@ export async function GET(request) {
           areaName: employee.areaName || "",
           roleCode: employee.roleCode || "",
           roleName: employee.roleName || "",
+          isActive: employee.isActive !== false,
+          terminationDate: employee.terminationDate ? employee.terminationDate.toISOString().slice(0, 10) : "",
         },
         hasSchedule: Boolean(assignment) || hasManualScheduleDays,
         templateName: assignment?.templateName || "",
@@ -1992,6 +2116,8 @@ export async function GET(request) {
           plannedSupplementaryLabel: minutesLabel(summary.plannedSupplementaryMinutes),
           plannedExtraordinaryLabel: minutesLabel(summary.plannedExtraordinaryMinutes),
           salaryExpected: money(salaryExpected),
+          salaryExpectedRaw: salaryExpected,
+          salaryExpectedValue: money(salaryExpected),
           salaryExpectedLabel: moneyLabel(salaryExpected),
           salaryPlanned: money(salaryPlanned),
           salaryPlannedLabel: moneyLabel(salaryPlanned),

@@ -480,6 +480,20 @@
   font-weight: 850;
 }
 
+.dismissedRow td {
+  border-top: 1px dashed #f59e0b;
+  border-bottom: 1px dashed #f59e0b;
+  background: #fffaf5;
+}
+
+.dismissedRow td:first-child {
+  border-left: 1px dashed #f59e0b;
+}
+
+.dismissedRow td:last-child {
+  border-right: 1px dashed #f59e0b;
+}
+
 .metricValue {
   color: #10213e;
   font-size: 0.88rem;

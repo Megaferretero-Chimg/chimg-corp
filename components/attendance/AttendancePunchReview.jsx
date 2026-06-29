@@ -13,6 +13,7 @@ import {
 
 import CatalogDrawer from "@/components/catalog/CatalogDrawer";
 import useClientReady from "@/hooks/useClientReady";
+import { isEmployeeActiveOnDate } from "@/lib/employees";
 import styles from "./AttendancePunchReview.module.scss";
 
 function toDateInput(value) {
@@ -113,11 +114,12 @@ export default function AttendancePunchReview() {
   const filteredEmployees = useMemo(
     () =>
       employees.filter((employee) => {
-        if (employee.isActive === false) return false;
+        const selectedDateKey = form.punchedAt ? form.punchedAt.slice(0, 10) : filters.from;
+        if (!isEmployeeActiveOnDate(employee, selectedDateKey)) return false;
         if (branchCode && employee.branchCode !== branchCode) return false;
         return true;
       }),
-    [branchCode, employees],
+    [branchCode, employees, filters.from, form.punchedAt],
   );
   const isLoading = isCatalogLoading || isPunchesLoading;
 
@@ -636,7 +638,7 @@ export default function AttendancePunchReview() {
             >
               <option value="">Selecciona un empleado</option>
               {employees
-                .filter((employee) => employee.isActive !== false)
+                .filter((employee) => isEmployeeActiveOnDate(employee, form.punchedAt ? form.punchedAt.slice(0, 10) : filters.from))
                 .map((employee) => (
                   <option key={employee.id} value={employee.id}>
                     {employee.fullName}

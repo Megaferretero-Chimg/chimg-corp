@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { AlertTriangle } from "lucide-react";
 
 import { formatEcuadorMonthKey } from "@/lib/datetime/ecuador";
+import { employeeDismissalLabel, isEmployeeActiveInMonth, isEmployeeDismissedInMonth } from "@/lib/employees";
 import { planningModulePath } from "@/lib/modules/planning/routes";
 import styles from "./AttendanceComparisonView.module.scss";
 
@@ -141,39 +142,39 @@ export default function AttendanceComparisonView() {
   const filteredEmployees = useMemo(
     () =>
       employees.filter((employee) => {
-        if (employee.isActive === false) return false;
+        if (!isEmployeeActiveInMonth(employee, filters.month)) return false;
         if (filters.branchCode && employee.branchCode !== filters.branchCode) return false;
         if (filters.areaCode && employee.areaCode !== filters.areaCode) return false;
         if (filters.roleCode && employee.roleCode !== filters.roleCode) return false;
         return true;
       }),
-    [employees, filters.areaCode, filters.branchCode, filters.roleCode],
+    [employees, filters.areaCode, filters.branchCode, filters.month, filters.roleCode],
   );
 
   const areaOptions = useMemo(() => {
     const options = new Map();
 
     employees.forEach((employee) => {
-      if (employee.isActive === false) return;
+      if (!isEmployeeActiveInMonth(employee, filters.month)) return;
       if (filters.branchCode && employee.branchCode !== filters.branchCode) return;
       if (employee.areaCode) options.set(employee.areaCode, employee.areaName || employee.areaCode);
     });
 
     return [...options.entries()].sort((left, right) => left[1].localeCompare(right[1], "es"));
-  }, [employees, filters.branchCode]);
+  }, [employees, filters.branchCode, filters.month]);
 
   const roleOptions = useMemo(() => {
     const options = new Map();
 
     employees.forEach((employee) => {
-      if (employee.isActive === false) return;
+      if (!isEmployeeActiveInMonth(employee, filters.month)) return;
       if (filters.branchCode && employee.branchCode !== filters.branchCode) return;
       if (filters.areaCode && employee.areaCode !== filters.areaCode) return;
       if (employee.roleCode) options.set(employee.roleCode, employee.roleName || employee.roleCode);
     });
 
     return [...options.entries()].sort((left, right) => left[1].localeCompare(right[1], "es"));
-  }, [employees, filters.areaCode, filters.branchCode]);
+  }, [employees, filters.areaCode, filters.branchCode, filters.month]);
 
   const visibleRows = useMemo(
     () => {
@@ -399,10 +400,14 @@ export default function AttendanceComparisonView() {
 
   function renderComparisonRows(rowsToRender) {
     return rowsToRender.map((row) => {
+      const isDismissed = isEmployeeDismissedInMonth(row.employee, filters.month);
+      const dismissalTitle = isDismissed ? employeeDismissalLabel(row.employee) : undefined;
+
       return (
         <tr
           key={row.employee.id}
-          className={styles.clickableRow}
+          className={`${styles.clickableRow} ${isDismissed ? styles.dismissedRow : ""}`}
+          title={dismissalTitle}
           role="button"
           tabIndex={0}
           onClick={() => router.push(buildEmployeeReportHref(row.employee.id))}

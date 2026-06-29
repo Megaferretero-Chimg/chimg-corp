@@ -368,6 +368,7 @@ function hasPlanningAlert(day) {
     "Sin picadas",
     "Picadas incompletas",
     "Picadas insuficientes",
+    "No planificado",
     "Trabajo sin horario",
   ].includes(tag));
 }

@@ -5,6 +5,7 @@ import { AlertTriangle, CheckCircle2, Download, RefreshCw, Save } from "lucide-r
 
 import ConfirmDialog from "@/components/ui/ConfirmDialog";
 import { formatEcuadorMonthKey } from "@/lib/datetime/ecuador";
+import { employeeDismissalLabel, isEmployeeDismissedInMonth } from "@/lib/employees";
 import styles from "./MonthlyClosureView.module.scss";
 
 function currentMonthKey() {
@@ -692,8 +693,16 @@ export default function MonthlyClosureView({ view = "summary", fixedMonth = "" }
                       </tr>
                     </thead>
                     <tbody>
-                      {displayedRows.map((row, index) => (
-                        <tr key={row.employeeId || `${row.employeeName}-${index}`}>
+                      {displayedRows.map((row, index) => {
+                        const isDismissed = isEmployeeDismissedInMonth(row, month);
+                        const dismissalTitle = isDismissed ? employeeDismissalLabel(row) : undefined;
+
+                        return (
+                        <tr
+                          key={row.employeeId || `${row.employeeName}-${index}`}
+                          className={isDismissed ? styles.dismissedRow : ""}
+                          title={dismissalTitle}
+                        >
                           <td>
                             <strong className={styles.employeeName}>{row.employeeName}</strong>
                           </td>
@@ -710,7 +719,8 @@ export default function MonthlyClosureView({ view = "summary", fixedMonth = "" }
                             <strong className={styles.salaryValue}>{row.salaryTotalLabel || "$0.00"}</strong>
                           </td>
                         </tr>
-                      ))}
+                        );
+                      })}
                       {!displayedRows.length ? (
                         <tr>
                           <td colSpan={5} className={styles.emptyCell}>No hay empleados para generar nómina en este mes.</td>
@@ -732,8 +742,16 @@ export default function MonthlyClosureView({ view = "summary", fixedMonth = "" }
                       </tr>
                     </thead>
                     <tbody>
-                      {displayedRows.map((row, index) => (
-                        <tr key={row.employeeId || `${row.employeeName}-${index}`}>
+                      {displayedRows.map((row, index) => {
+                        const isDismissed = isEmployeeDismissedInMonth(row, month);
+                        const dismissalTitle = isDismissed ? employeeDismissalLabel(row) : undefined;
+
+                        return (
+                        <tr
+                          key={row.employeeId || `${row.employeeName}-${index}`}
+                          className={isDismissed ? styles.dismissedRow : ""}
+                          title={dismissalTitle}
+                        >
                           <td>
                             <strong className={styles.employeeName}>{row.employeeName}</strong>
                             <span>{row.branchName} · {row.areaName} · {row.roleName}</span>
@@ -776,7 +794,8 @@ export default function MonthlyClosureView({ view = "summary", fixedMonth = "" }
                             <strong className={styles.salaryValue}>{row.salaryTotalLabel || "$0.00"}</strong>
                           </td>
                         </tr>
-                      ))}
+                        );
+                      })}
                       {!displayedRows.length ? (
                         <tr>
                           <td colSpan={isCrossView ? 7 : 6} className={styles.emptyCell}>

@@ -2,11 +2,12 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { CalendarDays, Check, ChevronDown, ChevronLeft, ChevronRight, ClipboardPaste, Info, RefreshCw, RotateCcw, Save, X } from "lucide-react";
+import { CalendarDays, Check, ChevronDown, ChevronLeft, ChevronRight, ClipboardPaste, Download, Info, RefreshCw, RotateCcw, Save, X } from "lucide-react";
 
 import FloatingModal from "@/components/ui/FloatingModal";
 import FloatingNotice from "@/components/ui/FloatingNotice";
 import { formatEcuadorMonthKey } from "@/lib/datetime/ecuador";
+import { employeeDismissalLabel, isEmployeeActiveInMonth, isEmployeeDismissedInMonth } from "@/lib/employees";
 import { planningModulePath } from "@/lib/modules/planning/routes";
 import { getMonthWeekOptions } from "@/lib/planning/scheduleAssignments";
 import styles from "./SchedulePlanner.module.scss";
@@ -1070,6 +1071,7 @@ export default function SchedulePlanner({ initialFilters = {} }) {
   const [notice, setNotice] = useState(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isAssignmentsLoading, setIsAssignmentsLoading] = useState(false);
+  const [isExportingSchedule, setIsExportingSchedule] = useState(false);
   const [loadedAssignmentsKey, setLoadedAssignmentsKey] = useState("");
   const [isPending, startTransition] = useTransition();
   const draftRevisionRef = useRef(0);
@@ -1124,26 +1126,26 @@ export default function SchedulePlanner({ initialFilters = {} }) {
     const options = new Map();
 
     employees.forEach((employee) => {
-      if (employee.isActive === false || !usesVariableSchedule(employee)) return;
+      if (!isEmployeeActiveInMonth(employee, monthKey) || !usesVariableSchedule(employee)) return;
       if (branchCode && employee.branchCode !== branchCode) return;
       if (employee.areaCode) options.set(employee.areaCode, employee.areaName || employee.areaCode);
     });
 
     return [...options.entries()].sort((left, right) => left[1].localeCompare(right[1], "es"));
-  }, [branchCode, employees]);
+  }, [branchCode, employees, monthKey]);
 
   const roleOptions = useMemo(() => {
     const options = new Map();
 
     employees.forEach((employee) => {
-      if (employee.isActive === false || !usesVariableSchedule(employee)) return;
+      if (!isEmployeeActiveInMonth(employee, monthKey) || !usesVariableSchedule(employee)) return;
       if (branchCode && employee.branchCode !== branchCode) return;
       if (areaCode && employee.areaCode !== areaCode) return;
       if (employee.roleCode) options.set(employee.roleCode, employee.roleName || employee.roleCode);
     });
 
     return [...options.entries()].sort((left, right) => left[1].localeCompare(right[1], "es"));
-  }, [areaCode, branchCode, employees]);
+  }, [areaCode, branchCode, employees, monthKey]);
 
   const rolesByCode = useMemo(
     () => new Map(roles.map((role) => [role.code, role])),
@@ -1167,12 +1169,12 @@ export default function SchedulePlanner({ initialFilters = {} }) {
     () =>
       employees.filter((employee) => {
         if (!hasPlanningScope) return false;
-        if (employee.isActive === false || !usesVariableSchedule(employee)) return false;
+        if (!isEmployeeActiveInMonth(employee, monthKey) || !usesVariableSchedule(employee)) return false;
         if (employee.branchCode !== branchCode) return false;
         if (employee.areaCode !== areaCode) return false;
         return !roleCode || employee.roleCode === roleCode;
       }),
-    [areaCode, branchCode, employees, hasPlanningScope, roleCode],
+    [areaCode, branchCode, employees, hasPlanningScope, monthKey, roleCode],
   );
 
   const coverageRolesForEmployee = useCallback((employee) => {
@@ -1985,6 +1987,49 @@ export default function SchedulePlanner({ initialFilters = {} }) {
     });
   }
 
+  async function downloadScheduleExcel() {
+    if (isExportingSchedule || shouldShowScopedLoading || !filteredEmployees.length) return;
+
+    if (hasDraftChanges) {
+      showNotice("error", "Guarda los cambios pendientes antes de descargar el Excel.");
+      return;
+    }
+
+    try {
+      setIsExportingSchedule(true);
+
+      const params = new URLSearchParams({ month: monthKey });
+
+      if (branchCode) params.set("branchCode", branchCode);
+      if (areaCode) params.set("areaCode", areaCode);
+      if (roleCode) params.set("roleCode", roleCode);
+
+      const response = await fetch(`/api/planning/schedule-assignments/export?${params.toString()}`);
+
+      if (!response.ok) {
+        const payload = await response.json().catch(() => null);
+        throw new Error(payload?.error || "No se pudo descargar el horario.");
+      }
+
+      const blob = await response.blob();
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      const scopeSuffix = [branchCode, areaCode, roleCode].filter(Boolean).join("-").toLowerCase();
+
+      link.href = url;
+      link.download = `horarios-semanales-${monthKey}${scopeSuffix ? `-${scopeSuffix}` : ""}.xlsx`;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      URL.revokeObjectURL(url);
+      showNotice("success", "Excel de horarios descargado.");
+    } catch (error) {
+      showNotice("error", error.message || "No se pudo descargar el horario.");
+    } finally {
+      setIsExportingSchedule(false);
+    }
+  }
+
   function openEmployeeDetail(event, employeeId) {
     if (event.target.closest("select, button, a")) return;
 
@@ -2283,6 +2328,14 @@ export default function SchedulePlanner({ initialFilters = {} }) {
             <RotateCcw size={16} />
             Limpiar horarios
           </button>
+          <button
+            type="button"
+            onClick={downloadScheduleExcel}
+            disabled={isExportingSchedule || isPending || !filteredEmployees.length}
+          >
+            {isExportingSchedule ? <RefreshCw size={16} /> : <Download size={16} />}
+            {isExportingSchedule ? "Descargando..." : "Excel semanal"}
+          </button>
           <button type="button" onClick={saveWeek} disabled={isPending || !hasDraftChanges || !filteredEmployees.length || !availableCoverageRoles.length}>
             {isPending ? <RefreshCw size={16} /> : <Save size={16} />}
             {isPending ? "Guardando..." : "Guardar semana"}
@@ -2432,11 +2485,14 @@ export default function SchedulePlanner({ initialFilters = {} }) {
                 const employeeShiftOptions = getShiftOptionsForEmployee(employee);
                 const employeeCost = planningCostByEmployee.get(employee.id);
                 const canChooseCoverage = employeeCoverageOptions.length > 1;
+                const isDismissed = isEmployeeDismissedInMonth(employee, monthKey);
+                const dismissalTitle = isDismissed ? employeeDismissalLabel(employee) : undefined;
 
                 return (
                   <tr
                     key={employee.id}
-                    className={styles.clickableRow}
+                    className={`${styles.clickableRow} ${isDismissed ? styles.dismissedRow : ""}`}
+                    title={dismissalTitle}
                     onClick={(event) => openEmployeeDetail(event, employee.id)}
                   >
                     <td data-label="Empleado">

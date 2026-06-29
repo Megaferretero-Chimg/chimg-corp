@@ -39,6 +39,9 @@
 .table td span { margin-top: 0.18rem; color: #6a7890; font-size: var(--font-size-sm); font-weight: 500; }
 .table td[data-label="Estructura"] strong,
 .table td[data-label="Estructura"] span { font-weight: 500; }
+.dismissedRow td { border-top: 1px dashed #f59e0b; border-bottom: 1px dashed #f59e0b; background: #fffaf5; }
+.dismissedRow td:first-child { border-left: 1px dashed #f59e0b; }
+.dismissedRow td:last-child { border-right: 1px dashed #f59e0b; }
 .paidBadge { display: inline-flex; width: fit-content; margin-top: 0.35rem; border-radius: 999px; background: rgba(47, 190, 111, 0.13); color: #247b4d; padding: 0.18rem 0.48rem; font-size: var(--font-size-xs); font-style: normal; font-weight: 800; }
 .emptyText { margin: 0.8rem 0 0; color: #6a7890; font-weight: 700; }
 .emptyValue { color: #94a3b8; font-weight: 800; }

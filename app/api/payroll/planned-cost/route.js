@@ -110,9 +110,9 @@ export async function GET(request) {
     ]);
     const employeeIds = assignments.map((assignment) => assignment.employee).filter(Boolean);
     const employees = employeeIds.length
-      ? await Employee.find({ _id: { $in: employeeIds } }).select({ salary: 1 }).lean()
+      ? await Employee.find({ _id: { $in: employeeIds } }).select({ salary: 1, isActive: 1, terminationDate: 1 }).lean()
       : [];
-    const salaryByEmployee = new Map(employees.map((employee) => [employee._id.toString(), Number(employee.salary) || 0]));
+    const employeesById = new Map(employees.map((employee) => [employee._id.toString(), employee]));
     const monthlyBase = await resolveMonthlyBaseHours({
       monthKey,
       year,
@@ -123,7 +123,8 @@ export async function GET(request) {
     const supplementaryMultiplier = 0.5;
     const extraordinaryMultiplier = 1;
     const rows = assignments.map((assignment) => {
-      const salary = salaryByEmployee.get(assignment.employee?.toString?.() || "") || 0;
+      const employee = employeesById.get(assignment.employee?.toString?.() || "");
+      const salary = Number(employee?.salary) || 0;
       const hourlyRate = salary / hourlyDivisor;
       const totals = (assignment.generatedDays || []).reduce(
         (accumulator, day) => {
@@ -169,6 +170,8 @@ export async function GET(request) {
         areaName: assignment.areaName || "Sin area",
         roleCode: assignment.roleCode || "",
         roleName: assignment.roleName || "Sin rol",
+        isActive: employee?.isActive !== false,
+        terminationDate: employee?.terminationDate ? employee.terminationDate.toISOString().slice(0, 10) : "",
         salary: money(salary),
         hourlyRate: money(hourlyRate),
         workdays: totals.workdays,

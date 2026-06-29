@@ -2,9 +2,9 @@ import { NextResponse } from "next/server";
 
 import { createAuditLog, resolveAuditActor } from "@/lib/audit";
 import { isAuthenticated } from "@/lib/auth";
-import { formatEcuadorDateTime } from "@/lib/datetime/ecuador";
+import { formatEcuadorDateKey, formatEcuadorDateTime } from "@/lib/datetime/ecuador";
 import connectToDatabase from "@/lib/db/mongodb";
-import { serializeEmployee } from "@/lib/employees";
+import { isEmployeeActiveOnDate, serializeEmployee } from "@/lib/employees";
 import { buildPunchMinuteRange } from "@/lib/attendance/punchIdentity";
 import { parsePunchDateTime, resolvePunchRange } from "@/lib/attendance/punches";
 import AuditLog from "@/models/AuditLog";
@@ -41,11 +41,11 @@ function serializeAudit(log) {
   };
 }
 
-async function assertActiveEmployee(employeeId) {
-  const employee = await Employee.findOne({ _id: employeeId, isActive: { $ne: false } });
+async function assertEmployeeActiveOnDate(employeeId, punchedAt) {
+  const employee = await Employee.findById(employeeId);
 
-  if (!employee) {
-    const error = new Error("Empleado activo no encontrado.");
+  if (!employee || !isEmployeeActiveOnDate(employee, formatEcuadorDateKey(punchedAt))) {
+    const error = new Error("Empleado vigente en la fecha no encontrado.");
     error.status = 404;
     throw error;
   }
@@ -188,13 +188,14 @@ export async function POST(request) {
     await connectToDatabase();
 
     const body = await request.json();
-    const employee = await assertActiveEmployee(String(body?.employeeId || "").trim());
     const punchedAt = parsePunchDateTime(body?.punchedAt);
     const reason = normalizeReason(body?.reason);
 
     if (!punchedAt) {
       throw new Error("Ingresa una fecha y hora válida.");
     }
+
+    const employee = await assertEmployeeActiveOnDate(String(body?.employeeId || "").trim(), punchedAt);
 
     const minuteRange = buildPunchMinuteRange(punchedAt);
     const existingPunch = minuteRange

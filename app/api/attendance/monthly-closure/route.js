@@ -252,6 +252,8 @@ function snapshotRows(comparisonRows) {
       areaName: row.employee.areaName,
       roleCode: row.employee.roleCode,
       roleName: row.employee.roleName,
+      isActive: row.employee.isActive !== false,
+      terminationDate: row.employee.terminationDate || "",
       plannedDays: row.summary.plannedDays,
       daysWithPunches: row.summary.daysWithPunches,
       missingPunchDays: row.summary.missingPunchDays,

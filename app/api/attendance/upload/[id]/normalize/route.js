@@ -9,6 +9,7 @@ import {
 import { buildPunchMinuteKey } from "@/lib/attendance/punchIdentity";
 import connectToDatabase from "@/lib/db/mongodb";
 import { formatEcuadorDateKey } from "@/lib/datetime/ecuador";
+import { isEmployeeActiveOnDate } from "@/lib/employees";
 import AttendanceUpload from "@/models/AttendanceUpload";
 import Employee from "@/models/Employee";
 
@@ -217,6 +218,7 @@ async function buildNormalizedSnapshot(parsedFile) {
         areaName: 1,
         roleName: 1,
         isActive: 1,
+        terminationDate: 1,
       })
       .lean();
 
@@ -242,8 +244,11 @@ async function buildNormalizedSnapshot(parsedFile) {
     const biometricCode = String(employee.biometricCode || "").trim();
     const matchedEmployee = employeesByBiometric.get(biometricCode);
     const diagnostics = getPunchDiagnostics(employee.punches || []);
+    const hasActivePunchDate = matchedEmployee
+      ? (employee.punches || []).some((punch) => isEmployeeActiveOnDate(matchedEmployee, formatEcuadorDateKey(punch.punchedAt)))
+      : false;
     const matchStatus = matchedEmployee
-      ? matchedEmployee.isActive === false
+      ? !hasActivePunchDate
         ? "inactive"
         : "matched"
       : "unmatched";
@@ -259,7 +264,7 @@ async function buildNormalizedSnapshot(parsedFile) {
         employee.department,
       matchedEmployeeId: matchedEmployee?._id?.toString?.() || "",
       matchedEmployeeName,
-      matchedEmployeeIsActive: Boolean(matchedEmployee && matchedEmployee.isActive !== false),
+      matchedEmployeeIsActive: Boolean(matchedEmployee && hasActivePunchDate),
       matchStatus,
       duplicateMinuteCount: diagnostics.duplicateMinuteCount,
       irregularDayCount: diagnostics.irregularDays.length,

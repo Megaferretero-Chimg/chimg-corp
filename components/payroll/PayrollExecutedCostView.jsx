@@ -6,6 +6,7 @@ import { AlertTriangle, BarChart3, Building2, Clock3, DollarSign, Layers3, Refre
 
 import FloatingNotice from "@/components/ui/FloatingNotice";
 import { formatEcuadorMonthKey } from "@/lib/datetime/ecuador";
+import { employeeDismissalLabel, isEmployeeDismissedInMonth } from "@/lib/employees";
 import { planningModulePath } from "@/lib/modules/planning/routes";
 import styles from "./PayrollExecutedCostView.module.scss";
 
@@ -328,10 +329,15 @@ export default function PayrollExecutedCostView() {
                   </tr>
                 </thead>
                 <tbody>
-                  {sortedRows.map((row) => (
+                  {sortedRows.map((row) => {
+                    const isDismissed = isEmployeeDismissedInMonth(row, filters.monthKey);
+                    const dismissalTitle = isDismissed ? employeeDismissalLabel(row) : undefined;
+
+                    return (
                     <tr
                       key={row.employeeId}
-                      className={`${styles.clickableRow} ${row.payment?.isPaid ? styles.paidRow : ""}`}
+                      className={`${styles.clickableRow} ${row.payment?.isPaid ? styles.paidRow : ""} ${isDismissed ? styles.dismissedRow : ""}`}
+                      title={dismissalTitle}
                       onClick={() => openEmployeeSummary(row)}
                       onKeyDown={(event) => {
                         if (event.key === "Enter" || event.key === " ") {
@@ -384,7 +390,8 @@ export default function PayrollExecutedCostView() {
                         <strong>{formatMoney(row.totalCost)}</strong>
                       </td>
                     </tr>
-                  ))}
+                    );
+                  })}
                 </tbody>
               </table>
             </div>

@@ -39,6 +39,9 @@
 .table td { color: #203756; font-weight: 800; }
 .table td strong, .table td span { display: block; }
 .table td span { margin-top: 0.18rem; color: #6a7890; font-size: var(--font-size-sm); font-weight: 600; }
+.dismissedRow td { border-top: 1px dashed #f59e0b; border-bottom: 1px dashed #f59e0b; background: #fffaf5; }
+.dismissedRow td:first-child { border-left: 1px dashed #f59e0b; }
+.dismissedRow td:last-child { border-right: 1px dashed #f59e0b; }
 .emptyText { margin: 0; color: #6a7890; font-weight: 700; }
 .emptyValue { color: #94a3b8; font-weight: 800; }
 .loadingScene { display: grid; gap: 1rem; overflow: hidden; }

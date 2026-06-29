@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 
 import { isAuthenticated } from "@/lib/auth";
 import connectToDatabase from "@/lib/db/mongodb";
+import { buildEmployeeActiveInMonthQuery } from "@/lib/employees";
 import { resolveMonthlyBaseHours } from "@/lib/payroll/monthlyBaseHours";
 import { parseMonthKey } from "@/lib/planning/holidays";
 import Employee from "@/models/Employee";
@@ -178,14 +179,15 @@ export async function GET(request) {
     const branchCode = String(searchParams.get("branchCode") || "").trim().toUpperCase();
     const areaCode = String(searchParams.get("areaCode") || "").trim();
     const roleCode = String(searchParams.get("roleCode") || "").trim();
-    const employeeQuery = { isActive: { $ne: false } };
+    const monthStart = new Date(`${monthKey}-01T00:00:00.000Z`);
+    const employeeQuery = buildEmployeeActiveInMonthQuery(monthStart);
 
     if (branchCode) {
       employeeQuery.branchCode = branchCode;
     }
 
     const [allActiveEmployees, employees, assignments, rules] = await Promise.all([
-      Employee.find({ isActive: { $ne: false } })
+      Employee.find(buildEmployeeActiveInMonthQuery(monthStart))
         .select({
           fullName: 1,
           branchCode: 1,
