@@ -1,6 +1,5 @@
 .workspace {
   display: grid;
-  grid-template-columns: minmax(15rem, 18rem) minmax(0, 1fr);
   gap: 1rem;
   align-items: start;
   min-width: 0;
@@ -54,21 +53,23 @@
 .monthField {
   display: grid;
   gap: 0.4rem;
+  min-width: 12rem;
 
   span {
-    color: #c7d5ec;
+    color: #60718b;
     font-size: var(--font-size-sm);
     font-weight: 720;
   }
 
   input {
     min-height: 2.6rem;
-    border: 1px solid rgba(255, 255, 255, 0.16);
+    border: 1px solid rgba(16, 33, 62, 0.12);
     border-radius: 0.8rem;
-    background: rgba(255, 255, 255, 0.08);
-    color: #ffffff;
-    color-scheme: dark;
+    background: #ffffff;
+    color: #10213e;
+    color-scheme: light;
     font: inherit;
+    font-weight: 760;
     padding: 0 0.75rem;
   }
 }
@@ -149,9 +150,37 @@
 }
 
 .reportCanvas {
+  position: relative;
   display: grid;
   gap: 1rem;
   min-width: 0;
+}
+
+.loadingOverlay {
+  position: sticky;
+  top: 0.25rem;
+  z-index: 4;
+  width: fit-content;
+  max-width: 100%;
+  justify-self: end;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  border: 1px solid rgba(45, 108, 223, 0.18);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.92);
+  color: #143f8f;
+  box-shadow: 0 14px 30px rgba(16, 33, 62, 0.12);
+  backdrop-filter: blur(10px);
+  font-size: var(--font-size-sm);
+  font-weight: 850;
+  padding: 0.62rem 0.82rem;
+  animation: loadingFloat 1400ms ease-in-out infinite;
+
+  svg {
+    flex: 0 0 auto;
+    animation: loadingSpin 900ms linear infinite;
+  }
 }
 
 .reportHero,
@@ -219,6 +248,14 @@
     font-size: 1.25rem;
     font-weight: 900;
   }
+}
+
+.heroActions {
+  display: flex;
+  align-items: stretch;
+  justify-content: flex-end;
+  gap: 0.75rem;
+  flex-wrap: wrap;
 }
 
 .notice {
@@ -325,6 +362,187 @@
     line-height: 1.16;
     font-weight: 880;
   }
+}
+
+.routeLoading {
+  pointer-events: none;
+}
+
+.loadingSpin {
+  animation: loadingSpin 900ms linear infinite;
+}
+
+.loadingField,
+.loadingPreset,
+.loadingToggle,
+.loadingStatus,
+.loadingInsight,
+.metricSkeleton,
+.loadingVariance {
+  position: relative;
+  overflow: hidden;
+}
+
+.loadingField,
+.loadingPreset,
+.loadingStatus,
+.loadingInsight,
+.metricSkeleton,
+.loadingVariance {
+  &::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    transform: translateX(-100%);
+    background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.5), transparent);
+    animation: loadingShimmer 1350ms ease-in-out infinite;
+  }
+}
+
+.loadingField {
+  height: 2.6rem;
+  min-width: 12rem;
+  border: 1px solid rgba(16, 33, 62, 0.12);
+  border-radius: 0.8rem;
+  background: #ffffff;
+}
+
+.loadingPreset {
+  display: grid;
+  gap: 0.46rem;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 0.82rem;
+  background: rgba(255, 255, 255, 0.06);
+  padding: 0.72rem 0.78rem;
+}
+
+.loadingToggle {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 0.52rem;
+  align-items: center;
+  min-height: 2rem;
+}
+
+.loadingCheck {
+  width: 0.92rem;
+  height: 0.92rem;
+  border-radius: 0.25rem;
+  background: rgba(255, 255, 255, 0.18);
+}
+
+.loadingHeroCopy {
+  width: min(34rem, 100%);
+  display: grid;
+  gap: 0.58rem;
+}
+
+.loadingStatus {
+  width: 8.5rem;
+  min-height: 4.6rem;
+  border-radius: 1rem;
+  background: #10213e;
+}
+
+.loadingInsight,
+.metricSkeleton {
+  min-height: 6.15rem;
+}
+
+.loadingComparison {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(12rem, 15rem);
+  gap: 0.85rem;
+  padding: 0 1rem 1rem;
+}
+
+.loadingBars {
+  display: grid;
+  gap: 1.1rem;
+  border-radius: 1rem;
+  background: #f6f9fd;
+  padding: 1rem;
+
+  span {
+    height: 2.15rem;
+    border-radius: 999px;
+    background:
+      linear-gradient(90deg, rgba(45, 108, 223, 0.16), rgba(45, 108, 223, 0.28), rgba(45, 108, 223, 0.16));
+    background-size: 220% 100%;
+    animation: loadingBar 1300ms ease-in-out infinite;
+  }
+
+  span:nth-child(2) {
+    width: 82%;
+    background:
+      linear-gradient(90deg, rgba(20, 108, 67, 0.14), rgba(20, 108, 67, 0.28), rgba(20, 108, 67, 0.14));
+    background-size: 220% 100%;
+    animation-delay: 140ms;
+  }
+}
+
+.loadingVariance {
+  min-height: 6.4rem;
+  border-radius: 1rem;
+  background: #f1fbf5;
+}
+
+.loadingTable {
+  display: grid;
+  padding: 0 1rem 1rem;
+
+  span {
+    height: 2.95rem;
+    border-top: 1px solid rgba(16, 33, 62, 0.08);
+    background:
+      linear-gradient(90deg, rgba(96, 113, 139, 0.08), rgba(45, 108, 223, 0.12), rgba(96, 113, 139, 0.08));
+    background-size: 220% 100%;
+    animation: loadingBar 1300ms ease-in-out infinite;
+  }
+}
+
+.skeletonLine,
+.skeletonLineShort,
+.skeletonLineLarge,
+.skeletonTitle {
+  display: block;
+  max-width: 100%;
+  border-radius: 999px;
+  background:
+    linear-gradient(90deg, rgba(96, 113, 139, 0.12), rgba(45, 108, 223, 0.18), rgba(96, 113, 139, 0.12));
+  background-size: 220% 100%;
+  animation: loadingBar 1300ms ease-in-out infinite;
+}
+
+.controlPanel {
+  .skeletonLine,
+  .skeletonLineShort,
+  .skeletonLineLarge,
+  .skeletonTitle {
+    background:
+      linear-gradient(90deg, rgba(255, 255, 255, 0.14), rgba(143, 193, 255, 0.28), rgba(255, 255, 255, 0.14));
+    background-size: 220% 100%;
+  }
+}
+
+.skeletonLine {
+  width: 72%;
+  height: 0.72rem;
+}
+
+.skeletonLineShort {
+  width: 42%;
+  height: 0.72rem;
+}
+
+.skeletonLineLarge {
+  width: 62%;
+  height: 1.3rem;
+}
+
+.skeletonTitle {
+  width: min(22rem, 86%);
+  height: 2.1rem;
 }
 
 .comparisonBoard {
@@ -498,17 +716,18 @@
 }
 
 @media (max-width: 980px) {
-  .workspace {
-    grid-template-columns: 1fr;
-  }
-
-  .controlPanel {
-    position: static;
-  }
-
   .reportHero {
     align-items: stretch;
     flex-direction: column;
+  }
+
+  .heroActions {
+    justify-content: stretch;
+  }
+
+  .monthField {
+    min-width: 0;
+    flex: 1 1 100%;
   }
 
   .heroStatus {
@@ -517,7 +736,8 @@
 
   .insightStrip,
   .metricGrid,
-  .comparisonBoard {
+  .comparisonBoard,
+  .loadingComparison {
     grid-template-columns: 1fr;
   }
 
@@ -528,5 +748,47 @@
   .exportDeck {
     align-items: stretch;
     flex-direction: column;
+  }
+
+  .loadingOverlay {
+    justify-self: stretch;
+    justify-content: center;
+  }
+
+  .loadingStatus {
+    width: 100%;
+  }
+}
+
+@keyframes loadingShimmer {
+  100% {
+    transform: translateX(100%);
+  }
+}
+
+@keyframes loadingBar {
+  0% {
+    background-position: 100% 0;
+  }
+
+  100% {
+    background-position: -100% 0;
+  }
+}
+
+@keyframes loadingSpin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes loadingFloat {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+
+  50% {
+    transform: translateY(-2px);
   }
 }
