@@ -204,6 +204,54 @@ function shiftMonthKey(monthKey, offset) {
   return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`;
 }
 
+function getPlanningOverlayMonthKeys(monthKey) {
+  return [...new Set([
+    shiftMonthKey(monthKey, -1),
+    monthKey,
+    shiftMonthKey(monthKey, 1),
+  ].filter((key) => /^\d{4}-\d{2}$/.test(String(key || ""))))];
+}
+
+function dedupeById(items) {
+  const result = new Map();
+
+  items.forEach((item) => {
+    const id = item?.id || item?._id || JSON.stringify(item);
+
+    if (id) {
+      result.set(String(id), item);
+    }
+  });
+
+  return [...result.values()];
+}
+
+async function fetchPlanningOverlays(monthKey) {
+  const overlayPayloads = await Promise.all(getPlanningOverlayMonthKeys(monthKey).map(async (overlayMonthKey) => {
+    const [exceptionsResponse, vacationsResponse] = await Promise.all([
+      fetch(`/api/planning/exceptions?month=${overlayMonthKey}`),
+      fetch(`/api/planning/vacations?month=${overlayMonthKey}`),
+    ]);
+    const [exceptionsPayload, vacationsPayload] = await Promise.all([
+      exceptionsResponse.json(),
+      vacationsResponse.json(),
+    ]);
+
+    if (!exceptionsResponse.ok) throw new Error(exceptionsPayload.error || "No se pudieron cargar las excepciones.");
+    if (!vacationsResponse.ok) throw new Error(vacationsPayload.error || "No se pudieron cargar las vacaciones.");
+
+    return {
+      exceptions: exceptionsPayload.exceptions || [],
+      vacations: vacationsPayload.vacations || [],
+    };
+  }));
+
+  return {
+    exceptions: dedupeById(overlayPayloads.flatMap((payload) => payload.exceptions)),
+    vacations: dedupeById(overlayPayloads.flatMap((payload) => payload.vacations)),
+  };
+}
+
 function dateKeyFromDate(date) {
   const year = date.getFullYear();
   const month = String(date.getMonth() + 1).padStart(2, "0");
@@ -1652,27 +1700,20 @@ export default function SchedulePlanner({ initialFilters = {} }) {
         if (areaCode) params.set("areaCode", areaCode);
         if (roleCode) params.set("roleCode", roleCode);
 
-        const [response, exceptionsResponse, vacationsResponse] = await Promise.all([
+        const [response, overlaysPayload] = await Promise.all([
           fetch(`/api/planning/schedule-assignments?${params.toString()}`),
-          fetch(`/api/planning/exceptions?month=${monthKey}`),
-          fetch(`/api/planning/vacations?month=${monthKey}`),
+          fetchPlanningOverlays(monthKey),
         ]);
-        const [payload, exceptionsPayload, vacationsPayload] = await Promise.all([
-          response.json(),
-          exceptionsResponse.json(),
-          vacationsResponse.json(),
-        ]);
+        const payload = await response.json();
 
         if (!response.ok) throw new Error(payload.error || "No se pudieron cargar las asignaciones.");
-        if (!exceptionsResponse.ok) throw new Error(exceptionsPayload.error || "No se pudieron cargar las excepciones.");
-        if (!vacationsResponse.ok) throw new Error(vacationsPayload.error || "No se pudieron cargar las vacaciones.");
 
         if (!isCancelled && requestDraftRevision === draftRevisionRef.current) {
           const nextAssignments = payload.assignments || [];
 
           setAssignments(nextAssignments);
-          setExceptions(exceptionsPayload.exceptions || []);
-          setVacations(vacationsPayload.vacations || []);
+          setExceptions(overlaysPayload.exceptions || []);
+          setVacations(overlaysPayload.vacations || []);
           setDraftDays(buildDraftDays(nextAssignments, baseShiftOptions));
           setDraftWeekRoles(buildDraftWeekRoles(nextAssignments, employees, weekOptions));
           setDraftDayRoles(buildDraftDayRoles(nextAssignments));
@@ -2086,21 +2127,11 @@ export default function SchedulePlanner({ initialFilters = {} }) {
         if (!response.ok) throw new Error(payload.error || "No se pudo guardar la programacion.");
 
         const nextAssignments = payload.assignments || [];
-        const [exceptionsResponse, vacationsResponse] = await Promise.all([
-          fetch(`/api/planning/exceptions?month=${monthKey}`),
-          fetch(`/api/planning/vacations?month=${monthKey}`),
-        ]);
-        const [exceptionsPayload, vacationsPayload] = await Promise.all([
-          exceptionsResponse.json(),
-          vacationsResponse.json(),
-        ]);
-
-        if (!exceptionsResponse.ok) throw new Error(exceptionsPayload.error || "No se pudieron refrescar las excepciones.");
-        if (!vacationsResponse.ok) throw new Error(vacationsPayload.error || "No se pudieron refrescar las vacaciones.");
+        const overlaysPayload = await fetchPlanningOverlays(monthKey);
 
         setAssignments(nextAssignments);
-        setExceptions(exceptionsPayload.exceptions || []);
-        setVacations(vacationsPayload.vacations || []);
+        setExceptions(overlaysPayload.exceptions || []);
+        setVacations(overlaysPayload.vacations || []);
         setDraftDays(buildDraftDays(nextAssignments, shiftOptions));
         setDraftWeekRoles(buildDraftWeekRoles(nextAssignments, employees, weekOptions));
         setDraftDayRoles(buildDraftDayRoles(nextAssignments));
