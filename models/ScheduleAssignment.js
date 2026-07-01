@@ -53,6 +53,17 @@ const generatedDaySchema = new Schema(
       min: 0,
       default: 0,
     },
+    template: {
+      type: Schema.Types.ObjectId,
+      ref: "BaseScheduleTemplate",
+      default: null,
+    },
+    templateName: {
+      type: String,
+      trim: true,
+      uppercase: true,
+      default: "",
+    },
     areaCode: {
       type: String,
       trim: true,

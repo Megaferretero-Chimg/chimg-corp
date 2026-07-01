@@ -46,6 +46,31 @@ function fullScheduleLabel(day) {
   return `${formatScheduleHour(day.startTime)} A ${formatScheduleHour(day.endTime)}`;
 }
 
+function templateScheduleLabel(template, dateKey) {
+  const dayOfWeek = dateFromDateKey(dateKey).getUTCDay();
+  const rowsByDay = new Map((template?.weeklyRows || []).map((row) => [row.dayOfWeek, row]));
+  const directRow = rowsByDay.get(dayOfWeek);
+  const fallbackRow = [1, 2, 3, 4, 5]
+    .map((weekday) => rowsByDay.get(weekday))
+    .find((row) => row?.dayType === "workday");
+  const row = directRow || ([1, 2, 3, 4, 5].includes(dayOfWeek) ? fallbackRow : null);
+
+  if (!row || row.dayType !== "workday" || !row.startTime || !row.endTime) {
+    return "Descanso";
+  }
+
+  return fullScheduleLabel(row);
+}
+
+function employeeMatchesTemplate(employee, template) {
+  if (!employee || !template) return false;
+  if (template.areaCode !== employee.areaCode) return false;
+  if (!template.roleCode) return true;
+  if (template.roleCode === employee.roleCode) return true;
+
+  return false;
+}
+
 const WEEK_RANGE_FORMATTER = new Intl.DateTimeFormat("es-EC", {
   day: "2-digit",
   month: "short",
@@ -890,10 +915,13 @@ export default function AttendanceComparisonDetail({ employeeId, initialFilters 
   const initialFiltersRef = useRef(stableInitialFilters);
   const [month, setMonth] = useState(() => stableInitialFilters.month);
   const [row, setRow] = useState(null);
+  const [templates, setTemplates] = useState([]);
   const [error, setError] = useState("");
   const [isLoading, setIsLoading] = useState(true);
   const [actionDrafts, setActionDrafts] = useState({});
   const [savingDay, setSavingDay] = useState("");
+  const [savingScheduleDay, setSavingScheduleDay] = useState("");
+  const [scheduleTemplateDrafts, setScheduleTemplateDrafts] = useState({});
   const [savingBulkAction, setSavingBulkAction] = useState("");
   const [pendingBulkDecision, setPendingBulkDecision] = useState("");
   const [selectedDayKey, setSelectedDayKey] = useState("");
@@ -921,6 +949,20 @@ export default function AttendanceComparisonDetail({ employeeId, initialFilters 
     ? hasDayTag(selectedDay, "Sin picadas") && hasPlannedStart(selectedDay) && Number(selectedDay.scheduledWorkedMinutes) > 0
     : false;
   const selectedLunchSuggestion = selectedDay ? lunchPunchSuggestion(selectedDay) : null;
+  const scheduleOptions = row?.employee && selectedDay
+    ? templates
+      .filter((template) => template.isActive !== false && employeeMatchesTemplate(row.employee, template))
+      .map((template) => ({
+        id: template.id,
+        name: template.name,
+        label: `${template.name} · ${templateScheduleLabel(template, selectedDay.dateKey)}`,
+      }))
+      .sort((left, right) => left.label.localeCompare(right.label, "es"))
+    : [];
+  const selectedScheduleTemplateDraft = selectedDay
+    ? scheduleTemplateDrafts[selectedDay.dateKey] ?? selectedDay.plannedTemplateId ?? ""
+    : "";
+  const selectedScheduleTemplate = scheduleOptions.find((template) => template.id === selectedScheduleTemplateDraft);
 
   function syncUrl(nextMonth) {
     if (typeof window === "undefined") return;
@@ -966,6 +1008,35 @@ export default function AttendanceComparisonDetail({ employeeId, initialFilters 
     }
   }, [employeeId]);
 
+  useEffect(() => {
+    let isCancelled = false;
+
+    async function loadTemplates() {
+      try {
+        const response = await fetch("/api/planning/base-schedules");
+        const payload = await response.json();
+
+        if (!response.ok) {
+          throw new Error(payload.error || "No se pudieron cargar las plantillas.");
+        }
+
+        if (!isCancelled) {
+          setTemplates(payload.templates || []);
+        }
+      } catch (requestError) {
+        if (!isCancelled) {
+          setError(requestError.message);
+        }
+      }
+    }
+
+    loadTemplates();
+
+    return () => {
+      isCancelled = true;
+    };
+  }, []);
+
   function handleMonthChange(value) {
     setMonth(value);
     syncUrl(value);
@@ -980,6 +1051,53 @@ export default function AttendanceComparisonDetail({ employeeId, initialFilters 
         [field]: value,
       },
     }));
+  }
+
+  function updateScheduleTemplateDraft(dateKey, value) {
+    setScheduleTemplateDrafts((current) => ({
+      ...current,
+      [dateKey]: value,
+    }));
+  }
+
+  async function savePlannedSchedule(day) {
+    const templateId = scheduleTemplateDrafts[day.dateKey] ?? day.plannedTemplateId ?? "";
+
+    if (!templateId) {
+      setError("Selecciona una plantilla para actualizar el horario planificado.");
+      return;
+    }
+
+    try {
+      setSavingScheduleDay(day.dateKey);
+      setError("");
+
+      const response = await fetch("/api/planning/schedule-assignments", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          action: "update-day-schedule",
+          monthKey: month,
+          employeeId,
+          dateKey: day.dateKey,
+          templateId,
+        }),
+      });
+      const payload = await response.json();
+
+      if (!response.ok) {
+        throw new Error(payload.error || "No se pudo actualizar el horario planificado.");
+      }
+
+      setSelectedDayKey(day.dateKey);
+      await loadReport(month, { background: true });
+    } catch (requestError) {
+      setError(requestError.message);
+    } finally {
+      setSavingScheduleDay("");
+    }
   }
 
   function quickActionDraft(day, decision, currentDraft = {}) {
@@ -1197,6 +1315,10 @@ export default function AttendanceComparisonDetail({ employeeId, initialFilters 
       setActionDrafts((current) => ({
         ...current,
         [selectedDay.dateKey]: buildActionDrafts([selectedDay])[selectedDay.dateKey],
+      }));
+      setScheduleTemplateDrafts((current) => ({
+        ...current,
+        [selectedDay.dateKey]: selectedDay.plannedTemplateId || "",
       }));
     }
 
@@ -1779,6 +1901,54 @@ export default function AttendanceComparisonDetail({ employeeId, initialFilters 
                     ))}
                   </div>
                 ) : null}
+
+                <section className={styles.plannedScheduleEditor}>
+                  <div className={styles.plannedScheduleHeader}>
+                    <div>
+                      <span>Horario planificado</span>
+                      <strong>{selectedDay.plannedScheduleExists === false ? "--" : selectedDay.scheduledWorkedLabel}</strong>
+                    </div>
+                    <div>
+                      <span>Plantilla</span>
+                      <strong>{selectedDay.plannedTemplateName || "Sin plantilla"}</strong>
+                    </div>
+                  </div>
+
+                  <div className={styles.plannedScheduleControls}>
+                    <label>
+                      <span>Cambiar plantilla del día</span>
+                      <select
+                        value={selectedScheduleTemplateDraft}
+                        onChange={(event) => updateScheduleTemplateDraft(selectedDay.dateKey, event.target.value)}
+                        disabled={savingScheduleDay === selectedDay.dateKey}
+                      >
+                        <option value="">Seleccionar plantilla</option>
+                        {scheduleOptions.map((template) => (
+                          <option key={template.id} value={template.id}>
+                            {template.label}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                    <button
+                      type="button"
+                      className="catalog-button-ghost"
+                      onClick={() => savePlannedSchedule(selectedDay)}
+                      disabled={
+                        savingScheduleDay === selectedDay.dateKey ||
+                        !selectedScheduleTemplateDraft ||
+                        selectedScheduleTemplateDraft === (selectedDay.plannedTemplateId || "")
+                      }
+                    >
+                      {savingScheduleDay === selectedDay.dateKey ? "Actualizando..." : "Actualizar horario"}
+                    </button>
+                  </div>
+                  {selectedScheduleTemplate ? (
+                    <small>{selectedScheduleTemplate.label}</small>
+                  ) : scheduleOptions.length ? null : (
+                    <small>No hay plantillas disponibles para el área y rol actual.</small>
+                  )}
+                </section>
 
                 <div className={styles.modalPunches}>
                   {selectedDay.punches.map((punch, index) => (

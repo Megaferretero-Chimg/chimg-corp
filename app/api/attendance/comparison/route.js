@@ -429,9 +429,11 @@ function mergeReferenceDaysWithAssignment(referenceDays, assignment) {
   const assignmentDaysByDate = new Map(
     (assignment?.generatedDays || []).map((day) => [day.dateKey, day]),
   );
+  const assignmentTemplateId = assignment?.template?.toString?.() || String(assignment?.template || "");
 
   return referenceDays.map((referenceDay) => {
     const assignmentDay = assignmentDaysByDate.get(referenceDay.dateKey) || {};
+    const dayTemplateId = assignmentDay.template?.toString?.() || String(assignmentDay.template || "");
 
     if (referenceDay.dayType === "holiday") {
       return {
@@ -439,6 +441,8 @@ function mergeReferenceDaysWithAssignment(referenceDays, assignment) {
         dayOfWeek: assignmentDay.dayOfWeek ?? referenceDay.dayOfWeek,
         label: assignmentDay.label || referenceDay.label,
         graceMinutes: assignmentDay.graceMinutes ?? referenceDay.graceMinutes,
+        plannedTemplateId: dayTemplateId || assignmentTemplateId,
+        plannedTemplateName: assignmentDay.templateName || assignment?.templateName || "",
         source: "holiday",
       };
     }
@@ -446,6 +450,8 @@ function mergeReferenceDaysWithAssignment(referenceDays, assignment) {
     return {
       ...referenceDay,
       ...assignmentDay,
+      plannedTemplateId: dayTemplateId || assignmentTemplateId,
+      plannedTemplateName: assignmentDay.templateName || assignment?.templateName || "",
     };
   });
 }
@@ -1749,6 +1755,8 @@ function compareDay(day, punches, laborRules, employee = {}) {
     dayTypeLabel: displayDayTypeLabel,
     source: day.source || "calendar",
     plannedScheduleExists: hasAssignedScheduleDay(day),
+    plannedTemplateId: day.plannedTemplateId || "",
+    plannedTemplateName: day.plannedTemplateName || "",
     scheduleLabel: displayScheduleLabel,
     startTime: day.startTime || "",
     endTime: day.endTime || "",

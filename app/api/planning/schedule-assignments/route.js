@@ -6,6 +6,7 @@ import { buildEmployeeActiveInMonthQuery } from "@/lib/employees";
 import { parseMonthKey } from "@/lib/planning/holidays";
 import {
   buildAssignmentPayload,
+  buildGeneratedDays,
   getNextMonthKey,
   getMonthWeekOptions,
   getPreviousMonthKey,
@@ -238,6 +239,29 @@ function buildGroupedAutoExceptionOperations(candidates = []) {
   return operations;
 }
 
+function employeeCanUseTemplate(employee, template) {
+  const employeeAreaCode = String(employee?.areaCode || "").trim();
+  const employeeRoleCode = String(employee?.roleCode || "").trim();
+  const templateAreaCode = String(template?.areaCode || "").trim();
+  const templateRoleCode = String(template?.roleCode || "").trim();
+
+  if (!employeeAreaCode || !templateAreaCode || employeeAreaCode !== templateAreaCode) {
+    return false;
+  }
+
+  if (!templateRoleCode) {
+    return true;
+  }
+
+  if (employeeRoleCode === templateRoleCode) {
+    return true;
+  }
+
+  return (employee?.roleAssignments || []).some((assignment) =>
+    String(assignment?.code || "").trim() === templateRoleCode,
+  );
+}
+
 function mergeAssignmentsByEmployee(assignments, requestedMonthKey) {
   const grouped = new Map();
 
@@ -335,6 +359,96 @@ export async function POST(request) {
     const body = await request.json();
     const { monthKey } = parseMonthKey(body?.monthKey);
     const action = String(body?.action || "").trim();
+
+    if (action === "update-day-schedule") {
+      const employeeId = String(body?.employeeId || "").trim();
+      const templateId = String(body?.templateId || "").trim();
+      const dateKey = String(body?.dateKey || "").trim();
+
+      if (!employeeId || !templateId || !/^\d{4}-\d{2}-\d{2}$/.test(dateKey)) {
+        throw new Error("Debes seleccionar empleado, fecha y plantilla.");
+      }
+
+      if (dateKey.slice(0, 7) !== monthKey) {
+        throw new Error("La fecha seleccionada no pertenece al mes del reporte.");
+      }
+
+      const [employee, template, holidays, currentAssignment] = await Promise.all([
+        Employee.findById(employeeId).lean(),
+        BaseScheduleTemplate.findById(templateId).lean(),
+        Holiday.find({ dateKey: { $regex: `^${monthKey}-` } }).lean(),
+        ScheduleAssignment.findOne({ monthKey, employee: employeeId }).lean(),
+      ]);
+
+      if (!employee) {
+        throw new Error("El empleado seleccionado no existe.");
+      }
+
+      if (!template || template.isActive === false) {
+        throw new Error("La plantilla seleccionada no existe o esta inactiva.");
+      }
+
+      if (!employeeCanUseTemplate(employee, template)) {
+        throw new Error("La plantilla seleccionada no corresponde al area o rol del empleado.");
+      }
+
+      const templateDay = buildGeneratedDays(monthKey, template, holidays)
+        .find((day) => day.dateKey === dateKey);
+
+      if (!templateDay) {
+        throw new Error("No se pudo generar el horario para la fecha seleccionada.");
+      }
+
+      const dayOverride = {
+        ...templateDay,
+        template: template._id,
+        templateName: template.name || "",
+        areaCode: template.areaCode || employee.areaCode || "",
+        areaName: template.areaName || employee.areaName || "",
+        roleCode: template.roleCode || employee.roleCode || "",
+        roleName: template.roleName || employee.roleName || "",
+        source: templateDay.source === "holiday" ? "holiday" : "manual_override",
+      };
+      const existingDaysByDate = new Map(
+        (currentAssignment?.generatedDays || []).map((day) => [day.dateKey, day]),
+      );
+
+      existingDaysByDate.set(dateKey, dayOverride);
+
+      const generatedDays = [...existingDaysByDate.values()]
+        .filter((day) => String(day.dateKey || "").startsWith(`${monthKey}-`))
+        .sort((left, right) => String(left.dateKey).localeCompare(String(right.dateKey)));
+
+      const assignment = await ScheduleAssignment.findOneAndUpdate(
+        { monthKey, employee: employee._id },
+        {
+          $set: {
+            monthKey,
+            employee: employee._id,
+            employeeName: employee.fullName || "",
+            employeeDni: employee.dni || "",
+            branchCode: employee.branchCode || "",
+            branchName: employee.branchName || employee.branch || "",
+            areaCode: employee.areaCode || "",
+            areaName: employee.areaName || "",
+            roleCode: employee.roleCode || "",
+            roleName: employee.roleName || "",
+            template: currentAssignment?.template || template._id,
+            templateName: currentAssignment?.templateName || "AJUSTES DESDE REPORTE",
+            rotationGroup: currentAssignment?.rotationGroup || "",
+            generatedDays,
+            weeklyPlan: currentAssignment?.weeklyPlan || [],
+            notes: currentAssignment?.notes || "Ajustes puntuales registrados desde reporte de asistencia.",
+          },
+        },
+        { new: true, upsert: true, setDefaultsOnInsert: true },
+      ).lean();
+
+      return NextResponse.json({
+        message: "Horario planificado actualizado correctamente.",
+        assignment: serializeScheduleAssignment(assignment),
+      });
+    }
 
     if (action === "operational-save") {
       const employeeDays = Array.isArray(body?.employeeDays) ? body.employeeDays : [];
