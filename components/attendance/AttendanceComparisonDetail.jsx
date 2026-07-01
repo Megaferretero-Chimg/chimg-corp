@@ -2,7 +2,7 @@
 
 import { Fragment, useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
-import { AlertTriangle, ArrowLeft, Plus, RefreshCw, Trash2 } from "lucide-react";
+import { AlertTriangle, ArrowLeft, ChevronDown, Plus, RefreshCw, Search, Trash2 } from "lucide-react";
 
 import CatalogDrawer from "@/components/catalog/CatalogDrawer";
 import ConfirmDialog from "@/components/ui/ConfirmDialog";
@@ -32,6 +32,14 @@ function formatMinutes(value) {
 
 function formatScheduleHour(value) {
   return String(value || "").replace(":", "H");
+}
+
+function normalizeSearch(value) {
+  return String(value || "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .trim();
 }
 
 function fullScheduleLabel(day) {
@@ -913,6 +921,7 @@ export default function AttendanceComparisonDetail({ employeeId, initialFilters 
     roleCode: initialFilters.roleCode || "",
   }));
   const initialFiltersRef = useRef(stableInitialFilters);
+  const scheduleTemplateAutocompleteRef = useRef(null);
   const [month, setMonth] = useState(() => stableInitialFilters.month);
   const [row, setRow] = useState(null);
   const [templates, setTemplates] = useState([]);
@@ -922,6 +931,8 @@ export default function AttendanceComparisonDetail({ employeeId, initialFilters 
   const [savingDay, setSavingDay] = useState("");
   const [savingScheduleDay, setSavingScheduleDay] = useState("");
   const [scheduleTemplateDrafts, setScheduleTemplateDrafts] = useState({});
+  const [scheduleTemplateQuery, setScheduleTemplateQuery] = useState("");
+  const [isScheduleTemplateMenuOpen, setIsScheduleTemplateMenuOpen] = useState(false);
   const [savingBulkAction, setSavingBulkAction] = useState("");
   const [pendingBulkDecision, setPendingBulkDecision] = useState("");
   const [selectedDayKey, setSelectedDayKey] = useState("");
@@ -971,6 +982,15 @@ export default function AttendanceComparisonDetail({ employeeId, initialFilters 
   const selectedScheduleChanged = selectedDay
     ? Boolean(selectedScheduleTemplateDraft) && selectedScheduleTemplateDraft !== (selectedDay.plannedTemplateId || "")
     : false;
+  const filteredScheduleOptions = scheduleOptions
+    .filter((template) => {
+      const query = normalizeSearch(scheduleTemplateQuery);
+
+      if (!query) return true;
+
+      return normalizeSearch(template.label).includes(query);
+    })
+    .slice(0, 8);
 
   function syncUrl(nextMonth) {
     if (typeof window === "undefined") return;
@@ -1045,6 +1065,20 @@ export default function AttendanceComparisonDetail({ employeeId, initialFilters 
     };
   }, []);
 
+  useEffect(() => {
+    function handleClickOutside(event) {
+      if (!scheduleTemplateAutocompleteRef.current?.contains(event.target)) {
+        setIsScheduleTemplateMenuOpen(false);
+      }
+    }
+
+    document.addEventListener("mousedown", handleClickOutside);
+
+    return () => {
+      document.removeEventListener("mousedown", handleClickOutside);
+    };
+  }, []);
+
   function handleMonthChange(value) {
     setMonth(value);
     syncUrl(value);
@@ -1066,6 +1100,22 @@ export default function AttendanceComparisonDetail({ employeeId, initialFilters 
       ...current,
       [dateKey]: value,
     }));
+  }
+
+  function handleScheduleTemplateQueryChange(day, value) {
+    setScheduleTemplateQuery(value);
+    setIsScheduleTemplateMenuOpen(true);
+
+    const normalizedValue = normalizeSearch(value);
+    const exactTemplate = scheduleOptions.find((template) => normalizeSearch(template.label) === normalizedValue);
+
+    updateScheduleTemplateDraft(day.dateKey, exactTemplate?.id || "");
+  }
+
+  function selectScheduleTemplate(day, template) {
+    updateScheduleTemplateDraft(day.dateKey, template.id);
+    setScheduleTemplateQuery(template.label);
+    setIsScheduleTemplateMenuOpen(false);
   }
 
   async function savePlannedSchedule(day, options = {}) {
@@ -1325,6 +1375,12 @@ export default function AttendanceComparisonDetail({ employeeId, initialFilters 
 
   function openDayDecision(day) {
     if (!canOpenDayDecision(day)) return;
+    const currentTemplate = templates.find((template) => template.id === (day.plannedTemplateId || ""));
+
+    setScheduleTemplateQuery(currentTemplate
+      ? `${currentTemplate.name} · ${templateScheduleLabel(currentTemplate, day.dateKey)}`
+      : day.plannedTemplateName || "");
+    setIsScheduleTemplateMenuOpen(false);
     setSelectedDayKey(day.dateKey);
   }
 
@@ -1341,6 +1397,8 @@ export default function AttendanceComparisonDetail({ employeeId, initialFilters 
     }
 
     setSelectedDayKey("");
+    setScheduleTemplateQuery("");
+    setIsScheduleTemplateMenuOpen(false);
   }
 
   async function saveDayAction(day, overrideDraft = null) {
@@ -1974,18 +2032,43 @@ export default function AttendanceComparisonDetail({ employeeId, initialFilters 
                 <section className={styles.plannedScheduleEditor}>
                   <label>
                     <span>Plantilla planificada</span>
-                    <select
-                      value={selectedScheduleTemplateDraft}
-                      onChange={(event) => updateScheduleTemplateDraft(selectedDay.dateKey, event.target.value)}
-                      disabled={savingScheduleDay === selectedDay.dateKey}
-                    >
-                      <option value="">Seleccionar plantilla</option>
-                      {scheduleOptions.map((template) => (
-                        <option key={template.id} value={template.id}>
-                          {template.label}
-                        </option>
-                      ))}
-                    </select>
+                    <div ref={scheduleTemplateAutocompleteRef} className={styles.templateAutocomplete}>
+                      <div className={styles.templateSearchWrap}>
+                        <Search size={16} aria-hidden="true" />
+                        <input
+                          type="search"
+                          value={scheduleTemplateQuery}
+                          onChange={(event) => handleScheduleTemplateQueryChange(selectedDay, event.target.value)}
+                          onFocus={() => setIsScheduleTemplateMenuOpen(true)}
+                          placeholder="Escribe para buscar plantilla"
+                          autoComplete="off"
+                          disabled={savingScheduleDay === selectedDay.dateKey}
+                        />
+                        <ChevronDown size={16} aria-hidden="true" className={styles.templateChevron} />
+                      </div>
+
+                      {isScheduleTemplateMenuOpen ? (
+                        <div className={styles.templateAutocompleteMenu} role="listbox">
+                          {filteredScheduleOptions.length ? (
+                            filteredScheduleOptions.map((template) => (
+                              <button
+                                key={template.id}
+                                type="button"
+                                className={styles.templateAutocompleteOption}
+                                onClick={() => selectScheduleTemplate(selectedDay, template)}
+                                role="option"
+                                aria-selected={template.id === selectedScheduleTemplateDraft}
+                              >
+                                <span>{template.name}</span>
+                                <small>{template.label.replace(`${template.name} · `, "")}</small>
+                              </button>
+                            ))
+                          ) : (
+                            <div className={styles.templateAutocompleteEmpty}>No encontramos plantillas relacionadas.</div>
+                          )}
+                        </div>
+                      ) : null}
+                    </div>
                   </label>
                   {!scheduleOptions.length ? (
                     <small>No hay plantillas disponibles para el área y rol actual.</small>
