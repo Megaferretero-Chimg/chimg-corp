@@ -37,7 +37,6 @@ const ATTENDANCE_ISSUE_TAGS = new Set([
   "Sin picadas",
   "Picadas incompletas",
   "Picadas insuficientes",
-  "Atraso",
   "Salida anticipada",
 ]);
 const UNPLANNED_WORK_TAGS = new Set(["No planificado", "Trabajo sin horario"]);

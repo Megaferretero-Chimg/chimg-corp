@@ -945,6 +945,12 @@ export default function AttendanceComparisonDetail({ employeeId, initialFilters 
   const selectedDetectedLateMinutes = selectedDay
     ? unresolvedEntryLateMinutes(selectedDay)
     : 0;
+  const selectedHasCleanableAlert = selectedDay
+    ? selectedDay.hasIssue ||
+      hasPlanningAlert(selectedDay) ||
+      Number(selectedDay.lunchOverageRemainderMinutes) > 0 ||
+      Number(selectedDay.lateMinutes) > 0
+    : false;
   const selectedCanUsePlannedDay = selectedDay
     ? hasDayTag(selectedDay, "Sin picadas") && hasPlannedStart(selectedDay) && Number(selectedDay.scheduledWorkedMinutes) > 0
     : false;
@@ -1390,6 +1396,37 @@ export default function AttendanceComparisonDetail({ employeeId, initialFilters 
 
       if (!response.ok) {
         throw new Error(payload.error || "No se pudo actualizar la revisión.");
+      }
+
+      setSelectedDayKey("");
+      await loadReport(month);
+    } catch (requestError) {
+      setError(requestError.message);
+    } finally {
+      setSavingDay("");
+    }
+  }
+
+  async function cleanDayAlerts(day) {
+    try {
+      setSavingDay(day.dateKey);
+      setError("");
+
+      const response = await fetch("/api/attendance/day-decisions", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(authorizationPayloadForDay(employeeId, day, "reviewed", {
+          ...(actionDrafts[day.dateKey] || {}),
+          decision: "reviewed",
+          note: actionDrafts[day.dateKey]?.note || "Alertas revisadas desde reporte de asistencia.",
+        })),
+      });
+      const payload = await response.json();
+
+      if (!response.ok) {
+        throw new Error(payload.error || "No se pudieron limpiar las alertas.");
       }
 
       setSelectedDayKey("");
@@ -2044,6 +2081,16 @@ export default function AttendanceComparisonDetail({ employeeId, initialFilters 
                       <div className={styles.quickActionGrid}>
                         {hasAuthorizableTime(selectedDay) ? (
                           <button type="button" className="catalog-button-ghost" onClick={() => applyQuickAction(selectedDay, "full")} disabled={savingDay === selectedDay.dateKey}>Usar registrado</button>
+                        ) : null}
+                        {selectedHasCleanableAlert ? (
+                          <button
+                            type="button"
+                            className="catalog-button-ghost"
+                            onClick={() => cleanDayAlerts(selectedDay)}
+                            disabled={savingDay === selectedDay.dateKey}
+                          >
+                            Limpiar alertas
+                          </button>
                         ) : null}
                         {selectedDetectedLateMinutes > 0 ? (
                           <button
