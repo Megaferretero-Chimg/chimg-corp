@@ -310,14 +310,15 @@ export async function POST(request) {
             const dayMonthKey = normalized.dateKey.slice(0, 7);
             const autoException = buildAutoExceptionPayload({ employee, day: normalized });
             const clearKey = `${employee._id.toString()}|${normalized.dateKey}`;
-            const shouldClearScheduleDay = clearScheduleTargetKeys.has(`${employeeId}|${normalized.dateKey}`)
+            const shouldReplaceScheduleDay = clearScheduleTargetKeys.has(`${employeeId}|${normalized.dateKey}`);
+            const shouldClearScheduleDay = shouldReplaceScheduleDay
               && normalized.dayType === "off_day"
               && normalized.operationalJustification !== true;
 
             if (!daysByMonth.has(dayMonthKey)) daysByMonth.set(dayMonthKey, []);
             daysByMonth.get(dayMonthKey).push(normalized);
 
-            if (shouldClearScheduleDay) {
+            if (shouldReplaceScheduleDay) {
               exceptionCleanupKeys.add(clearKey);
             }
 

@@ -1981,7 +1981,6 @@ export default function SchedulePlanner({ initialFilters = {} }) {
     }
 
     markDraftEdited();
-    setClearScheduleTargets([]);
     setDraftDays((current) => {
       const next = { ...current };
 
