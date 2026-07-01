@@ -695,15 +695,27 @@ function buildDraftDayNotes(assignments) {
 
 function buildPlannerUrl(filters) {
   const params = new URLSearchParams();
+  const weekIndex = Number(filters.weekIndex);
 
   if (filters.monthKey) params.set("month", filters.monthKey);
   if (filters.branchCode) params.set("branchCode", filters.branchCode);
   if (filters.areaCode) params.set("areaCode", filters.areaCode);
   if (filters.roleCode) params.set("roleCode", filters.roleCode);
+  if (Number.isInteger(weekIndex) && weekIndex > 0) params.set("week", String(weekIndex + 1));
 
   const query = params.toString();
 
   return `${planningModulePath("/planning/monthly")}${query ? `?${query}` : ""}`;
+}
+
+function parseWeekIndex(value) {
+  const weekNumber = Number(value);
+
+  if (!Number.isInteger(weekNumber) || weekNumber < 1) {
+    return 0;
+  }
+
+  return weekNumber - 1;
 }
 
 function buildOperationalDay(dateKey, shiftKey, shiftOptionsByKey = FALLBACK_SHIFT_BY_KEY) {
@@ -814,6 +826,7 @@ function estimateWeeklyPlanningCost({
   const hourlyRate = salary > 0 ? salary / hourlyDivisor : 0;
   const rows = [];
   let workedDays = 0;
+  let laborableMinutes = 0;
   let supplementaryMinutes = 0;
   let extraordinaryMinutes = 0;
   let supplementaryAmount = 0;
@@ -829,8 +842,11 @@ function estimateWeeklyPlanningCost({
 
     workedDays += 1;
 
+    const netMinutes = workedNetMinutes(shift);
+    const baseMinutes = Math.max((Number(dailyBaseHours) || DEFAULT_DAILY_BASE_HOURS) * 60, 0);
+
     if (workedDays > regularWorkdayLimit) {
-      const minutes = workedNetMinutes(shift);
+      const minutes = netMinutes;
       const amount = (minutes / 60) * hourlyRate * EXTRAORDINARY_SURCHARGE_MULTIPLIER;
 
       extraordinaryMinutes += minutes;
@@ -844,7 +860,9 @@ function estimateWeeklyPlanningCost({
       return;
     }
 
-    const minutes = Math.max(0, workedNetMinutes(shift) - (dailyBaseHours * 60));
+    laborableMinutes += Math.min(netMinutes, baseMinutes);
+
+    const minutes = Math.max(0, netMinutes - baseMinutes);
 
     if (minutes > 0) {
       const amount = (minutes / 60) * hourlyRate * SUPPLEMENTARY_SURCHARGE_MULTIPLIER;
@@ -864,6 +882,7 @@ function estimateWeeklyPlanningCost({
     salary,
     hourlyRate,
     hasSalaryConfigured: salary > 0,
+    laborableMinutes,
     supplementaryMinutes,
     extraordinaryMinutes,
     supplementaryAmount,
@@ -1136,7 +1155,7 @@ export default function SchedulePlanner({ initialFilters = {} }) {
   const [hasDraftChanges, setHasDraftChanges] = useState(false);
   const [clearScheduleTargets, setClearScheduleTargets] = useState([]);
   const [clipboardScheduleText, setClipboardScheduleText] = useState("");
-  const [selectedWeekIndex, setSelectedWeekIndex] = useState(0);
+  const [selectedWeekIndex, setSelectedWeekIndex] = useState(() => parseWeekIndex(initialFilters.week));
   const [isCostModalOpen, setIsCostModalOpen] = useState(false);
   const [selectedOverlay, setSelectedOverlay] = useState(null);
   const [notice, setNotice] = useState(null);
@@ -1150,7 +1169,9 @@ export default function SchedulePlanner({ initialFilters = {} }) {
   const noticeRemoveTimeoutRef = useRef(null);
 
   const weekOptions = useMemo(() => getMonthWeekOptions(monthKey), [monthKey]);
-  const selectedWeek = weekOptions[selectedWeekIndex] || weekOptions[0];
+  const maxWeekIndex = Math.max(weekOptions.length - 1, 0);
+  const resolvedSelectedWeekIndex = Math.min(Math.max(selectedWeekIndex, 0), maxWeekIndex);
+  const selectedWeek = weekOptions[resolvedSelectedWeekIndex] || weekOptions[0];
   const weekDateKeys = useMemo(
     () => (selectedWeek ? getWeekDateKeys(selectedWeek.weekStartKey) : []),
     [selectedWeek],
@@ -1457,6 +1478,7 @@ export default function SchedulePlanner({ initialFilters = {} }) {
 
   const summary = useMemo(() => {
     let extraDayIndicators = 0;
+    let laborableMinutes = 0;
     let supplementaryMinutes = 0;
     let extraordinaryMinutes = 0;
     let supplementaryAmount = 0;
@@ -1465,6 +1487,7 @@ export default function SchedulePlanner({ initialFilters = {} }) {
     filteredEmployees.forEach((employee) => {
       const employeeCost = planningCostByEmployee.get(employee.id);
 
+      laborableMinutes += employeeCost?.laborableMinutes || 0;
       supplementaryMinutes += employeeCost?.supplementaryMinutes || 0;
       extraordinaryMinutes += employeeCost?.extraordinaryMinutes || 0;
       supplementaryAmount += employeeCost?.supplementaryAmount || 0;
@@ -1474,6 +1497,7 @@ export default function SchedulePlanner({ initialFilters = {} }) {
 
     return {
       extraDayIndicators,
+      laborableMinutes,
       supplementaryMinutes,
       extraordinaryMinutes,
       supplementaryAmount,
@@ -1540,9 +1564,25 @@ export default function SchedulePlanner({ initialFilters = {} }) {
       branchCode,
       areaCode,
       roleCode,
+      weekIndex: resolvedSelectedWeekIndex,
       ...nextFilters,
     }), { scroll: false });
-  }, [areaCode, branchCode, monthKey, roleCode, router]);
+  }, [areaCode, branchCode, monthKey, resolvedSelectedWeekIndex, roleCode, router]);
+
+  const selectWeekIndex = useCallback((nextWeekIndex) => {
+    const boundedWeekIndex = Math.min(Math.max(Number(nextWeekIndex) || 0, 0), maxWeekIndex);
+
+    setSelectedWeekIndex(boundedWeekIndex);
+    replaceFilters({ weekIndex: boundedWeekIndex });
+  }, [maxWeekIndex, replaceFilters]);
+
+  useEffect(() => {
+    if (!weekOptions.length || selectedWeekIndex === resolvedSelectedWeekIndex) {
+      return;
+    }
+
+    replaceFilters({ weekIndex: resolvedSelectedWeekIndex });
+  }, [replaceFilters, resolvedSelectedWeekIndex, selectedWeekIndex, weekOptions.length]);
 
   useEffect(() => {
     let isCancelled = false;
@@ -1709,21 +1749,22 @@ export default function SchedulePlanner({ initialFilters = {} }) {
   }
 
   function goToPreviousWeek() {
-    if (selectedWeekIndex > 0) {
-      setSelectedWeekIndex((current) => current - 1);
+    if (resolvedSelectedWeekIndex > 0) {
+      selectWeekIndex(resolvedSelectedWeekIndex - 1);
       return;
     }
 
     const previousMonthKey = shiftMonthKey(monthKey, -1);
+    const previousWeekIndex = Math.max(0, getMonthWeekOptions(previousMonthKey).length - 1);
 
     setMonthKey(previousMonthKey);
-    setSelectedWeekIndex(Math.max(0, getMonthWeekOptions(previousMonthKey).length - 1));
-    replaceFilters({ monthKey: previousMonthKey });
+    setSelectedWeekIndex(previousWeekIndex);
+    replaceFilters({ monthKey: previousMonthKey, weekIndex: previousWeekIndex });
   }
 
   function goToNextWeek() {
-    if (selectedWeekIndex < weekOptions.length - 1) {
-      setSelectedWeekIndex((current) => current + 1);
+    if (resolvedSelectedWeekIndex < weekOptions.length - 1) {
+      selectWeekIndex(resolvedSelectedWeekIndex + 1);
       return;
     }
 
@@ -1731,7 +1772,7 @@ export default function SchedulePlanner({ initialFilters = {} }) {
 
     setMonthKey(nextMonthKey);
     setSelectedWeekIndex(0);
-    replaceFilters({ monthKey: nextMonthKey });
+    replaceFilters({ monthKey: nextMonthKey, weekIndex: 0 });
   }
 
   function generateWeek() {
@@ -2276,7 +2317,7 @@ export default function SchedulePlanner({ initialFilters = {} }) {
             onChange={(event) => {
               setMonthKey(event.target.value);
               setSelectedWeekIndex(0);
-              replaceFilters({ monthKey: event.target.value });
+              replaceFilters({ monthKey: event.target.value, weekIndex: 0 });
             }}
           />
         </label>
@@ -2397,8 +2438,8 @@ export default function SchedulePlanner({ initialFilters = {} }) {
             <button
               key={week.weekStartKey}
               type="button"
-              className={index === selectedWeekIndex ? styles.activeWeek : ""}
-              onClick={() => setSelectedWeekIndex(index)}
+              className={index === resolvedSelectedWeekIndex ? styles.activeWeek : ""}
+              onClick={() => selectWeekIndex(index)}
             >
               <strong>{week.label}</strong>
               <span>{week.rangeLabel}</span>
@@ -2528,16 +2569,16 @@ export default function SchedulePlanner({ initialFilters = {} }) {
             <button
               type="button"
               onClick={goToPreviousWeek}
-              aria-label={selectedWeekIndex <= 0 ? "Mes anterior" : "Semana anterior"}
-              title={selectedWeekIndex <= 0 ? "Mes anterior" : "Semana anterior"}
+              aria-label={resolvedSelectedWeekIndex <= 0 ? "Mes anterior" : "Semana anterior"}
+              title={resolvedSelectedWeekIndex <= 0 ? "Mes anterior" : "Semana anterior"}
             >
               <ChevronLeft size={16} />
             </button>
             <button
               type="button"
               onClick={goToNextWeek}
-              aria-label={selectedWeekIndex >= weekOptions.length - 1 ? "Mes siguiente" : "Semana siguiente"}
-              title={selectedWeekIndex >= weekOptions.length - 1 ? "Mes siguiente" : "Semana siguiente"}
+              aria-label={resolvedSelectedWeekIndex >= weekOptions.length - 1 ? "Mes siguiente" : "Semana siguiente"}
+              title={resolvedSelectedWeekIndex >= weekOptions.length - 1 ? "Mes siguiente" : "Semana siguiente"}
             >
               <ChevronRight size={16} />
             </button>
@@ -2560,6 +2601,9 @@ export default function SchedulePlanner({ initialFilters = {} }) {
                 ))}
                 <th>Trabajados</th>
                 <th>Impacto aprox.</th>
+                <th>HL</th>
+                <th>HS</th>
+                <th>HE</th>
               </tr>
             </thead>
             <tbody>
@@ -2650,6 +2694,21 @@ export default function SchedulePlanner({ initialFilters = {} }) {
                         <strong>{formatMoney(employeeCost?.totalAmount || 0)}</strong>
                       </div>
                     </td>
+                    <td data-label="HL">
+                      <div className={styles.hoursCell}>
+                        <strong>{formatDuration(employeeCost?.laborableMinutes || 0)}</strong>
+                      </div>
+                    </td>
+                    <td data-label="HS">
+                      <div className={styles.hoursCell}>
+                        <strong>{formatDuration(employeeCost?.supplementaryMinutes || 0)}</strong>
+                      </div>
+                    </td>
+                    <td data-label="HE">
+                      <div className={styles.hoursCell}>
+                        <strong>{formatDuration(employeeCost?.extraordinaryMinutes || 0)}</strong>
+                      </div>
+                    </td>
                   </tr>
                 );
               })}
@@ -2675,7 +2734,26 @@ export default function SchedulePlanner({ initialFilters = {} }) {
                   <strong>{[...activeEmployeesByDay.values()].reduce((total, count) => total + count, 0)}</strong>
                   <span>turnos</span>
                 </td>
-                <td data-label="Impacto aprox." aria-hidden="true" />
+                <td data-label="Impacto aprox.">
+                  <div className={styles.costCell}>
+                    <strong>{formatMoney(summary.extraCostAmount)}</strong>
+                  </div>
+                </td>
+                <td data-label="HL">
+                  <div className={styles.hoursCell}>
+                    <strong>{formatDuration(summary.laborableMinutes)}</strong>
+                  </div>
+                </td>
+                <td data-label="HS">
+                  <div className={styles.hoursCell}>
+                    <strong>{formatDuration(summary.supplementaryMinutes)}</strong>
+                  </div>
+                </td>
+                <td data-label="HE">
+                  <div className={styles.hoursCell}>
+                    <strong>{formatDuration(summary.extraordinaryMinutes)}</strong>
+                  </div>
+                </td>
               </tr>
             </tfoot>
           </table>
