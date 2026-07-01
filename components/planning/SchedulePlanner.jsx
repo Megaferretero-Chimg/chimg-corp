@@ -482,6 +482,28 @@ function parseClipboardRows(text) {
   return rows.filter((currentRow) => currentRow.some(Boolean));
 }
 
+function looksLikeImportedScheduleCell(value) {
+  const normalizedValue = normalizeText(value);
+
+  return Boolean(normalizedValue)
+    && (
+      TIME_RANGE_PATTERN.test(String(value || ""))
+      || normalizedValue === "LIBRE"
+      || normalizedValue === "VACACIONES"
+      || normalizedValue === "PERMISO"
+      || normalizedValue === "SALCEDO"
+      || REST_CELL_PATTERN.test(String(value || ""))
+    );
+}
+
+function looksLikeImportedEmployeeName(value) {
+  const normalizedName = normalizeText(value);
+
+  return /^[A-Z0-9 ]+$/.test(normalizedName)
+    && normalizedName.split(" ").length >= 2
+    && !TIME_RANGE_PATTERN.test(String(value || ""));
+}
+
 function repairMultilineScheduleRows(rows, employees) {
   const repairedRows = [];
 
@@ -490,8 +512,8 @@ function repairMultilineScheduleRows(rows, employees) {
     const startsEmployeeRow = Boolean(findEmployeeForImport(firstCell, employees));
     const startsUnmatchedEmployeeRow = !startsEmployeeRow
       && row.length > 1
-      && normalizeText(firstCell).split(" ").length >= 3
-      && !TIME_RANGE_PATTERN.test(firstCell);
+      && looksLikeImportedEmployeeName(firstCell)
+      && row.slice(1).some(looksLikeImportedScheduleCell);
     const startsSummaryRow = IMPORT_SUMMARY_ROW_PATTERN.test(firstCell);
     const startsHeaderRow = !repairedRows.length;
 
