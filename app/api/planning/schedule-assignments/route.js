@@ -402,12 +402,24 @@ export async function POST(request) {
         if (!employee || !dateKey) return;
 
         exceptionOperations.unshift({
-          deleteOne: {
+          updateMany: {
             filter: {
               employee: employee._id,
-              dateKey,
-              registeredBy: "IMPORTACION HORARIOS",
-              status: "open",
+              status: { $ne: "void" },
+              $or: [
+                { dateKey },
+                {
+                  dateKey: { $lte: dateKey },
+                  endDateKey: { $gte: dateKey },
+                },
+              ],
+            },
+            update: {
+              $set: {
+                status: "void",
+                resolution: "no_action",
+                resolutionNotes: "Anulada por limpieza de horarios semanal.",
+              },
             },
           },
         });

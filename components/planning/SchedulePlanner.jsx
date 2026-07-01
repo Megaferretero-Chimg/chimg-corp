@@ -404,6 +404,35 @@ function parseImportedDayHeader(header, monthKey) {
   return `${monthKey}-${String(Number(dayMatch[1])).padStart(2, "0")}`;
 }
 
+function isImportedDateHeaderRow(row) {
+  const cells = Array.isArray(row) ? row.slice(1) : [];
+
+  return Boolean(cells.length)
+    && !String(row?.[0] || "").trim()
+    && cells.every((cell) => {
+      const value = String(cell || "").trim();
+
+      return !value || /^(?:[1-9]|[12]\d|3[01])$/.test(value);
+    });
+}
+
+function resolveImportedDateKey(cell, index, weekDateKeys, monthKey) {
+  const visibleWeekDateKey = weekDateKeys[index] || "";
+  const dayMatch = String(cell || "").match(/\b(\d{1,2})\b/);
+
+  if (dayMatch && visibleWeekDateKey) {
+    const importedDay = String(Number(dayMatch[1])).padStart(2, "0");
+
+    if (visibleWeekDateKey.endsWith(`-${importedDay}`)) {
+      return visibleWeekDateKey;
+    }
+  }
+
+  const parsedDateKey = parseImportedDayHeader(cell, monthKey);
+
+  return weekDateKeys.includes(parsedDateKey) ? parsedDateKey : visibleWeekDateKey;
+}
+
 function parseClipboardRows(text) {
   const rows = [];
   let row = [];
@@ -506,15 +535,14 @@ function buildClipboardSchedulePreview(text, employees, weekDateKeys, monthKey) 
 
   const firstRowHasEmployee = Boolean(findEmployeeForImport(rows[0]?.[0] || "", employees));
   const hasHeader = !firstRowHasEmployee;
-  const dataRows = (hasHeader ? rows.slice(1) : rows).filter((row) =>
+  const hasDateHeaderRow = hasHeader && isImportedDateHeaderRow(rows[1]);
+  const headerRowsCount = hasHeader ? (hasDateHeaderRow ? 2 : 1) : 0;
+  const dateHeaderRow = hasDateHeaderRow ? rows[1] : rows[0];
+  const dataRows = rows.slice(headerRowsCount).filter((row) =>
     !IMPORT_SUMMARY_ROW_PATTERN.test(row[0] || ""),
   );
   const dateKeys = hasHeader
-    ? rows[0].slice(1).map((cell, index) => {
-      const parsedDateKey = parseImportedDayHeader(cell, monthKey);
-
-      return weekDateKeys.includes(parsedDateKey) ? parsedDateKey : weekDateKeys[index] || "";
-    })
+    ? dateHeaderRow.slice(1).map((cell, index) => resolveImportedDateKey(cell, index, weekDateKeys, monthKey))
     // Tables without headers are pasted in Monday-to-Sunday order for the selected visible week.
     : weekDateKeys;
   const parsedRows = dataRows.map((row) => {
@@ -852,6 +880,13 @@ function isWorkShift(shiftKey) {
   return shiftKey && shiftKey !== "off";
 }
 
+function getReservedOperationalNote(shiftKey) {
+  if (shiftKey === RESERVED_SHIFT_KEYS.salcedo) return "SALCEDO";
+  if (shiftKey === RESERVED_SHIFT_KEYS.permission) return "PERMISO";
+
+  return "";
+}
+
 function shouldShowDayNote(shiftKey, note) {
   const normalizedNote = normalizeText(note);
 
@@ -864,6 +899,15 @@ function shouldShowDayNote(shiftKey, note) {
 
 function cleanImportedNote(note) {
   return String(note || "").replace(/^IMPORTADO DESDE HORARIO:\s*/i, "").trim();
+}
+
+function isSalcedoOverlay(overlay) {
+  return [
+    overlay?.raw?.destination,
+    cleanImportedNote(overlay?.raw?.notes),
+    overlay?.shortLabel,
+    overlay?.title,
+  ].some((value) => normalizeText(value) === "SALCEDO");
 }
 
 function buildPlanningOverlayIndexes({ exceptions = [], vacations = [] }) {
@@ -929,8 +973,13 @@ function applyPlanningOverlaysToDraftDays({ draftDays, employees, weekDateKeys, 
 
       if (!overlay) return;
 
-      employeeDays[dateKey] = overlay.kind === "vacation"
-        ? RESERVED_SHIFT_KEYS.vacation
+      if (overlay.kind === "vacation") {
+        employeeDays[dateKey] = RESERVED_SHIFT_KEYS.vacation;
+        return;
+      }
+
+      employeeDays[dateKey] = isSalcedoOverlay(overlay)
+        ? RESERVED_SHIFT_KEYS.salcedo
         : OFF_SHIFT_OPTION.key;
     });
 
@@ -1594,6 +1643,21 @@ export default function SchedulePlanner({ initialFilters = {} }) {
         [dateKey]: shiftKey,
       },
     }));
+    setDraftDayNotes((current) => {
+      const nextNote = getReservedOperationalNote(shiftKey);
+      const employeeNotes = { ...(current[employeeId] || {}) };
+
+      if (nextNote) {
+        employeeNotes[dateKey] = nextNote;
+      } else {
+        delete employeeNotes[dateKey];
+      }
+
+      return {
+        ...current,
+        [employeeId]: employeeNotes,
+      };
+    });
   }
 
   function setWeekRole(employeeId, weekStartKey, nextRoleCode) {
@@ -1931,10 +1995,11 @@ export default function SchedulePlanner({ initialFilters = {} }) {
             const shiftKey = overlay
               ? (overlay.kind === "vacation" ? RESERVED_SHIFT_KEYS.vacation : OFF_SHIFT_OPTION.key)
               : draftDays[employee.id]?.[dateKey] || "off";
-            const operationalNote = overlay ? "" : draftDayNotes[employee.id]?.[dateKey] || "";
+            const baseDay = buildOperationalDay(dateKey, shiftKey, shiftOptionsByKey);
+            const operationalNote = overlay ? "" : draftDayNotes[employee.id]?.[dateKey] || baseDay.operationalNote || "";
 
             return {
-              ...buildOperationalDay(dateKey, shiftKey, shiftOptionsByKey),
+              ...baseDay,
               areaCode: dayRole.areaCode,
               areaName: dayRole.areaName,
               roleCode: dayRole.code,
