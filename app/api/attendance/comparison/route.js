@@ -1619,19 +1619,6 @@ function compareDay(day, punches, laborRules, employee = {}) {
     workedMinutes = Math.max(0, grossMinutes - lunchDiscount);
   }
 
-  if (shouldUsePlannedAttendance || (!scheduleAffectsSalary && isWorkingDay && hasUnusablePunchesForPayroll)) {
-    workedMinutes = plannedMinutes.plannedRegularMinutes + plannedMinutes.plannedSupplementaryMinutes;
-    regularWorkedMinutes = workedMinutes;
-    actualLunchMinutes = null;
-  }
-
-  if (!scheduleAffectsSalary && isWorkingDay && workedMinutes > 0) {
-    workedMinutes = Math.max(
-      workedMinutes,
-      plannedMinutes.plannedRegularMinutes + plannedMinutes.plannedSupplementaryMinutes,
-    );
-  }
-
   if (shouldIgnorePunchesForPayroll) {
     workedMinutes = 0;
     actualLunchMinutes = null;

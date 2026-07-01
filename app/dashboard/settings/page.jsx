@@ -23,11 +23,6 @@ export default function SettingsPage() {
             href: planningModulePath("/settings/base-schedules"),
           },
           {
-            title: "Feriados",
-            description: "Calendario laboral del mes.",
-            href: planningModulePath("/settings/holidays"),
-          },
-          {
             title: "Reglas laborales",
             description: "Jornadas, descansos, feriados y recargos.",
             href: planningModulePath("/settings/labor-rules"),
