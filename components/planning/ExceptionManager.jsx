@@ -6,11 +6,13 @@ import { es } from "date-fns/locale";
 import {
   AlertTriangle,
   CalendarDays,
+  ChevronDown,
   ChevronLeft,
   ChevronRight,
   Edit3,
   Plus,
   Save,
+  Search,
   XCircle,
 } from "lucide-react";
 
@@ -134,6 +136,14 @@ function parseScheduleKey(key) {
   };
 }
 
+function normalizeSearch(value) {
+  return String(value || "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .trim();
+}
+
 export default function ExceptionManager({
   eyebrow = "Control operativo",
   title = "Ajustes y excepciones",
@@ -147,6 +157,8 @@ export default function ExceptionManager({
   const [types, setTypes] = useState(DEFAULT_TYPES);
   const [resolutions, setResolutions] = useState(DEFAULT_RESOLUTIONS);
   const [form, setForm] = useState(EMPTY_FORM);
+  const [employeeQuery, setEmployeeQuery] = useState("");
+  const [isEmployeeMenuOpen, setIsEmployeeMenuOpen] = useState(false);
   const [isEditorOpen, setIsEditorOpen] = useState(false);
   const [exceptionToDelete, setExceptionToDelete] = useState(null);
   const [currentPage, setCurrentPage] = useState(1);
@@ -155,6 +167,7 @@ export default function ExceptionManager({
   const [isPending, startTransition] = useTransition();
   const noticeExitTimeoutRef = useRef(null);
   const noticeRemoveTimeoutRef = useRef(null);
+  const employeeAutocompleteRef = useRef(null);
   const monthKey = format(monthDate, "yyyy-MM");
   const monthLabel = format(monthDate, "MMMM yyyy", { locale: es });
   const isLimitedExceptionUser = currentUserAccessRole === PLANNING_EXCEPTIONS_ACCESS_ROLE;
@@ -167,6 +180,22 @@ export default function ExceptionManager({
     () => activeEmployees.find((employee) => employee.id === form.employeeId),
     [activeEmployees, form.employeeId],
   );
+  const filteredEmployees = useMemo(() => {
+    const query = normalizeSearch(employeeQuery);
+    const options = activeEmployees.filter((employee) => {
+      if (!query) return true;
+
+      return normalizeSearch([
+        employee.fullName,
+        employee.dni,
+        employee.branchName || employee.branch,
+        employee.areaName,
+        employee.roleName,
+      ].filter(Boolean).join(" ")).includes(query);
+    });
+
+    return options.slice(0, 8);
+  }, [activeEmployees, employeeQuery]);
   const scheduleOptions = useMemo(() => {
     if (!selectedEmployee) return [];
 
@@ -363,6 +392,20 @@ export default function ExceptionManager({
     };
   }, [clearNoticeTimers, monthKey, showNotice]);
 
+  useEffect(() => {
+    function handleClickOutside(event) {
+      if (!employeeAutocompleteRef.current?.contains(event.target)) {
+        setIsEmployeeMenuOpen(false);
+      }
+    }
+
+    document.addEventListener("mousedown", handleClickOutside);
+
+    return () => {
+      document.removeEventListener("mousedown", handleClickOutside);
+    };
+  }, []);
+
   function updateForm(field, value) {
     setForm((current) => ({ ...current, [field]: value }));
   }
@@ -382,6 +425,22 @@ export default function ExceptionManager({
       plannedLunchEndTime: "",
       plannedLunchDurationMinutes: 0,
     }));
+  }
+
+  function selectEmployee(employee) {
+    updateEmployee(employee?.id || "");
+    setEmployeeQuery(employee?.fullName || "");
+    setIsEmployeeMenuOpen(false);
+  }
+
+  function handleEmployeeQueryChange(value) {
+    setEmployeeQuery(value);
+    setIsEmployeeMenuOpen(true);
+
+    const normalizedValue = normalizeSearch(value);
+    const exactEmployee = activeEmployees.find((employee) => normalizeSearch(employee.fullName) === normalizedValue);
+
+    updateEmployee(exactEmployee?.id || "");
   }
 
   function setDateRangeEnabled(isEnabled) {
@@ -464,6 +523,7 @@ export default function ExceptionManager({
       resolution: isLimitedExceptionUser ? "pending" : EMPTY_FORM.resolution,
       authorizedBy: "",
     });
+    setEmployeeQuery("");
     setIsEditorOpen(true);
   }
 
@@ -472,12 +532,17 @@ export default function ExceptionManager({
       return;
     }
 
+    const employee = activeEmployees.find((entry) => entry.id === exception.employeeId);
+
     setForm(buildExceptionForm(exception));
+    setEmployeeQuery(employee?.fullName || exception.employeeName || "");
     setIsEditorOpen(true);
   }
 
   function closeEditor() {
     setForm(EMPTY_FORM);
+    setEmployeeQuery("");
+    setIsEmployeeMenuOpen(false);
     setIsEditorOpen(false);
   }
 
@@ -748,14 +813,44 @@ export default function ExceptionManager({
         <form className={styles.editorForm} onSubmit={saveException}>
           <label className={styles.field}>
             <span>Empleado</span>
-            <select value={form.employeeId} onChange={(event) => updateEmployee(event.target.value)}>
-              <option value="">Seleccionar empleado</option>
-              {activeEmployees.map((employee) => (
-                <option key={employee.id} value={employee.id}>
-                  {employee.fullName}
-                </option>
-              ))}
-            </select>
+            <div ref={employeeAutocompleteRef} className={styles.autocomplete}>
+              <div className={styles.searchWrap}>
+                <Search size={16} aria-hidden="true" />
+                <input
+                  type="search"
+                  value={employeeQuery}
+                  onChange={(event) => handleEmployeeQueryChange(event.target.value)}
+                  onFocus={() => setIsEmployeeMenuOpen(true)}
+                  placeholder="Escribe el nombre del empleado"
+                  autoComplete="off"
+                />
+                <ChevronDown size={16} aria-hidden="true" className={styles.chevron} />
+              </div>
+
+              {isEmployeeMenuOpen ? (
+                <div className={styles.autocompleteMenu} role="listbox">
+                  {filteredEmployees.length ? (
+                    filteredEmployees.map((employee) => (
+                      <button
+                        key={employee.id}
+                        type="button"
+                        className={styles.autocompleteOption}
+                        onClick={() => selectEmployee(employee)}
+                        role="option"
+                        aria-selected={employee.id === form.employeeId}
+                      >
+                        <span className={styles.autocompleteName}>{employee.fullName}</span>
+                        <span className={styles.autocompleteMeta}>
+                          {[employee.branchName || employee.branch, employee.areaName, employee.roleName].filter(Boolean).join(" / ") || "Sin area o rol"}
+                        </span>
+                      </button>
+                    ))
+                  ) : (
+                    <div className={styles.autocompleteEmpty}>No encontramos empleados relacionados.</div>
+                  )}
+                </div>
+              ) : null}
+            </div>
           </label>
 
           {selectedEmployee ? (

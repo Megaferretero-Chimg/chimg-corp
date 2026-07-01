@@ -5,12 +5,14 @@ import { addMonths, differenceInCalendarDays, format, parseISO, subMonths } from
 import { es } from "date-fns/locale";
 import {
   CalendarDays,
+  ChevronDown,
   ChevronLeft,
   ChevronRight,
   Edit3,
   Plane,
   Plus,
   Save,
+  Search,
   Trash2,
 } from "lucide-react";
 
@@ -53,11 +55,21 @@ function calculateNoticeDays(startDateKey) {
   return differenceInCalendarDays(parseISO(startDateKey), parseISO(getTodayKey()));
 }
 
+function normalizeSearch(value) {
+  return String(value || "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .trim();
+}
+
 export default function VacationPlanner() {
   const [monthDate, setMonthDate] = useState(() => new Date());
   const [employees, setEmployees] = useState([]);
   const [vacations, setVacations] = useState([]);
   const [form, setForm] = useState(EMPTY_FORM);
+  const [employeeQuery, setEmployeeQuery] = useState("");
+  const [isEmployeeMenuOpen, setIsEmployeeMenuOpen] = useState(false);
   const [isEditorOpen, setIsEditorOpen] = useState(false);
   const [vacationToDelete, setVacationToDelete] = useState(null);
   const [notice, setNotice] = useState(null);
@@ -65,6 +77,7 @@ export default function VacationPlanner() {
   const [isPending, startTransition] = useTransition();
   const noticeExitTimeoutRef = useRef(null);
   const noticeRemoveTimeoutRef = useRef(null);
+  const employeeAutocompleteRef = useRef(null);
   const monthKey = format(monthDate, "yyyy-MM");
   const monthLabel = format(monthDate, "MMMM yyyy", { locale: es });
 
@@ -76,6 +89,22 @@ export default function VacationPlanner() {
     () => activeEmployees.find((employee) => employee.id === form.employeeId),
     [activeEmployees, form.employeeId],
   );
+  const filteredEmployees = useMemo(() => {
+    const query = normalizeSearch(employeeQuery);
+    const options = activeEmployees.filter((employee) => {
+      if (!query) return true;
+
+      return normalizeSearch([
+        employee.fullName,
+        employee.dni,
+        employee.branchName || employee.branch,
+        employee.areaName,
+        employee.roleName,
+      ].filter(Boolean).join(" ")).includes(query);
+    });
+
+    return options.slice(0, 8);
+  }, [activeEmployees, employeeQuery]);
   const requestedDays = calculateDays(form.startDateKey, form.endDateKey);
   const noticeDays = calculateNoticeDays(form.startDateKey);
   const hasNoticeWarning = noticeDays !== null && noticeDays < VACATION_NOTICE_DAYS;
@@ -168,16 +197,49 @@ export default function VacationPlanner() {
     };
   }, [clearNoticeTimers, monthKey, showNotice]);
 
+  useEffect(() => {
+    function handleClickOutside(event) {
+      if (!employeeAutocompleteRef.current?.contains(event.target)) {
+        setIsEmployeeMenuOpen(false);
+      }
+    }
+
+    document.addEventListener("mousedown", handleClickOutside);
+
+    return () => {
+      document.removeEventListener("mousedown", handleClickOutside);
+    };
+  }, []);
+
   function updateForm(field, value) {
     setForm((current) => ({ ...current, [field]: value }));
   }
 
+  function selectEmployee(employee) {
+    updateForm("employeeId", employee?.id || "");
+    setEmployeeQuery(employee?.fullName || "");
+    setIsEmployeeMenuOpen(false);
+  }
+
+  function handleEmployeeQueryChange(value) {
+    setEmployeeQuery(value);
+    setIsEmployeeMenuOpen(true);
+
+    const normalizedValue = normalizeSearch(value);
+    const exactEmployee = activeEmployees.find((employee) => normalizeSearch(employee.fullName) === normalizedValue);
+
+    updateForm("employeeId", exactEmployee?.id || "");
+  }
+
   function openCreateEditor() {
     setForm(EMPTY_FORM);
+    setEmployeeQuery("");
     setIsEditorOpen(true);
   }
 
   function openEditEditor(vacation) {
+    const employee = activeEmployees.find((entry) => entry.id === vacation.employeeId);
+
     setForm({
       id: vacation.id,
       employeeId: vacation.employeeId,
@@ -185,11 +247,14 @@ export default function VacationPlanner() {
       endDateKey: vacation.endDateKey,
       notes: vacation.notes || "",
     });
+    setEmployeeQuery(employee?.fullName || vacation.employeeName || "");
     setIsEditorOpen(true);
   }
 
   function closeEditor() {
     setForm(EMPTY_FORM);
+    setEmployeeQuery("");
+    setIsEmployeeMenuOpen(false);
     setIsEditorOpen(false);
   }
 
@@ -411,14 +476,44 @@ export default function VacationPlanner() {
         <form className={styles.editorForm} onSubmit={saveVacation}>
           <label className={styles.field}>
             <span>Empleado</span>
-            <select value={form.employeeId} onChange={(event) => updateForm("employeeId", event.target.value)}>
-              <option value="">Seleccionar empleado</option>
-              {activeEmployees.map((employee) => (
-                <option key={employee.id} value={employee.id}>
-                  {employee.fullName}
-                </option>
-              ))}
-            </select>
+            <div ref={employeeAutocompleteRef} className={styles.autocomplete}>
+              <div className={styles.searchWrap}>
+                <Search size={16} aria-hidden="true" />
+                <input
+                  type="search"
+                  value={employeeQuery}
+                  onChange={(event) => handleEmployeeQueryChange(event.target.value)}
+                  onFocus={() => setIsEmployeeMenuOpen(true)}
+                  placeholder="Escribe el nombre del empleado"
+                  autoComplete="off"
+                />
+                <ChevronDown size={16} aria-hidden="true" className={styles.chevron} />
+              </div>
+
+              {isEmployeeMenuOpen ? (
+                <div className={styles.autocompleteMenu} role="listbox">
+                  {filteredEmployees.length ? (
+                    filteredEmployees.map((employee) => (
+                      <button
+                        key={employee.id}
+                        type="button"
+                        className={styles.autocompleteOption}
+                        onClick={() => selectEmployee(employee)}
+                        role="option"
+                        aria-selected={employee.id === form.employeeId}
+                      >
+                        <span className={styles.autocompleteName}>{employee.fullName}</span>
+                        <span className={styles.autocompleteMeta}>
+                          {[employee.branchName || employee.branch, employee.areaName, employee.roleName].filter(Boolean).join(" / ") || "Sin area o rol"}
+                        </span>
+                      </button>
+                    ))
+                  ) : (
+                    <div className={styles.autocompleteEmpty}>No encontramos empleados relacionados.</div>
+                  )}
+                </div>
+              ) : null}
+            </div>
           </label>
 
           {selectedEmployee ? (
