@@ -19,16 +19,19 @@ export default function EmployeeForm({
   form,
   branches,
   roles,
+  areaOptions,
   isEditing,
   isSaving,
   canSubmit,
   onCancel,
   onFieldChange,
   onBranchChange,
+  onAreaChange,
   onRoleChange,
   onSubmit,
 }) {
   const selectedRole = roles.find((role) => role.code === form.roleCode) || null;
+  const filteredRoles = roles.filter((role) => role.areaCode === form.areaCode);
   const operationalSubroles = (selectedRole?.subroles || []).filter((subrole) => subrole.isActive !== false);
   const selectedOperationalCodes = new Set((form.roleAssignments || []).map((role) => role.code));
 
@@ -142,14 +145,31 @@ export default function EmployeeForm({
       </label>
 
       <label className="catalog-field">
+        <span className="catalog-label">Área</span>
+        <select
+          value={form.areaCode}
+          onChange={(event) => onAreaChange(event.target.value)}
+          className="catalog-select"
+        >
+          <option value="">Selecciona un área</option>
+          {areaOptions.map((area) => (
+            <option key={area.code} value={area.code}>
+              {area.name}
+            </option>
+          ))}
+        </select>
+      </label>
+
+      <label className="catalog-field">
         <span className="catalog-label">Rol principal</span>
         <select
           value={form.roleCode}
           onChange={(event) => onRoleChange(event.target.value, [])}
           className="catalog-select"
+          disabled={!form.areaCode}
         >
-          <option value="">Selecciona un rol</option>
-          {roles.map((role) => (
+          <option value="">{form.areaCode ? "Selecciona un rol" : "Selecciona un área primero"}</option>
+          {filteredRoles.map((role) => (
             <option key={role.id} value={role.code}>
               {role.name}
             </option>

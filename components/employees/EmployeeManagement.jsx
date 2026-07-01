@@ -594,6 +594,19 @@ export default function EmployeeManagement() {
     }));
   }
 
+  function handleAreaChange(areaCode) {
+    const area = areaOptions.find((candidate) => candidate.code === areaCode) || null;
+
+    setForm((current) => ({
+      ...current,
+      areaCode: area?.code || "",
+      areaName: area?.name || "",
+      roleCode: "",
+      roleName: "",
+      roleAssignments: [],
+    }));
+  }
+
   function handleRoleChange(primaryRoleCode, operationalCodes = []) {
     const primaryRole = roles.find((candidate) => candidate.code === primaryRoleCode) || null;
     const selectedOperationalCodes = Array.isArray(operationalCodes) ? operationalCodes : [];
@@ -991,12 +1004,14 @@ export default function EmployeeManagement() {
           form={form}
           branches={branches}
           roles={roles}
+          areaOptions={areaOptions}
           isEditing={Boolean(editingEmployeeId)}
           isSaving={isPending}
           canSubmit={canSubmit}
           onCancel={closeDrawer}
           onFieldChange={updateField}
           onBranchChange={handleBranchChange}
+          onAreaChange={handleAreaChange}
           onRoleChange={handleRoleChange}
           onSubmit={handleSubmit}
         />
