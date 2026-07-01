@@ -59,6 +59,12 @@ function minutesLabel(minutes) {
   return rest ? `${hours}h ${rest}m` : `${hours}h`;
 }
 
+function plannedMinutesLabel(minutes) {
+  const value = Math.max(0, Number(minutes) || 0);
+
+  return value ? minutesLabel(value) : "--";
+}
+
 function money(value) {
   return Math.round((Number(value) || 0) * 100) / 100;
 }
@@ -1711,6 +1717,7 @@ function compareDay(day, punches, laborRules, employee = {}) {
     dayType: day.dayType || "off_day",
     dayTypeLabel: displayDayTypeLabel,
     source: day.source || "calendar",
+    plannedScheduleExists: hasAssignedScheduleDay(day),
     scheduleLabel: displayScheduleLabel,
     startTime: day.startTime || "",
     endTime: day.endTime || "",
@@ -2099,9 +2106,9 @@ export async function GET(request) {
           regularTargetLabel: minutesLabel(regularTargetMinutes),
           regularDeficitMinutes: Math.max(0, summary.plannedRegularMinutes - summary.regularWorkedMinutes),
           regularDeficitLabel: minutesLabel(Math.max(0, summary.plannedRegularMinutes - summary.regularWorkedMinutes)),
-          plannedRegularLabel: minutesLabel(summary.plannedRegularMinutes),
-          plannedSupplementaryLabel: minutesLabel(summary.plannedSupplementaryMinutes),
-          plannedExtraordinaryLabel: minutesLabel(summary.plannedExtraordinaryMinutes),
+          plannedRegularLabel: plannedMinutesLabel(summary.plannedRegularMinutes),
+          plannedSupplementaryLabel: plannedMinutesLabel(summary.plannedSupplementaryMinutes),
+          plannedExtraordinaryLabel: plannedMinutesLabel(summary.plannedExtraordinaryMinutes),
           salaryExpected: money(salaryExpected),
           salaryExpectedRaw: salaryExpected,
           salaryExpectedValue: money(salaryExpected),
@@ -2197,9 +2204,9 @@ export async function GET(request) {
       monthKey,
       summary: {
         ...summary,
-        plannedRegularLabel: minutesLabel(summary.plannedRegularMinutes),
-        plannedSupplementaryLabel: minutesLabel(summary.plannedSupplementaryMinutes),
-        plannedExtraordinaryLabel: minutesLabel(summary.plannedExtraordinaryMinutes),
+        plannedRegularLabel: plannedMinutesLabel(summary.plannedRegularMinutes),
+        plannedSupplementaryLabel: plannedMinutesLabel(summary.plannedSupplementaryMinutes),
+        plannedExtraordinaryLabel: plannedMinutesLabel(summary.plannedExtraordinaryMinutes),
         regularWorkedLabel: minutesLabel(summary.regularWorkedMinutes),
         supplementaryLabel: minutesLabel(summary.supplementaryMinutes),
         detectedSupplementaryLabel: minutesLabel(summary.detectedSupplementaryMinutes),

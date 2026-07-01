@@ -1591,7 +1591,9 @@ export default function AttendanceComparisonDetail({ employeeId, initialFilters 
                                 </div>
                               </td>
                               <td>
-                                {day.scheduledWorkedMinutes > 0 ? (
+                                {day.plannedScheduleExists === false ? (
+                                  <strong>--</strong>
+                                ) : day.scheduledWorkedMinutes > 0 ? (
                                   <strong>{day.scheduledWorkedLabel}</strong>
                                 ) : (
                                   <strong>{day.dayTypeLabel}</strong>
