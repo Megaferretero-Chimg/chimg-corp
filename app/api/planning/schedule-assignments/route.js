@@ -34,6 +34,14 @@ function getDayOfWeek(dateKey) {
   return new Date(`${dateKey}T12:00:00`).getDay();
 }
 
+function addDaysToDateKey(dateKey, days) {
+  const date = new Date(`${dateKey}T12:00:00.000Z`);
+
+  date.setUTCDate(date.getUTCDate() + days);
+
+  return date.toISOString().slice(0, 10);
+}
+
 function normalizeOperationalDay(day, holidayNamesByDate) {
   const dateKey = String(day?.dateKey || "").trim();
 
@@ -150,6 +158,84 @@ function buildAutoExceptionPayload({ employee, day }) {
     countsAsWorkedTime: false,
     allowSupplementaryTime: false,
   };
+}
+
+function buildAutoExceptionSignature(payload) {
+  return [
+    payload.employee?.toString?.() || "",
+    payload.type,
+    payload.scope,
+    payload.destination || "",
+    payload.countsAsWorkedTime ? "worked" : "not_worked",
+    payload.allowSupplementaryTime ? "supplementary" : "regular",
+    payload.notes || "",
+  ].join("|");
+}
+
+function buildGroupedAutoExceptionOperations(candidates = []) {
+  const groupsByEmployeeSignature = new Map();
+
+  candidates.forEach((candidate) => {
+    const payload = candidate?.payload;
+
+    if (!payload?.employee || !payload.dateKey) return;
+
+    const key = buildAutoExceptionSignature(payload);
+
+    if (!groupsByEmployeeSignature.has(key)) {
+      groupsByEmployeeSignature.set(key, []);
+    }
+
+    groupsByEmployeeSignature.get(key).push(payload);
+  });
+
+  const operations = [];
+
+  groupsByEmployeeSignature.forEach((payloads) => {
+    const orderedPayloads = [...payloads].sort((left, right) =>
+      String(left.dateKey).localeCompare(String(right.dateKey)),
+    );
+    const ranges = [];
+
+    orderedPayloads.forEach((payload) => {
+      const currentRange = ranges.at(-1);
+
+      if (!currentRange || payload.dateKey !== addDaysToDateKey(currentRange.endDateKey, 1)) {
+        ranges.push({
+          startPayload: payload,
+          endDateKey: payload.dateKey,
+        });
+        return;
+      }
+
+      currentRange.endDateKey = payload.dateKey;
+    });
+
+    ranges.forEach((range) => {
+      const payload = {
+        ...range.startPayload,
+        endDate: range.endDateKey === range.startPayload.dateKey
+          ? null
+          : new Date(`${range.endDateKey}T12:00:00.000Z`),
+        endDateKey: range.endDateKey === range.startPayload.dateKey ? "" : range.endDateKey,
+      };
+
+      operations.push({
+        updateOne: {
+          filter: {
+            employee: payload.employee,
+            dateKey: payload.dateKey,
+            registeredBy: "IMPORTACION HORARIOS",
+            status: "open",
+          },
+          update: { $set: payload },
+          upsert: true,
+        },
+      });
+    });
+  });
+
+  return operations;
 }
 
 function mergeAssignmentsByEmployee(assignments, requestedMonthKey) {
@@ -290,6 +376,7 @@ export async function POST(request) {
       const holidayNamesByDate = new Map(holidays.map((holiday) => [holiday.dateKey, holiday.name]));
       const operations = [];
       const exceptionOperations = [];
+      const autoExceptionCandidates = [];
       const exceptionCleanupKeys = new Set();
       const savedEmployeeIds = new Set();
 
@@ -323,18 +410,7 @@ export async function POST(request) {
             }
 
             if (autoException && !reviewedImportedExceptionKeys.has(`${employee._id.toString()}|${normalized.dateKey}`)) {
-              exceptionOperations.push({
-                updateOne: {
-                  filter: {
-                    employee: employee._id,
-                    dateKey: normalized.dateKey,
-                    registeredBy: "IMPORTACION HORARIOS",
-                    status: "open",
-                  },
-                  update: { $set: autoException },
-                  upsert: true,
-                },
-              });
+              autoExceptionCandidates.push({ employeeId, dateKey: normalized.dateKey, payload: autoException });
             }
           }
         });
@@ -395,6 +471,52 @@ export async function POST(request) {
           });
         });
       });
+
+      if (autoExceptionCandidates.length) {
+        const importedExceptionDatesByEmployee = new Map();
+
+        autoExceptionCandidates.forEach((candidate) => {
+          if (!importedExceptionDatesByEmployee.has(candidate.employeeId)) {
+            importedExceptionDatesByEmployee.set(candidate.employeeId, new Set());
+          }
+
+          importedExceptionDatesByEmployee.get(candidate.employeeId).add(candidate.dateKey);
+        });
+
+        importedExceptionDatesByEmployee.forEach((dateKeys, employeeIdForCleanup) => {
+          const employee = employeesById.get(employeeIdForCleanup);
+
+          if (!employee) return;
+
+          const dateConditions = [...dateKeys].flatMap((dateKey) => [
+            { dateKey },
+            {
+              dateKey: { $lte: dateKey },
+              endDateKey: { $gte: dateKey },
+            },
+          ]);
+
+          exceptionOperations.push({
+            updateMany: {
+              filter: {
+                employee: employee._id,
+                registeredBy: "IMPORTACION HORARIOS",
+                status: "open",
+                $or: dateConditions,
+              },
+              update: {
+                $set: {
+                  status: "void",
+                  resolution: "no_action",
+                  resolutionNotes: "Reemplazada por excepcion agrupada desde horarios.",
+                },
+              },
+            },
+          });
+        });
+
+        exceptionOperations.push(...buildGroupedAutoExceptionOperations(autoExceptionCandidates));
+      }
 
       exceptionCleanupKeys.forEach((key) => {
         const [employeeIdForCleanup, dateKey] = key.split("|");

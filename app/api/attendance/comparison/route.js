@@ -274,6 +274,10 @@ function resolveScheduledNetMinutes(day) {
 }
 
 function resolvePlannedExtraordinaryMinutes(day) {
+  if (day?.plannedScheduleExists === false) {
+    return 0;
+  }
+
   if (day?.payrollPolicy?.appliesExtraordinaryHours === false) {
     return 0;
   }
@@ -514,6 +518,26 @@ function buildFixedScheduleFallbackAssignments({ employees = [], templates = [],
   });
 
   return assignments;
+}
+
+function assignmentMatchesCurrentEmployeeOrg(assignment, employee) {
+  if (!assignment || !employee) return true;
+
+  const assignmentAreaCode = normalizeCode(assignment.areaCode);
+  const employeeAreaCode = normalizeCode(employee.areaCode);
+
+  if (assignmentAreaCode && employeeAreaCode && assignmentAreaCode !== employeeAreaCode) {
+    return false;
+  }
+
+  const assignmentRoleCode = normalizeCode(assignment.roleCode);
+  const employeeRoleCode = normalizeCode(employee.roleCode);
+
+  if (assignmentRoleCode && employeeRoleCode && assignmentRoleCode !== employeeRoleCode) {
+    return false;
+  }
+
+  return true;
 }
 
 function buildVacationDateKeysByEmployee(vacations = []) {
@@ -883,11 +907,16 @@ function applyWeeklyExtraByAttendance(days = []) {
         actualWorkedDayCount += 1;
 
         if (actualWorkedDayCount <= 5) {
-          const plannedRegularMinutes = Math.max(
-            Number(day.plannedRegularMinutes) || 0,
-            Math.min(workedMinutes, REGULAR_DAY_MINUTES),
-          );
-          const scheduledWorkedMinutes = Math.max(Number(day.scheduledWorkedMinutes) || 0, workedMinutes);
+          const hasPlannedSchedule = day.plannedScheduleExists !== false;
+          const plannedRegularMinutes = hasPlannedSchedule
+            ? Math.max(
+              Number(day.plannedRegularMinutes) || 0,
+              Math.min(workedMinutes, REGULAR_DAY_MINUTES),
+            )
+            : 0;
+          const scheduledWorkedMinutes = hasPlannedSchedule
+            ? Math.max(Number(day.scheduledWorkedMinutes) || 0, workedMinutes)
+            : 0;
 
           byDate.set(day.dateKey, {
             ...day,
@@ -896,8 +925,10 @@ function applyWeeklyExtraByAttendance(days = []) {
             scheduleLabel: day.scheduleLabel || dayTypeLabel("workday"),
             plannedRegularMinutes,
             plannedRegularLabel: plannedRegularMinutes ? minutesLabel(plannedRegularMinutes) : "--",
-            plannedSupplementaryMinutes: Number(day.plannedSupplementaryMinutes) || 0,
-            plannedSupplementaryLabel: day.plannedSupplementaryMinutes ? minutesLabel(day.plannedSupplementaryMinutes) : "--",
+            plannedSupplementaryMinutes: hasPlannedSchedule ? Number(day.plannedSupplementaryMinutes) || 0 : 0,
+            plannedSupplementaryLabel: hasPlannedSchedule && day.plannedSupplementaryMinutes
+              ? minutesLabel(day.plannedSupplementaryMinutes)
+              : "--",
             scheduledWorkedMinutes,
             scheduledWorkedLabel: scheduledWorkedMinutes ? minutesLabel(scheduledWorkedMinutes) : "--",
             authorizedExtraMinutes: 0,
@@ -915,9 +946,9 @@ function applyWeeklyExtraByAttendance(days = []) {
           plannedRegularLabel: "--",
           plannedSupplementaryMinutes: 0,
           plannedSupplementaryLabel: "--",
-          scheduledWorkedMinutes: workedMinutes,
-          scheduledWorkedLabel: minutesLabel(workedMinutes),
-          authorizedExtraMinutes: workedMinutes,
+          scheduledWorkedMinutes: day.plannedScheduleExists === false ? 0 : workedMinutes,
+          scheduledWorkedLabel: day.plannedScheduleExists === false ? "--" : minutesLabel(workedMinutes),
+          authorizedExtraMinutes: day.plannedScheduleExists === false ? 0 : workedMinutes,
           weeklyAttendanceClassification: "extra",
           source: day.source || "weekly_attendance_rule",
         });
@@ -1885,16 +1916,20 @@ export async function GET(request) {
           }).lean(),
         ])
       : [[], []];
+    const employeesById = new Map(employees.map((employee) => [toId(employee), employee]));
+    const currentManualAssignments = manualAssignments.filter((assignment) =>
+      assignmentMatchesCurrentEmployeeOrg(assignment, employeesById.get(toId(assignment.employee))),
+    );
     const fallbackAssignments = buildFixedScheduleFallbackAssignments({
       employees,
       templates: fixedScheduleTemplates,
       monthKeys: [...contextMonthKeys],
       holidays,
     });
-    const assignments = [...fallbackAssignments, ...manualAssignments];
+    const assignments = [...fallbackAssignments, ...currentManualAssignments];
     const manualDaysByEmployeeDate = new Map();
 
-    manualAssignments.forEach((assignment) => {
+    currentManualAssignments.forEach((assignment) => {
       const employeeKey = toId(assignment.employee);
 
       if (!employeeKey || !Array.isArray(assignment.generatedDays)) return;
