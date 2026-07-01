@@ -8,6 +8,18 @@ import {
 import connectToDatabase from "@/lib/db/mongodb";
 import AttendanceUpload from "@/models/AttendanceUpload";
 
+function buildExistingPublishResult(upload) {
+  return {
+    publishedAt: upload.punchesPublishedAt,
+    publishedEmployees: upload.publishedEmployees || 0,
+    publishedPunches: upload.publishedPunches || 0,
+    skippedDuplicatePunches: upload.skippedDuplicatePunches || 0,
+    skippedUnmatchedEmployees: upload.skippedUnmatchedEmployees || 0,
+    skippedUnmatchedPunches: upload.skippedUnmatchedPunches || 0,
+    alreadyPublished: true,
+  };
+}
+
 export async function POST(_request, context) {
   try {
     const authenticated = await isAuthenticated();
@@ -36,6 +48,15 @@ export async function POST(_request, context) {
         { error: "Primero debes guardar la normalización de esta carga." },
         { status: 400 },
       );
+    }
+
+    if (upload.punchesPublishedAt) {
+      const result = buildExistingPublishResult(upload);
+
+      return NextResponse.json({
+        message: "Las picadas de esta carga ya estaban publicadas en el sistema.",
+        ...result,
+      });
     }
 
     const result = await publishAttendancePunches(upload);

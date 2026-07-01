@@ -159,6 +159,24 @@ function getEmployeeKey(employee) {
   ].join("|");
 }
 
+async function readJsonResponse(response) {
+  const text = await response.text();
+
+  if (!text) {
+    return {};
+  }
+
+  try {
+    return JSON.parse(text);
+  } catch {
+    return {
+      error: response.ok
+        ? "La respuesta del servidor no tuvo el formato esperado."
+        : "El servidor devolvió una respuesta no legible. Revisa la consola del servidor.",
+    };
+  }
+}
+
 export default function NormalizeAttendanceView({ uploadId }) {
   const isClientReady = useClientReady();
   const [response, setResponse] = useState(null);
@@ -222,7 +240,7 @@ export default function NormalizeAttendanceView({ uploadId }) {
       const request = await fetch(`/api/attendance/upload/${uploadId}/normalize`, {
         method: "POST",
       });
-      const payload = await request.json();
+      const payload = await readJsonResponse(request);
 
       if (!request.ok) {
         throw new Error(payload.error || "No se pudo guardar la normalización.");
@@ -253,7 +271,7 @@ export default function NormalizeAttendanceView({ uploadId }) {
       const request = await fetch(`/api/attendance/upload/${uploadId}/publish-punches`, {
         method: "POST",
       });
-      const payload = await request.json();
+      const payload = await readJsonResponse(request);
 
       if (!request.ok) {
         throw new Error(payload.error || "No se pudieron cargar las picadas.");
@@ -267,6 +285,14 @@ export default function NormalizeAttendanceView({ uploadId }) {
                 ...current.upload,
                 punchesPublishedAt: payload.publishedAt,
               },
+              publishSummary: {
+                publishedAt: payload.publishedAt,
+                publishedEmployees: payload.publishedEmployees || 0,
+                publishedPunches: payload.publishedPunches || 0,
+                skippedDuplicatePunches: payload.skippedDuplicatePunches || 0,
+                skippedUnmatchedEmployees: payload.skippedUnmatchedEmployees || 0,
+                skippedUnmatchedPunches: payload.skippedUnmatchedPunches || 0,
+              },
             }
           : current,
       );
@@ -274,7 +300,9 @@ export default function NormalizeAttendanceView({ uploadId }) {
       showToast(
         "success",
         [
-          `Se cargaron ${payload.publishedPunches} picadas para ${payload.publishedEmployees} empleados.`,
+          payload.alreadyPublished
+            ? "Las picadas ya estaban cargadas en el sistema."
+            : `Se cargaron ${payload.publishedPunches} picadas para ${payload.publishedEmployees} empleados.`,
           payload.skippedUnmatchedEmployees
             ? `Se omitieron ${payload.skippedUnmatchedPunches} picadas sin empleado activo en la sucursal.`
             : "",
@@ -307,7 +335,7 @@ export default function NormalizeAttendanceView({ uploadId }) {
         }
 
         const request = await fetch(`/api/attendance/upload/${uploadId}/normalize`);
-        const payload = await request.json();
+        const payload = await readJsonResponse(request);
 
         if (!request.ok) {
           throw new Error(payload.error || "No se pudo normalizar la carga.");
