@@ -968,7 +968,9 @@ export default function AttendanceComparisonDetail({ employeeId, initialFilters 
   const selectedScheduleTemplateDraft = selectedDay
     ? scheduleTemplateDrafts[selectedDay.dateKey] ?? selectedDay.plannedTemplateId ?? ""
     : "";
-  const selectedScheduleTemplate = scheduleOptions.find((template) => template.id === selectedScheduleTemplateDraft);
+  const selectedScheduleChanged = selectedDay
+    ? Boolean(selectedScheduleTemplateDraft) && selectedScheduleTemplateDraft !== (selectedDay.plannedTemplateId || "")
+    : false;
 
   function syncUrl(nextMonth) {
     if (typeof window === "undefined") return;
@@ -1066,12 +1068,12 @@ export default function AttendanceComparisonDetail({ employeeId, initialFilters 
     }));
   }
 
-  async function savePlannedSchedule(day) {
+  async function savePlannedSchedule(day, options = {}) {
     const templateId = scheduleTemplateDrafts[day.dateKey] ?? day.plannedTemplateId ?? "";
 
     if (!templateId) {
       setError("Selecciona una plantilla para actualizar el horario planificado.");
-      return;
+      return false;
     }
 
     try {
@@ -1097,10 +1099,20 @@ export default function AttendanceComparisonDetail({ employeeId, initialFilters 
         throw new Error(payload.error || "No se pudo actualizar el horario planificado.");
       }
 
-      setSelectedDayKey(day.dateKey);
-      await loadReport(month, { background: true });
+      if (options.closeAfterSave) {
+        setSelectedDayKey("");
+      } else {
+        setSelectedDayKey(day.dateKey);
+      }
+
+      if (options.reload !== false) {
+        await loadReport(month, { background: !options.closeAfterSave });
+      }
+
+      return true;
     } catch (requestError) {
       setError(requestError.message);
+      return false;
     } finally {
       setSavingScheduleDay("");
     }
@@ -1439,8 +1451,28 @@ export default function AttendanceComparisonDetail({ employeeId, initialFilters 
   }
 
   async function saveReviewOrAdjustment(day) {
+    const hasScheduleChange = Boolean(
+      (scheduleTemplateDrafts[day.dateKey] ?? day.plannedTemplateId ?? "") &&
+      (scheduleTemplateDrafts[day.dateKey] ?? day.plannedTemplateId ?? "") !== (day.plannedTemplateId || ""),
+    );
+
+    if (hasScheduleChange) {
+      const savedSchedule = await savePlannedSchedule(day, {
+        closeAfterSave: !hasPreparedAdjustment(day, actionDrafts[day.dateKey] || {}),
+        reload: !hasPreparedAdjustment(day, actionDrafts[day.dateKey] || {}),
+      });
+
+      if (!savedSchedule) {
+        return;
+      }
+    }
+
     if (hasPreparedAdjustment(day, actionDrafts[day.dateKey] || {})) {
       await saveDayAction(day);
+      return;
+    }
+
+    if (hasScheduleChange) {
       return;
     }
 
@@ -1940,51 +1972,24 @@ export default function AttendanceComparisonDetail({ employeeId, initialFilters 
                 ) : null}
 
                 <section className={styles.plannedScheduleEditor}>
-                  <div className={styles.plannedScheduleHeader}>
-                    <div>
-                      <span>Horario planificado</span>
-                      <strong>{selectedDay.plannedScheduleExists === false ? "--" : selectedDay.scheduledWorkedLabel}</strong>
-                    </div>
-                    <div>
-                      <span>Plantilla</span>
-                      <strong>{selectedDay.plannedTemplateName || "Sin plantilla"}</strong>
-                    </div>
-                  </div>
-
-                  <div className={styles.plannedScheduleControls}>
-                    <label>
-                      <span>Cambiar plantilla del día</span>
-                      <select
-                        value={selectedScheduleTemplateDraft}
-                        onChange={(event) => updateScheduleTemplateDraft(selectedDay.dateKey, event.target.value)}
-                        disabled={savingScheduleDay === selectedDay.dateKey}
-                      >
-                        <option value="">Seleccionar plantilla</option>
-                        {scheduleOptions.map((template) => (
-                          <option key={template.id} value={template.id}>
-                            {template.label}
-                          </option>
-                        ))}
-                      </select>
-                    </label>
-                    <button
-                      type="button"
-                      className="catalog-button-ghost"
-                      onClick={() => savePlannedSchedule(selectedDay)}
-                      disabled={
-                        savingScheduleDay === selectedDay.dateKey ||
-                        !selectedScheduleTemplateDraft ||
-                        selectedScheduleTemplateDraft === (selectedDay.plannedTemplateId || "")
-                      }
+                  <label>
+                    <span>Plantilla planificada</span>
+                    <select
+                      value={selectedScheduleTemplateDraft}
+                      onChange={(event) => updateScheduleTemplateDraft(selectedDay.dateKey, event.target.value)}
+                      disabled={savingScheduleDay === selectedDay.dateKey}
                     >
-                      {savingScheduleDay === selectedDay.dateKey ? "Actualizando..." : "Actualizar horario"}
-                    </button>
-                  </div>
-                  {selectedScheduleTemplate ? (
-                    <small>{selectedScheduleTemplate.label}</small>
-                  ) : scheduleOptions.length ? null : (
+                      <option value="">Seleccionar plantilla</option>
+                      {scheduleOptions.map((template) => (
+                        <option key={template.id} value={template.id}>
+                          {template.label}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  {!scheduleOptions.length ? (
                     <small>No hay plantillas disponibles para el área y rol actual.</small>
-                  )}
+                  ) : null}
                 </section>
 
                 <div className={styles.modalPunches}>
@@ -2129,11 +2134,16 @@ export default function AttendanceComparisonDetail({ employeeId, initialFilters 
                           {savingDay === selectedDay.dateKey ? "Reiniciando..." : "Reiniciar"}
                         </button>
                       ) : null}
-                      <button type="button" className="catalog-button-primary" onClick={() => saveReviewOrAdjustment(selectedDay)} disabled={savingDay === selectedDay.dateKey}>
-                        {savingDay === selectedDay.dateKey
+                      <button
+                        type="button"
+                        className="catalog-button-primary"
+                        onClick={() => saveReviewOrAdjustment(selectedDay)}
+                        disabled={savingDay === selectedDay.dateKey || savingScheduleDay === selectedDay.dateKey}
+                      >
+                        {savingDay === selectedDay.dateKey || savingScheduleDay === selectedDay.dateKey
                           ? "Guardando..."
-                          : selectedHasPreparedAdjustment
-                            ? "Guardar ajuste"
+                          : selectedHasPreparedAdjustment || selectedScheduleChanged
+                            ? "Guardar cambios"
                             : "Marcar revisado"}
                       </button>
                     </>
