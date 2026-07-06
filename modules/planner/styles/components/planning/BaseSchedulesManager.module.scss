@@ -1,0 +1,428 @@
+.shell {
+  display: grid;
+  gap: 12px;
+}
+
+.createPanel,
+.catalogPanel {
+  background: #fff;
+  border: 1px solid #dbe5f4;
+  border-radius: 12px;
+}
+
+.loadingShell {
+  display: grid;
+  gap: 12px;
+}
+
+.loadingCreatePanel,
+.loadingCatalogPanel {
+  background: #fff;
+  border: 1px solid #dbe5f4;
+  border-radius: 12px;
+  overflow: hidden;
+  position: relative;
+
+  &::after {
+    animation: loadingSweep 1.35s ease-in-out infinite;
+    background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.72), transparent);
+    content: "";
+    inset: 0 auto 0 -42%;
+    pointer-events: none;
+    position: absolute;
+    width: 42%;
+  }
+}
+
+.loadingCreatePanel {
+  display: grid;
+  gap: 10px;
+  padding: 12px;
+}
+
+.loadingHeader {
+  align-items: center;
+  display: grid;
+  gap: 10px;
+  grid-template-columns: minmax(180px, 1fr) auto auto;
+
+  > div {
+    display: grid;
+    gap: 7px;
+    min-width: 0;
+  }
+}
+
+.loadingLineShort,
+.loadingLineLong,
+.loadingToggle,
+.loadingButton,
+.loadingField,
+.loadingSummary span,
+.loadingToolbar span,
+.loadingTableRow span {
+  animation: loadingPulse 1.45s ease-in-out infinite;
+  background: linear-gradient(135deg, #edf4fb, #f7fafc);
+  border: 1px solid #e3ebf6;
+  border-radius: 8px;
+  display: block;
+}
+
+.loadingLineShort {
+  height: 10px;
+  width: 92px;
+}
+
+.loadingLineLong {
+  height: 17px;
+  width: min(360px, 72%);
+}
+
+.loadingToggle,
+.loadingButton {
+  height: 38px;
+}
+
+.loadingToggle {
+  width: 134px;
+}
+
+.loadingButton {
+  width: 96px;
+}
+
+.loadingGrid {
+  display: grid;
+  gap: 9px;
+  grid-template-columns: repeat(4, minmax(120px, 1fr)) minmax(180px, 1.2fr);
+}
+
+.loadingField {
+  height: 54px;
+}
+
+.loadingSummary {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+
+  span {
+    height: 31px;
+    width: 118px;
+  }
+}
+
+.loadingToolbar {
+  align-items: center;
+  display: grid;
+  gap: 10px;
+  grid-template-columns: minmax(240px, 1fr) 84px;
+  padding: 12px;
+
+  span {
+    height: 38px;
+  }
+}
+
+.loadingTable {
+  border-top: 1px solid #edf2f8;
+  display: grid;
+}
+
+.loadingTableRow {
+  display: grid;
+  gap: 16px;
+  grid-template-columns: 1.35fr 0.7fr 0.7fr 0.7fr 52px;
+  min-width: 760px;
+  padding: 11px 12px;
+
+  &:not(:last-child) {
+    border-bottom: 1px solid #edf2f8;
+  }
+
+  span {
+    height: 28px;
+  }
+}
+
+@keyframes loadingPulse {
+  0%,
+  100% {
+    opacity: 0.72;
+  }
+
+  50% {
+    opacity: 1;
+  }
+}
+
+@keyframes loadingSweep {
+  0% {
+    transform: translateX(0);
+  }
+
+  100% {
+    transform: translateX(340%);
+  }
+}
+
+.createPanel {
+  display: grid;
+  gap: 10px;
+  padding: 12px;
+}
+
+.createHeader {
+  align-items: center;
+  display: grid;
+  gap: 10px;
+  grid-template-columns: minmax(180px, 1fr) auto auto;
+
+  > div {
+    display: grid;
+    gap: 2px;
+    min-width: 0;
+  }
+
+  span {
+    color: #7890ad;
+    font-size: 0.76rem;
+  }
+
+  strong {
+    color: #17233f;
+    font-size: 0.98rem;
+    overflow-wrap: anywhere;
+  }
+}
+
+.createGrid {
+  border: 0;
+  display: grid;
+  gap: 9px;
+  grid-template-columns: repeat(4, minmax(120px, 1fr)) minmax(180px, 1.2fr);
+  margin: 0;
+  padding: 0;
+}
+
+.notesField {
+  grid-column: span 1;
+}
+
+.switch {
+  align-items: center;
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  color: #17233f;
+  cursor: pointer;
+  display: inline-flex;
+  font-size: 0.82rem;
+  font-weight: 800;
+  gap: 8px;
+  min-height: 38px;
+  padding: 0 11px;
+  white-space: nowrap;
+
+  input {
+    accent-color: #1d5fe8;
+    height: 15px;
+    width: 15px;
+  }
+}
+
+.summaryStrip {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+
+  span {
+    background: #f8fafc;
+    border: 1px solid #edf2f8;
+    border-radius: 8px;
+    color: #64748b;
+    font-size: 0.78rem;
+    padding: 6px 8px;
+  }
+
+  strong {
+    color: #17233f;
+  }
+}
+
+.toolbar {
+  align-items: center;
+  display: grid;
+  gap: 10px;
+  grid-template-columns: minmax(240px, 1fr) auto;
+  padding: 12px;
+}
+
+.search {
+  width: 100%;
+}
+
+.primaryButton,
+.ghostButton,
+.dangerButton {
+  align-items: center;
+  border-radius: 10px;
+  cursor: pointer;
+  display: inline-flex;
+  font-weight: 800;
+  gap: 7px;
+  justify-content: center;
+  min-height: 38px;
+  white-space: nowrap;
+}
+
+.primaryButton {
+  background: #1d5fe8;
+  border: 0;
+  color: #fff;
+  padding: 0 13px;
+
+  &:disabled {
+    background: #dbe5f4;
+    color: #6b7f9d;
+    cursor: not-allowed;
+  }
+}
+
+.ghostButton {
+  background: #fff;
+  border: 1px solid #d9e2ef;
+  color: #17233f;
+  padding: 0 12px;
+}
+
+.tableWrap {
+  border-top: 1px solid #edf2f8;
+  overflow: auto;
+}
+
+.table {
+  border-collapse: collapse;
+  min-width: 760px;
+  width: 100%;
+
+  th,
+  td {
+    border-bottom: 1px solid #edf2f8;
+    padding: 9px 12px;
+    text-align: left;
+    vertical-align: middle;
+  }
+
+  th {
+    background: #f8fafc;
+    color: #64748b;
+    font-size: 0.72rem;
+    letter-spacing: 0;
+    text-transform: uppercase;
+  }
+
+  td {
+    color: #17233f;
+    font-size: 0.88rem;
+  }
+
+  tr:last-child td {
+    border-bottom: 0;
+  }
+
+  strong,
+  span {
+    display: block;
+  }
+
+  strong {
+    font-size: 0.84rem;
+  }
+
+  span {
+    color: #7890ad;
+    font-size: 0.76rem;
+    margin-top: 2px;
+  }
+}
+
+.actionCell {
+  text-align: right !important;
+  width: 1%;
+}
+
+.dangerButton {
+  background: #fff5f5;
+  border: 1px solid #fecaca;
+  color: #dc2626;
+  min-height: 34px;
+  padding: 0 9px;
+}
+
+.emptyState {
+  color: #64748b;
+  font-size: 0.9rem;
+  font-weight: 600;
+  padding: 12px;
+}
+
+@media (max-width: 1120px) {
+  .createGrid,
+  .loadingGrid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .toolbar,
+  .loadingToolbar {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .loadingToolbar span:last-child {
+    grid-column: 1 / -1;
+  }
+}
+
+@media (max-width: 760px) {
+  .createHeader,
+  .createGrid,
+  .toolbar,
+  .loadingHeader,
+  .loadingGrid,
+  .loadingToolbar {
+    grid-template-columns: 1fr;
+  }
+
+  .primaryButton,
+  .ghostButton,
+  .switch {
+    width: 100%;
+  }
+
+  .loadingToggle,
+  .loadingButton {
+    width: 100%;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .loadingCreatePanel,
+  .loadingCatalogPanel {
+    &::after {
+      animation: none;
+    }
+  }
+
+  .loadingLineShort,
+  .loadingLineLong,
+  .loadingToggle,
+  .loadingButton,
+  .loadingField,
+  .loadingSummary span,
+  .loadingToolbar span,
+  .loadingTableRow span {
+    animation: none;
+  }
+}

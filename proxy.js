@@ -6,9 +6,9 @@ const PLANNING_EXCEPTIONS_ACCESS_ROLE = "planning_exceptions";
 const LIMITED_API_ALLOWLIST = [
   "/api/auth/login",
   "/api/auth/logout",
-  "/api/employees",
-  "/api/planning/base-schedules",
-  "/api/planning/exceptions",
+  "/api/company/employees",
+  "/api/planner/planning/base-schedules",
+  "/api/planner/planning/exceptions",
 ];
 
 function getSignedAccessRole(token) {

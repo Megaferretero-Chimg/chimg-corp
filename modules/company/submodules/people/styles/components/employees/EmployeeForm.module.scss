@@ -1,0 +1,196 @@
+.formGrid {
+  margin-top: 0.35rem;
+  padding-bottom: clamp(1.2rem, 3vh, 2rem);
+}
+
+.formFields {
+  display: contents;
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.actions {
+  margin-top: 0.35rem;
+}
+
+.roleAutocomplete {
+  position: relative;
+  min-width: 0;
+}
+
+.roleInputWrap {
+  position: relative;
+  display: flex;
+  align-items: center;
+  min-height: 2.75rem;
+  border: 1px solid rgba(16, 33, 62, 0.12);
+  border-radius: 0.7rem;
+  background: #fff;
+  color: #10213e;
+  transition:
+    border-color 160ms ease,
+    box-shadow 160ms ease,
+    background 160ms ease;
+
+  &:focus-within {
+    border-color: rgba(0, 95, 178, 0.34);
+    box-shadow: 0 0 0 3px rgba(0, 95, 178, 0.08);
+  }
+
+  > svg:first-child {
+    position: absolute;
+    left: 0.85rem;
+    color: #627895;
+    pointer-events: none;
+  }
+
+  input {
+    width: 100%;
+    min-width: 0;
+    border: 0;
+    outline: 0;
+    background: transparent;
+    color: #10213e;
+    font: inherit;
+    font-weight: 750;
+    padding: 0.7rem 2.75rem 0.7rem 2.45rem;
+
+    &::placeholder {
+      color: #8190a4;
+      font-weight: 650;
+    }
+  }
+}
+
+.roleChevron {
+  position: absolute;
+  right: 0.85rem;
+  color: #627895;
+  pointer-events: none;
+}
+
+.roleClearButton {
+  position: absolute;
+  right: 0.55rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.85rem;
+  height: 1.85rem;
+  border: 1px solid rgba(16, 33, 62, 0.08);
+  border-radius: 999px;
+  background: #f8fbff;
+  color: #52677f;
+  cursor: pointer;
+
+  &:hover {
+    border-color: rgba(36, 72, 115, 0.22);
+    background: #eef5ff;
+    color: #244873;
+  }
+}
+
+.roleMenu {
+  position: absolute;
+  z-index: 40;
+  top: calc(100% + 0.42rem);
+  left: 0;
+  width: min(100%, 34rem);
+  max-height: 18rem;
+  overflow: auto;
+  border: 1px solid rgba(16, 33, 62, 0.12);
+  border-radius: 0.8rem;
+  background: #fff;
+  box-shadow: 0 1.2rem 2.6rem rgba(16, 33, 62, 0.16);
+  padding: 0.35rem;
+}
+
+.roleMenuOption {
+  display: grid;
+  gap: 0.24rem;
+  width: 100%;
+  border: 0;
+  border-radius: 0.62rem;
+  background: transparent;
+  color: #10213e;
+  cursor: pointer;
+  font: inherit;
+  padding: 0.68rem 0.72rem;
+  text-align: left;
+
+  &:hover,
+  &[aria-selected="true"] {
+    background: #eef5ff;
+  }
+}
+
+.roleMenuTitle {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  color: #10213e;
+  font-size: var(--font-size-sm);
+  font-weight: 900;
+
+  svg {
+    color: #244873;
+    flex: 0 0 auto;
+  }
+}
+
+.roleMenuMeta,
+.roleMenuEmpty {
+  color: #6a7ea2;
+  font-size: var(--font-size-xs);
+  font-weight: 650;
+}
+
+.roleMenuEmpty {
+  padding: 0.72rem;
+}
+
+.rolePicker {
+  max-height: 16rem;
+  display: grid;
+  gap: 0.5rem;
+  overflow: auto;
+  border: 1px solid rgba(16, 33, 62, 0.1);
+  border-radius: 1rem;
+  background: #f8fbff;
+  padding: 0.55rem;
+}
+
+.roleOption {
+  width: 100%;
+  display: grid;
+  gap: 0.12rem;
+  border: 1px solid rgba(16, 33, 62, 0.08);
+  border-radius: 0.8rem;
+  background: #ffffff;
+  color: #1c315d;
+  padding: 0.62rem 0.72rem;
+  text-align: left;
+  cursor: pointer;
+
+  span {
+    font-weight: 700;
+  }
+
+  small {
+    color: #6a7ea2;
+    font-size: var(--font-size-xs);
+  }
+}
+
+.roleOptionSelected {
+  border-color: rgba(31, 111, 255, 0.28);
+  background: #eef5ff;
+  color: #17428c;
+}
+
+.roleHint {
+  color: #6a7ea2;
+  font-size: var(--font-size-xs);
+}

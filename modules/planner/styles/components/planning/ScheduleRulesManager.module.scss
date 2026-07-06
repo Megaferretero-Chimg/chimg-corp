@@ -1,0 +1,162 @@
+.shell {
+  display: grid;
+  gap: 12px;
+}
+
+.loading {
+  align-items: center;
+  display: inline-flex;
+  gap: 7px;
+  min-height: 42px;
+
+  span {
+    animation: scheduleRulesPulse 0.9s ease-in-out infinite;
+    background: #7c9cc3;
+    border-radius: 999px;
+    display: block;
+    height: 8px;
+    opacity: 0.35;
+    width: 8px;
+  }
+
+  span:nth-child(2) {
+    animation-delay: 0.12s;
+  }
+
+  span:nth-child(3) {
+    animation-delay: 0.24s;
+  }
+}
+
+.toolbar {
+  align-items: center;
+  display: grid;
+  gap: 10px;
+  grid-template-columns: minmax(160px, 1fr) auto;
+}
+
+.metrics {
+  align-items: center;
+  color: #64748b;
+  display: flex;
+  flex-wrap: wrap;
+  font-size: 0.84rem;
+  gap: 8px;
+
+  span {
+    background: #f8fafc;
+    border: 1px solid #e2e8f0;
+    border-radius: 8px;
+    padding: 7px 9px;
+  }
+
+  strong {
+    color: #17233f;
+  }
+}
+
+.panel {
+  background: #fff;
+  border: 1px solid #dbe5f4;
+  border-radius: 10px;
+  display: grid;
+  gap: 12px;
+  padding: 14px;
+}
+
+.panelHeader {
+  align-items: center;
+  display: flex;
+  justify-content: space-between;
+
+  div {
+    display: grid;
+    gap: 2px;
+  }
+
+  span {
+    color: #7890ad;
+    font-size: 0.76rem;
+  }
+
+  strong {
+    color: #17233f;
+    font-size: 0.95rem;
+  }
+}
+
+.grid {
+  display: grid;
+  gap: 10px;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 260px));
+}
+
+.primaryButton {
+  align-items: center;
+  background: #1d5fe8;
+  border: 0;
+  border-radius: 10px;
+  color: #fff;
+  cursor: pointer;
+  display: inline-flex;
+  font-weight: 800;
+  gap: 7px;
+  justify-content: center;
+  min-height: 38px;
+  padding: 0 13px;
+  white-space: nowrap;
+
+  &:disabled {
+    background: #dbe5f4;
+    color: #6b7f9d;
+    cursor: not-allowed;
+  }
+}
+
+.error,
+.saved {
+  border-radius: 8px;
+  font-size: 0.84rem;
+  font-weight: 700;
+  margin: 0;
+  padding: 9px 10px;
+}
+
+.error {
+  background: #fff1f2;
+  border: 1px solid #fecdd3;
+  color: #be123c;
+}
+
+.saved {
+  background: #f0fdf4;
+  border: 1px solid #bbf7d0;
+  color: #166534;
+}
+
+@keyframes scheduleRulesPulse {
+  0%,
+  100% {
+    opacity: 0.35;
+    transform: translateY(0);
+  }
+
+  50% {
+    opacity: 1;
+    transform: translateY(-3px);
+  }
+}
+
+@media (max-width: 760px) {
+  .toolbar {
+    grid-template-columns: 1fr;
+  }
+
+  .grid {
+    grid-template-columns: 1fr;
+  }
+
+  .primaryButton {
+    width: 100%;
+  }
+}

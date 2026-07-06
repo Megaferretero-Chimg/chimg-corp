@@ -9,18 +9,6 @@ const nextConfig = {
   turbopack: {
     root: __dirname,
   },
-  async rewrites() {
-    return [
-      {
-        source: "/modules/planning/:path*",
-        destination: "/dashboard/:path*",
-      },
-      {
-        source: "/modules/company/:path*",
-        destination: "/company/:path*",
-      },
-    ];
-  },
 };
 
 export default nextConfig;

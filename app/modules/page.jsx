@@ -3,27 +3,14 @@ import { Building2, CalendarRange } from "lucide-react";
 
 import LogoutButton from "@/components/auth/LogoutButton";
 import TransitionLink from "@/components/navigation/TransitionLink";
-import { isPlanningExceptionsUser, requireAuthenticatedUser } from "@/lib/access-control";
+import { requireAuthenticatedUser } from "@/lib/access-control";
+import { getModuleCardsForUser } from "@/modules/registry";
 import styles from "./page.module.scss";
 
-const modules = [
-  {
-    href: "/modules/planning",
-    status: "Disponible",
-    title: "Planificación y control operativo",
-    description: "Horarios, asistencia, costos y seguimiento operativo del período.",
-    bullets: ["Planificación", "Asistencia", "Nómina", "Reportes"],
-    icon: CalendarRange,
-  },
-  {
-    href: "/modules/company",
-    status: "Disponible",
-    title: "Empresa y configuración global",
-    description: "Estructura compartida de la empresa, personal y acceso a la plataforma.",
-    bullets: ["Empleados", "Sucursales", "Áreas", "Usuarios"],
-    icon: Building2,
-  },
-];
+const moduleIcons = {
+  "building-2": Building2,
+  "calendar-range": CalendarRange,
+};
 
 export const metadata = {
   title: "Selección de módulo | Control de Asistencia",
@@ -31,9 +18,7 @@ export const metadata = {
 
 export default async function ModulesPage() {
   const user = await requireAuthenticatedUser();
-  const visibleModules = isPlanningExceptionsUser(user)
-    ? modules.filter((module) => module.href === "/modules/planning")
-    : modules;
+  const visibleModules = getModuleCardsForUser(user);
 
   return (
     <main className={styles.page}>
@@ -65,11 +50,15 @@ export default async function ModulesPage() {
 
         <section className={styles.grid}>
           {visibleModules.map((module) => (
-            <article key={module.href} className={styles.card}>
+            <article key={module.key} className={styles.card}>
               <div className={styles.cardGlow} />
               <div className={styles.cardTop}>
                 <div className={styles.iconWrap}>
-                  <module.icon size={46} strokeWidth={1.8} />
+                  {(() => {
+                    const ModuleIcon = moduleIcons[module.icon] || CalendarRange;
+
+                    return <ModuleIcon size={46} strokeWidth={1.8} />;
+                  })()}
                 </div>
 
                 <div className={styles.cardCopy}>

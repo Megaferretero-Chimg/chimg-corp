@@ -40,7 +40,7 @@ export default function CatalogDrawer({ isOpen, eyebrow, title, onClose, childre
   return createPortal(
     <div
       className={styles.overlay}
-      onMouseDown={(event) => {
+      onPointerDown={(event) => {
         if (event.target === event.currentTarget) {
           onClose();
         }
@@ -51,6 +51,7 @@ export default function CatalogDrawer({ isOpen, eyebrow, title, onClose, childre
         role="dialog"
         aria-modal="true"
         aria-labelledby={titleId}
+        onPointerDown={(event) => event.stopPropagation()}
       >
         <div className={styles.header}>
           <div className={styles.heading}>

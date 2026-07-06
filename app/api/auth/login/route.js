@@ -1,13 +1,11 @@
 import { NextResponse } from "next/server";
 import { cookies } from "next/headers";
 
-import { PLANNING_EXCEPTIONS_ACCESS_ROLE } from "@/lib/access-roles";
 import {
   getSessionCookieOptions,
   SESSION_COOKIE_NAME,
   validateCredentials,
 } from "@/lib/auth";
-import { planningModulePath } from "@/lib/modules/planning/routes";
 
 export async function POST(request) {
   try {
@@ -31,9 +29,7 @@ export async function POST(request) {
       getSessionCookieOptions(),
     );
 
-    const redirectTo = session.accessRole === PLANNING_EXCEPTIONS_ACCESS_ROLE
-      ? planningModulePath("/planning/exceptions")
-      : "/modules";
+    const redirectTo = session.landingPath || "/modules";
 
     return NextResponse.json({ success: true, redirectTo });
   } catch (error) {

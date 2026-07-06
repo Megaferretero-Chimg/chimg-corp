@@ -18,36 +18,32 @@ const branchByPlace = new Map([
 ]);
 
 const areaByExcelValue = new Map([
-  ["ADMINISTRATIVO", { code: "ADMIN", name: "ADMINISTRATIVO" }],
-  ["GERENCIA", { code: "GER", name: "GERENCIA" }],
-  ["ALMACEN", { code: "ALM", name: "ALMACEN" }],
-  ["ALMACEN SALCEDO", { code: "ALM", name: "ALMACEN" }],
-  ["BODEGA", { code: "BOD", name: "BODEGA" }],
-  ["CARGA PESADA", { code: "CP", name: "CARGA PESADA" }],
-  ["TECNICO", { code: "BOD", name: "BODEGA" }],
+  ["ADMINISTRATIVO", { code: "ADMIN", name: "ADMINISTRATIVA FINANCIERA" }],
+  ["GERENCIA", { code: "ADMIN", name: "ADMINISTRATIVA FINANCIERA" }],
+  ["BODEGA", { code: "OPER", name: "OPERACIONES" }],
+  ["CARGA PESADA", { code: "OPER", name: "OPERACIONES" }],
+  ["TECNICO", { code: "OPER", name: "OPERACIONES" }],
 ]);
 
 const roleCodeByAreaAndName = new Map([
-  ["ADMINISTRATIVO|CARTERA", "CARTER"],
-  ["ADMINISTRATIVO|COMPRAS", "COMPR"],
-  ["ADMINISTRATIVO|CONTABILIDAD", "CONTA"],
-  ["ADMINISTRATIVO|GERENTE", "GERENT"],
-  ["ADMINISTRATIVO|JEFATURA", "JEFADM"],
-  ["ADMINISTRATIVO|MARKETING", "MARKET"],
-  ["ADMINISTRATIVO|PAGOS", "PAGOS"],
-  ["GERENCIA|GERENCIA", "GERGEN"],
-  ["ALMACEN|CAJERO", "CAJALM"],
-  ["ALMACEN|CHOFER", "CHOALM"],
-  ["ALMACEN|JEFATURA", "JEFALM"],
-  ["ALMACEN|VENDEDOR", "VENDALM"],
-  ["ALMACEN|VENDEDOR FERRETERO", "VENFER"],
-  ["ALMACEN|VENDEDOR HOGAR", "VENHOG"],
-  ["ALMACEN|VENDEDOR ACABADOS", "VENACA"],
-  ["BODEGA|BODEGUERO", "BODEG"],
-  ["BODEGA|CHOFER", "CHOFER"],
-  ["BODEGA|JEFATURA", "JEFLOG"],
-  ["BODEGA|TECNICO", "TECBOD"],
-  ["CARGA PESADA|CHOFER", "CHOFE2"],
+  ["ADMINISTRATIVA FINANCIERA|CARTERA", "CARTER"],
+  ["ADMINISTRATIVA FINANCIERA|COMPRAS", "COMPR"],
+  ["ADMINISTRATIVA FINANCIERA|CONTABILIDAD", "CONTA"],
+  ["ADMINISTRATIVA FINANCIERA|GERENCIA", "GERGEN"],
+  ["ADMINISTRATIVA FINANCIERA|GERENTE", "GERENT"],
+  ["ADMINISTRATIVA FINANCIERA|JEFATURA", "JEFADM"],
+  ["ADMINISTRATIVA FINANCIERA|MARKETING", "MARKET"],
+  ["ADMINISTRATIVA FINANCIERA|PAGOS", "PAGOS"],
+  ["COMERCIAL|CAJERO", "CAJERO"],
+  ["COMERCIAL|JEFATURA", "JEFSUC"],
+  ["COMERCIAL|VENDEDOR", "VENDED"],
+  ["COMERCIAL|VENDEDOR FERRETERO", "VENDED"],
+  ["COMERCIAL|VENDEDOR HOGAR", "VENDED"],
+  ["COMERCIAL|VENDEDOR ACABADOS", "VENDED"],
+  ["OPERACIONES|BODEGUERO", "BODEG"],
+  ["OPERACIONES|CHOFER", "CHOFER"],
+  ["OPERACIONES|JEFATURA", "JEFLOG"],
+  ["OPERACIONES|TECNICO", "TECBOD"],
 ]);
 
 const employeeMatchOverridesByDni = new Map([
@@ -115,9 +111,9 @@ function readRows() {
     .slice(1)
     .map((row, index) => {
       const rawArea = normalizeText(row[4]);
-      const area = areaByExcelValue.get(rawArea);
       const branch = branchByPlace.get(normalizeText(row[3]));
       const roleName = normalizeText(row[5]) || (rawArea === "TECNICO" ? "TECNICO" : "");
+      const area = resolveImportedArea(rawArea, roleName);
 
       if (!row[1]) {
         return null;
@@ -154,6 +150,18 @@ function readRows() {
       };
     })
     .filter(Boolean);
+}
+
+function resolveImportedArea(rawArea, roleName) {
+  if (rawArea === "ALMACEN" || rawArea === "ALMACEN SALCEDO") {
+    if (roleName === "CHOFER") {
+      return { code: "OPER", name: "OPERACIONES" };
+    }
+
+    return { code: "COM", name: "COMERCIAL" };
+  }
+
+  return areaByExcelValue.get(rawArea);
 }
 
 function buildPayload(row, existing = {}) {

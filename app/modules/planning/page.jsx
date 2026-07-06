@@ -1,7 +1,7 @@
 import { redirect } from "next/navigation";
 
 import { PLANNING_EXCEPTIONS_PATH, isPlanningExceptionsUser, requireAuthenticatedUser } from "@/lib/access-control";
-import { planningModulePath } from "@/lib/modules/planning/routes";
+import { planningModulePath } from "@/modules/planner/routes";
 
 export const metadata = {
   title: "Planificación y control operativo | Control de Asistencia",
