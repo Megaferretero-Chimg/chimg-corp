@@ -10,8 +10,28 @@ export { default as PayrollIncompleteDayDecision } from "@/modules/planner/model
 export { default as PayrollLateDecision } from "@/modules/planner/models/PayrollLateDecision";
 export { default as PayrollPayment } from "@/modules/planner/models/PayrollPayment";
 export { default as PayrollSupplementaryDecision } from "@/modules/planner/models/PayrollSupplementaryDecision";
-export { default as PlanningWorkGroup } from "@/modules/planner/models/PlanningWorkGroup";
 export { default as ScheduleAssignment } from "@/modules/planner/models/ScheduleAssignment";
 export { default as ScheduleRuleConfig } from "@/modules/planner/models/ScheduleRuleConfig";
 export { default as VacationRequest } from "@/modules/planner/models/VacationRequest";
 export { default as WorkSchedule } from "@/modules/planner/models/WorkSchedule";
+
+const emptyPlanningWorkGroupQuery = {
+  select() {
+    return this;
+  },
+  sort() {
+    return this;
+  },
+  lean: async () => [],
+};
+
+const emptyPlanningWorkGroupRecordQuery = {
+  lean: async () => null,
+};
+
+export const PlanningWorkGroup = {
+  find: () => emptyPlanningWorkGroupQuery,
+  findById: () => emptyPlanningWorkGroupRecordQuery,
+  findByIdAndUpdate: () => emptyPlanningWorkGroupRecordQuery,
+  create: async () => null,
+};

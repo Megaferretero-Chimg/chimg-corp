@@ -6,13 +6,16 @@ import {
   buildPublishMessage,
   publishAttendancePunches,
 } from "@/modules/planner/lib/attendance/publishAttendancePunches";
-import { applyAttendancePunchTimeAdjustments } from "@/modules/planner/lib/attendance/punchTimeAdjustments";
 import { buildPunchMinuteKey } from "@/modules/planner/lib/attendance/punchIdentity";
 import connectToDatabase from "@/lib/db/mongodb";
 import { formatEcuadorDateKey } from "@/lib/datetime/ecuador";
 import { isEmployeeActiveOnDate } from "@/modules/company/submodules/people/lib/employees";
 import { AttendanceUpload } from "@/modules/planner/models";
 import { Employee } from "@/modules/company/models";
+
+function applyAttendancePunchTimeAdjustments(snapshot) {
+  return snapshot;
+}
 
 function normalizeStoredFileToBuffer(value) {
   if (!value) {

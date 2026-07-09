@@ -1,9 +1,12 @@
 import { AttendancePunch } from "@/modules/planner/models";
 import { Employee } from "@/modules/company/models";
 import { buildPunchMinuteKey } from "@/modules/planner/lib/attendance/punchIdentity";
-import { applyAttendancePunchTimeAdjustments } from "@/modules/planner/lib/attendance/punchTimeAdjustments";
 import { formatEcuadorDateKey, getEcuadorParts, makeEcuadorDate } from "@/lib/datetime/ecuador";
 import { buildEmployeeActiveInMonthQuery, isEmployeeActiveOnDate } from "@/modules/company/submodules/people/lib/employees";
+
+function applyAttendancePunchTimeAdjustments(snapshot) {
+  return snapshot;
+}
 
 function isUploadPeriod(month, year) {
   return Number.isInteger(month) && month >= 1 && month <= 12 && Number.isInteger(year);
