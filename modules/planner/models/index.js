@@ -1,3 +1,5 @@
+import mongoose from "mongoose";
+
 export { default as AttendanceDayDecision } from "@/modules/planner/models/AttendanceDayDecision";
 export { default as AttendancePunch } from "@/modules/planner/models/AttendancePunch";
 export { default as AttendanceUpload } from "@/modules/planner/models/AttendanceUpload";
@@ -15,23 +17,92 @@ export { default as ScheduleRuleConfig } from "@/modules/planner/models/Schedule
 export { default as VacationRequest } from "@/modules/planner/models/VacationRequest";
 export { default as WorkSchedule } from "@/modules/planner/models/WorkSchedule";
 
-const emptyPlanningWorkGroupQuery = {
-  select() {
-    return this;
+const planningWorkGroupMemberSchema = new mongoose.Schema(
+  {
+    employee: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Employee",
+    },
+    employeeName: {
+      type: String,
+      trim: true,
+      default: "",
+    },
+    areaCode: {
+      type: String,
+      trim: true,
+      uppercase: true,
+      default: "",
+    },
+    areaName: {
+      type: String,
+      trim: true,
+      default: "",
+    },
+    roleCode: {
+      type: String,
+      trim: true,
+      uppercase: true,
+      default: "",
+    },
+    roleName: {
+      type: String,
+      trim: true,
+      default: "",
+    },
   },
-  sort() {
-    return this;
+  { _id: false, strict: false },
+);
+
+const planningWorkGroupSchema = new mongoose.Schema(
+  {
+    name: {
+      type: String,
+      trim: true,
+      required: true,
+    },
+    branchCode: {
+      type: String,
+      trim: true,
+      uppercase: true,
+      default: "",
+    },
+    branchName: {
+      type: String,
+      trim: true,
+      default: "",
+    },
+    ownerEmployee: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Employee",
+    },
+    ownerEmployeeName: {
+      type: String,
+      trim: true,
+      default: "",
+    },
+    members: {
+      type: [planningWorkGroupMemberSchema],
+      default: [],
+    },
+    notes: {
+      type: String,
+      trim: true,
+      default: "",
+    },
+    isActive: {
+      type: Boolean,
+      default: true,
+    },
   },
-  lean: async () => [],
-};
+  {
+    timestamps: true,
+    strict: false,
+  },
+);
 
-const emptyPlanningWorkGroupRecordQuery = {
-  lean: async () => null,
-};
+planningWorkGroupSchema.index({ branchCode: 1, name: 1 });
+planningWorkGroupSchema.index({ "members.employee": 1 });
 
-export const PlanningWorkGroup = {
-  find: () => emptyPlanningWorkGroupQuery,
-  findById: () => emptyPlanningWorkGroupRecordQuery,
-  findByIdAndUpdate: () => emptyPlanningWorkGroupRecordQuery,
-  create: async () => null,
-};
+export const PlanningWorkGroup =
+  mongoose.models.PlanningWorkGroup || mongoose.model("PlanningWorkGroup", planningWorkGroupSchema);

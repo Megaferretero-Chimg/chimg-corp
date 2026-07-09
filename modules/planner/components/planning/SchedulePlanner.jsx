@@ -1891,26 +1891,29 @@ export default function SchedulePlanner({ initialFilters = {}, basePath = "/sche
 
     async function loadData() {
       try {
-        const [employeesResponse, rolesResponse, templatesResponse] = await Promise.all([
+        const [employeesResponse, rolesResponse, templatesResponse, workGroupsResponse] = await Promise.all([
           fetch("/api/company/employees?scope=planning"),
           fetch("/api/company/roles"),
           fetch("/api/planner/planning/base-schedules"),
+          fetch("/api/planner/planning/operational-setup?resource=work-groups"),
         ]);
-        const [employeesPayload, rolesPayload, templatesPayload] = await Promise.all([
+        const [employeesPayload, rolesPayload, templatesPayload, workGroupsPayload] = await Promise.all([
           employeesResponse.json(),
           rolesResponse.json(),
           templatesResponse.json(),
+          workGroupsResponse.json(),
         ]);
 
         if (!employeesResponse.ok) throw new Error(employeesPayload.error || "No se pudieron cargar los empleados.");
         if (!rolesResponse.ok) throw new Error(rolesPayload.error || "No se pudieron cargar los roles.");
         if (!templatesResponse.ok) throw new Error(templatesPayload.error || "No se pudieron cargar las plantillas.");
+        if (!workGroupsResponse.ok) throw new Error(workGroupsPayload.error || "No se pudieron cargar los grupos de trabajo.");
 
         if (!isCancelled) {
           setEmployees(employeesPayload.employees || []);
           setRoles(rolesPayload.roles || []);
           setTemplates(templatesPayload.templates || []);
-          setWorkGroups([]);
+          setWorkGroups(workGroupsPayload.groups || []);
         }
       } catch (error) {
         if (!isCancelled) showNotice("error", error.message);

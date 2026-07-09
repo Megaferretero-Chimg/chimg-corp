@@ -127,6 +127,12 @@ export const DASHBOARD_NAVIGATION = [
         permission: "planner.settings.view",
       },
       {
+        href: planningModulePath("/settings"),
+        label: "Grupos de trabajo",
+        description: "Responsables y empleados por equipo",
+        permission: "planner.settings.view",
+      },
+      {
         href: planningModulePath("/settings/role-schedules"),
         label: "Horarios por cargo",
         description: "Horarios y efecto de picadas por cargo",

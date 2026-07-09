@@ -24,6 +24,12 @@ export default function SettingsPage() {
             bullets: ["Rangos horarios", "Almuerzo y picadas esperadas", "Filtro por area"],
           },
           {
+            title: "Grupos de trabajo",
+            description: "Unidad operativa que define quien planifica a quien. Los grupos existentes vuelven a alimentar la planificacion semanal.",
+            href: planningModulePath("/schedules"),
+            bullets: ["Selector de grupo", "Historial por equipo", "Responsable operativo"],
+          },
+          {
             title: "Horarios por cargo",
             description: "Define si un cargo se planifica cada semana, mantiene un horario fijo y si sus picadas contabilizan horas.",
             href: planningModulePath("/settings/role-schedules"),
