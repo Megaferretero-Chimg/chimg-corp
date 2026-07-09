@@ -13,13 +13,17 @@ import { isAuthenticated } from "@/lib/auth";
 import connectToDatabase from "@/lib/db/mongodb";
 import { serializeEmployee } from "@/modules/company/submodules/people/lib/employees";
 import calculatePayrollEstimate from "@/modules/planner/lib/payroll/calculatePayrollEstimate";
-import { ECUADOR_DAILY_BASE_HOURS } from "@/modules/planner/lib/payroll/laborConstants";
+import {
+  DEFAULT_LATE_DEPARTURE_TOLERANCE_MINUTES,
+  ECUADOR_DAILY_BASE_HOURS,
+} from "@/modules/planner/lib/payroll/laborConstants";
 import { resolveMonthlyBaseHours } from "@/modules/planner/lib/payroll/monthlyBaseHours";
 import { AttendancePunch } from "@/modules/planner/models";
 import { Employee, Role } from "@/modules/company/models";
 import { PayrollIncompleteDayDecision } from "@/modules/planner/models";
 import { PayrollLateDecision } from "@/modules/planner/models";
 import { PayrollSupplementaryDecision } from "@/modules/planner/models";
+import { ScheduleRuleConfig } from "@/modules/planner/models";
 import { WorkSchedule } from "@/modules/planner/models";
 
 function parseMonthParam(value) {
@@ -69,7 +73,7 @@ export async function GET(request) {
       ),
     ];
 
-    const [role, schedules, punches, supplementaryDecisions, lateDecisions, incompleteDayDecisions] =
+    const [role, schedules, punches, scheduleRuleConfig, supplementaryDecisions, lateDecisions, incompleteDayDecisions] =
       await Promise.all([
       Role.findOne({ code: employee.roleCode }).lean(),
       WorkSchedule.find({
@@ -78,6 +82,7 @@ export async function GET(request) {
       }).lean(),
       AttendancePunch.find({
         employee: employeeId,
+        isIgnored: { $ne: true },
         punchedAt: {
           $gte: monthStart,
           $lte: monthEnd,
@@ -85,6 +90,7 @@ export async function GET(request) {
       })
         .sort({ punchedAt: 1 })
         .lean(),
+      ScheduleRuleConfig.findOne({ key: "default" }).lean(),
       PayrollSupplementaryDecision.find({
         employee: employeeId,
         date: {
@@ -130,6 +136,7 @@ export async function GET(request) {
         {
           decision: item.decision,
           candidateHours: item.candidateHours || 0,
+          candidateMinutes: item.candidateMinutes || 0,
         },
       ]),
     );
@@ -165,6 +172,11 @@ export async function GET(request) {
         monthIndex: month.getMonth(),
         dailyBaseHours: ECUADOR_DAILY_BASE_HOURS,
       })).hourlyDivisor,
+      scheduleRules: {
+        lateDepartureToleranceMinutes: Number(
+          scheduleRuleConfig?.lateDepartureToleranceMinutes ?? DEFAULT_LATE_DEPARTURE_TOLERANCE_MINUTES,
+        ),
+      },
       supplementaryByDate,
       lateByDate,
       incompleteDayByDate,

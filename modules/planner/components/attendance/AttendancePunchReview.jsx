@@ -4,14 +4,11 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import {
   AlertCircle,
+  Ban,
   CheckCircle2,
-  Plus,
-  Save,
-  Trash2,
   X,
 } from "lucide-react";
 
-import CatalogDrawer from "@/components/catalog/CatalogDrawer";
 import useClientReady from "@/hooks/useClientReady";
 import { isEmployeeActiveOnDate } from "@/modules/company/submodules/people/lib/employees";
 import styles from "@/modules/planner/styles/components/attendance/AttendancePunchReview.module.scss";
@@ -100,8 +97,6 @@ export default function AttendancePunchReview() {
   const [page, setPage] = useState(() => initialFilters.page);
   const [pageSize, setPageSize] = useState(() => initialFilters.pageSize);
   const [pagination, setPagination] = useState(DEFAULT_PAGINATION);
-  const [form, setForm] = useState({ employeeId: "", punchedAt: "", reason: "" });
-  const [isAddOpen, setIsAddOpen] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState(null);
   const [deleteReason, setDeleteReason] = useState("");
   const [isCatalogLoading, setIsCatalogLoading] = useState(true);
@@ -114,12 +109,11 @@ export default function AttendancePunchReview() {
   const filteredEmployees = useMemo(
     () =>
       employees.filter((employee) => {
-        const selectedDateKey = form.punchedAt ? form.punchedAt.slice(0, 10) : filters.from;
-        if (!isEmployeeActiveOnDate(employee, selectedDateKey)) return false;
+        if (!isEmployeeActiveOnDate(employee, filters.from)) return false;
         if (branchCode && employee.branchCode !== branchCode) return false;
         return true;
       }),
-    [branchCode, employees, filters.from, form.punchedAt],
+    [branchCode, employees, filters.from],
   );
   const isLoading = isCatalogLoading || isPunchesLoading;
 
@@ -300,33 +294,6 @@ export default function AttendancePunchReview() {
     syncUrlParams({ nextPage, nextPageSize: pageSize });
   }
 
-  async function submitPunch(event) {
-    event.preventDefault();
-    setIsMutating(true);
-
-    try {
-      const response = await fetch("/api/planner/attendance/punches", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(form),
-      });
-      const payload = await response.json();
-
-      if (!response.ok) {
-        throw new Error(payload.error || "No se pudo agregar la picada.");
-      }
-
-      setForm({ employeeId: "", punchedAt: "", reason: "" });
-      setIsAddOpen(false);
-      showToast("success", "Picada agregada con auditoría.");
-      await loadPunches();
-    } catch (error) {
-      showToast("error", error.message);
-    } finally {
-      setIsMutating(false);
-    }
-  }
-
   async function confirmDelete() {
     if (!deleteTarget) return;
     setIsMutating(true);
@@ -340,12 +307,12 @@ export default function AttendancePunchReview() {
       const payload = await response.json();
 
       if (!response.ok) {
-        throw new Error(payload.error || "No se pudo eliminar la picada.");
+        throw new Error(payload.error || "No se pudo anular la picada.");
       }
 
       setDeleteTarget(null);
       setDeleteReason("");
-      showToast("success", "Picada eliminada con auditoría.");
+      showToast("success", "Picada anulada con auditoría.");
       await loadPunches();
     } catch (error) {
       showToast("error", error.message);
@@ -435,9 +402,9 @@ export default function AttendancePunchReview() {
         ? createPortal(
             <div className={styles.modalBackdrop}>
               <div className={styles.modal}>
-                <h2>Eliminar picada</h2>
+                <h2>Anular picada</h2>
                 <p>
-                  Esta acción quedará auditada para {deleteTarget.employee?.fullName || "el empleado"}.
+                  La picada quedará visible, pero no afectará los cálculos de {deleteTarget.employee?.fullName || "el empleado"}.
                 </p>
                 <textarea
                   value={deleteReason}
@@ -450,7 +417,7 @@ export default function AttendancePunchReview() {
                     Cancelar
                   </button>
                   <button type="button" className={styles.dangerButton} onClick={confirmDelete} disabled={isMutating}>
-                    Eliminar
+                    Anular
                   </button>
                 </div>
               </div>
@@ -516,15 +483,6 @@ export default function AttendancePunchReview() {
               {isLoading ? (
                 <span className={styles.loadingBadge} aria-label="Cargando" />
               ) : null}
-              <button
-                type="button"
-                className={styles.primaryButton}
-                onClick={() => setIsAddOpen(true)}
-                disabled={isLoading}
-              >
-                <Plus size={16} />
-                Agregar picada
-              </button>
             </div>
           </div>
 
@@ -564,14 +522,14 @@ export default function AttendancePunchReview() {
                       <td>{punch.employee?.branchName || punch.employee?.branchCode || "N/D"}</td>
                       <td>{punch.punchedAtLabel}</td>
                       <td>
-                        <span className={punch.source === "manual" ? styles.manualTag : styles.uploadTag}>
-                          {punch.source === "manual" ? "Manual" : "Archivo"}
+                        <span className={punch.isIgnored ? styles.ignoredTag : punch.source === "manual" ? styles.manualTag : styles.uploadTag}>
+                          {punch.isIgnored ? "Anulada" : punch.source === "manual" ? "Manual" : "Archivo"}
                         </span>
                       </td>
                       <td>
                         <div className={styles.rowActions}>
-                          <button type="button" onClick={() => setDeleteTarget(punch)}>
-                            <Trash2 size={15} />
+                          <button type="button" onClick={() => setDeleteTarget(punch)} disabled={punch.isIgnored}>
+                            <Ban size={15} />
                           </button>
                         </div>
                       </td>
@@ -625,65 +583,6 @@ export default function AttendancePunchReview() {
         </div>
       </section>
 
-      <CatalogDrawer
-        isOpen={isAddOpen}
-        eyebrow="Auditoría obligatoria"
-        title="Agregar picada"
-        onClose={() => setIsAddOpen(false)}
-      >
-        <form onSubmit={submitPunch} className={styles.drawerForm}>
-          <label>
-            <span>Empleado</span>
-            <select
-              value={form.employeeId}
-              onChange={(event) => setForm((current) => ({ ...current, employeeId: event.target.value }))}
-              required
-              disabled={isMutating}
-            >
-              <option value="">Selecciona un empleado</option>
-              {employees
-                .filter((employee) => isEmployeeActiveOnDate(employee, form.punchedAt ? form.punchedAt.slice(0, 10) : filters.from))
-                .map((employee) => (
-                  <option key={employee.id} value={employee.id}>
-                    {employee.fullName}
-                  </option>
-                ))}
-            </select>
-          </label>
-
-          <label>
-            <span>Fecha y hora</span>
-            <input
-              type="datetime-local"
-              value={form.punchedAt}
-              onChange={(event) => setForm((current) => ({ ...current, punchedAt: event.target.value }))}
-              required
-              disabled={isMutating}
-            />
-          </label>
-
-          <label>
-            <span>Motivo</span>
-            <textarea
-              value={form.reason}
-              onChange={(event) => setForm((current) => ({ ...current, reason: event.target.value }))}
-              placeholder="Explica por qué se agrega esta picada manual"
-              required
-              disabled={isMutating}
-            />
-          </label>
-
-          <div className={styles.drawerActions}>
-            <button type="button" className={styles.secondaryButton} onClick={() => setIsAddOpen(false)}>
-              Cancelar
-            </button>
-            <button type="submit" className={styles.primaryButton} disabled={isMutating}>
-              <Save size={16} />
-              Guardar
-            </button>
-          </div>
-        </form>
-      </CatalogDrawer>
     </>
   );
 }

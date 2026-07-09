@@ -24,6 +24,12 @@ export default function SettingsPage() {
             bullets: ["Rangos horarios", "Almuerzo y picadas esperadas", "Filtro por area"],
           },
           {
+            title: "Grupos de trabajo",
+            description: "Define quien arma el horario de cada equipo y que empleados pertenecen a ese grupo operativo.",
+            href: planningModulePath("/settings/work-groups"),
+            bullets: ["Responsable", "Checklist de empleados", "Unidad de planificacion"],
+          },
+          {
             title: "Horarios por cargo",
             description: "Define si un cargo se planifica cada semana, mantiene un horario fijo y si sus picadas contabilizan horas.",
             href: planningModulePath("/settings/role-schedules"),
@@ -33,7 +39,7 @@ export default function SettingsPage() {
             title: "Reglas de horario",
             description: "Define el margen de tolerancia para atrasos al comparar horarios y picadas.",
             href: planningModulePath("/settings/schedule-rules"),
-            bullets: ["Tolerancia de atrasos", "Cruce horario vs picadas"],
+            bullets: ["Tolerancia de atrasos", "Horario vs picadas"],
           },
         ]}
         futureNote="Empresa mantiene la estructura base: sucursales, areas, cargos, empleados y organigrama. Planificacion solo consume esa estructura."

@@ -116,9 +116,9 @@ export async function GET(request) {
       .sort({ version: -1, closedAt: -1 })
       .lean();
 
-    if (!closure) {
+    if (!closure || closure.completeBaseHours === false) {
       return NextResponse.json(
-        { error: "Primero guarda el cierre de mes de asistencia para calcular el costo ejecutado." },
+        { error: "Primero guarda el cruce de horas para calcular el costo ejecutado." },
         { status: 404 },
       );
     }

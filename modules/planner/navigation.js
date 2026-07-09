@@ -15,7 +15,7 @@ export const DASHBOARD_NAVIGATION = [
     ],
   },
   {
-    title: "Horarios",
+    title: "Planificación",
     href: planningModulePath("/schedules"),
     items: [
       {
@@ -36,12 +36,6 @@ export const DASHBOARD_NAVIGATION = [
         description: "Calendario laboral mensual",
         permission: "planner.holidays.view",
       },
-    ],
-  },
-  {
-    title: "Novedades",
-    href: planningModulePath("/updates"),
-    items: [
       {
         href: planningModulePath("/updates"),
         label: "Pendientes aprobacion",
@@ -74,24 +68,12 @@ export const DASHBOARD_NAVIGATION = [
       },
       {
         href: planningModulePath("/attendance/comparison"),
-        label: "Cruce horario vs picadas",
+        label: "Horario vs picadas",
         description: "Comparar planificado contra asistencia real",
         permission: "planner.attendance.view",
       },
       {
-        href: planningModulePath("/closure"),
-        label: "Cierre operativo",
-        description: "Consolidacion final del periodo",
-        permission: "planner.closure.view",
-      },
-    ],
-  },
-  {
-    title: "Base operativa",
-    href: planningModulePath("/operations/monthly-closure"),
-    items: [
-      {
-        href: planningModulePath("/operations/monthly-closure"),
+        href: planningModulePath("/operations"),
         label: "Cruce de horas",
         description: "Completar laborables cuando haga falta",
         permission: "planner.operations.view",
@@ -123,7 +105,7 @@ export const DASHBOARD_NAVIGATION = [
     ],
   },
   {
-    title: "Historial y reportes",
+    title: "Historial",
     href: planningModulePath("/history"),
     items: [
       {
@@ -131,12 +113,6 @@ export const DASHBOARD_NAVIGATION = [
         label: "Historial operativo",
         description: "Trazabilidad de cambios y revisiones",
         permission: "planner.history.view",
-      },
-      {
-        href: planningModulePath("/reports/monthly"),
-        label: "Reporte mensual",
-        description: "Cierre, costos y exportables",
-        permission: "planner.reports.view",
       },
     ],
   },
@@ -148,6 +124,12 @@ export const DASHBOARD_NAVIGATION = [
         href: planningModulePath("/settings/base-schedules"),
         label: "Plantillas de horarios",
         description: "Horarios diarios reutilizables",
+        permission: "planner.settings.view",
+      },
+      {
+        href: planningModulePath("/settings/work-groups"),
+        label: "Grupos de trabajo",
+        description: "Responsables y empleados por equipo",
         permission: "planner.settings.view",
       },
       {
@@ -188,12 +170,12 @@ export function getDashboardNavigationForAccessRole(accessRole) {
   }
 
   const exceptionsItem = DASHBOARD_NAVIGATION
-    .find((section) => section.title === "Novedades")
+    .find((section) => section.title === "Planificación")
     ?.items.find((item) => item.href === planningModulePath("/planning/exceptions"));
 
   return [
     {
-      title: "Novedades",
+      title: "Planificación",
       href: planningModulePath("/planning/exceptions"),
       items: exceptionsItem ? [exceptionsItem] : [],
     },

@@ -205,12 +205,13 @@ export default function BranchManagement() {
       try {
         const method = editingBranchId ? "PATCH" : "POST";
         const endpoint = editingBranchId ? `/api/company/branches/${editingBranchId}` : "/api/company/branches";
+        const { code: _code, ...payloadForm } = form;
         const response = await fetch(endpoint, {
           method,
           headers: {
             "Content-Type": "application/json",
           },
-          body: JSON.stringify(form),
+          body: JSON.stringify(payloadForm),
         });
         const payload = await response.json();
 

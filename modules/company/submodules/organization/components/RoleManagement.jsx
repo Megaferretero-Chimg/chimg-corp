@@ -239,12 +239,13 @@ export default function RoleManagement() {
       try {
         const method = editingRoleId ? "PATCH" : "POST";
         const endpoint = editingRoleId ? `/api/company/roles/${editingRoleId}` : "/api/company/roles";
+        const { code: _code, ...payloadForm } = form;
         const response = await fetch(endpoint, {
           method,
           headers: {
             "Content-Type": "application/json",
           },
-          body: JSON.stringify(form),
+          body: JSON.stringify(payloadForm),
         });
         const payload = await response.json();
 

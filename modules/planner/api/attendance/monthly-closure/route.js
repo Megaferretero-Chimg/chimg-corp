@@ -685,7 +685,7 @@ export async function GET(request) {
     const wantsPayrollCsv = exportType === "payroll-csv";
     const wantsPayrollExcel = exportType === "payroll-xlsx";
     const wantsDetailedExcel = exportType === "detailed-xlsx";
-    const completeBaseHours = parseBooleanOption(request.nextUrl.searchParams.get("completeBaseHours"), true);
+    const completeBaseHours = parseBooleanOption(request.nextUrl.searchParams.get("completeBaseHours"), false);
     const baseCompletionEmployeeIds = parseEmployeeIdList(request.nextUrl.searchParams.get("baseCompletionEmployeeIds"));
     const closures = await MonthlyAttendanceClosure.find({ monthKey })
       .sort({ version: -1, closedAt: -1 })
@@ -693,6 +693,15 @@ export async function GET(request) {
     const closure = closureId
       ? closures.find((item) => item._id.toString() === closureId) || null
       : closures.find((item) => item.isLatest !== false) || closures[0] || null;
+    const hasCrossClosure = Boolean(closure && closure.completeBaseHours !== false);
+
+    if ((wantsPayrollCsv || wantsPayrollExcel || wantsDetailedExcel) && !wantsLive && !hasCrossClosure) {
+      return NextResponse.json(
+        { error: "Primero guarda el cruce de horas para este mes." },
+        { status: 409 },
+      );
+    }
+
     const snapshot = wantsLive || !closure
       ? await buildComparisonSnapshot(request, monthKey, {
         completeBaseHours,
@@ -775,7 +784,7 @@ export async function POST(request) {
 
     const body = await request.json().catch(() => ({}));
     const monthKey = parseMonthKey(body.month || currentMonthKey()).monthKey;
-    const completeBaseHours = parseBooleanOption(body.completeBaseHours, true);
+    const completeBaseHours = parseBooleanOption(body.completeBaseHours, false);
     const baseCompletionEmployeeIds = parseEmployeeIdList(body.baseCompletionEmployeeIds);
     const latest = await MonthlyAttendanceClosure.findOne({ monthKey })
       .sort({ version: -1, closedAt: -1 })

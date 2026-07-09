@@ -4,9 +4,8 @@ import { makeEcuadorDate } from "@/lib/datetime/ecuador";
 
 export const EXCEPTION_TYPES = [
   { value: "outside_work", label: "Trabajo externo" },
-  { value: "outside_work_punch", label: "Trabajo externo con picada" },
+  { value: "missing_punch", label: "Picada omitida" },
   { value: "permission", label: "Permiso o ausencia" },
-  { value: "medical_appointment", label: "Salud" },
   { value: "schedule_change", label: "Ajuste de horario" },
   { value: "other", label: "Otro" },
 ];
@@ -15,6 +14,7 @@ export const EXCEPTION_RESOLUTIONS = [
   { value: "pending", label: "Pendiente de revisar" },
   { value: "approved_work_time", label: "Sin descuento de horas" },
   { value: "discount_day", label: "Con descuento de horas" },
+  { value: "no_action", label: "Rechazada" },
 ];
 
 export const RESOLUTION_EFFECTS = [
@@ -71,9 +71,10 @@ const SCOPE_VALUES = new Set(EXCEPTION_SCOPES.map((scope) => scope.value));
 const EFFECT_VALUES = new Set(RESOLUTION_EFFECTS.map((effect) => effect.value));
 const ATTENDANCE_MODE_VALUES = new Set(ATTENDANCE_MODES.map((mode) => mode.value));
 const PAY_MODE_VALUES = new Set(PAY_MODES.map((mode) => mode.value));
+const DEFAULT_APPLICABLE_WEEKDAYS = [1, 2, 3, 4, 5];
 
 function getLabel(options, value) {
-  if (["complete_scheduled_time", "justified_record", "paid_leave", "reschedule", "replacement", "no_action", "other"].includes(value)) {
+  if (["complete_scheduled_time", "justified_record", "paid_leave", "reschedule", "replacement", "other"].includes(value)) {
     return "Sin descuento de horas";
   }
 
@@ -84,7 +85,7 @@ function normalizeExceptionType(value) {
   const type = String(value || "").trim();
 
   if (type === "outside_work_punch") {
-    return "outside_work_punch";
+    return "missing_punch";
   }
 
   if (["material_pickup", "field_visit", "outside_work"].includes(type)) {
@@ -95,11 +96,15 @@ function normalizeExceptionType(value) {
     return "permission";
   }
 
-  if (["sick_leave", "medical_appointment"].includes(type)) {
-    return "medical_appointment";
+  if (type === "missing_punch") {
+    return "missing_punch";
   }
 
-  if (["early_leave", "late_arrival", "missing_punch", "schedule_change"].includes(type)) {
+  if (["sick_leave", "medical_appointment"].includes(type)) {
+    return "permission";
+  }
+
+  if (["early_leave", "late_arrival", "schedule_change"].includes(type)) {
     return "schedule_change";
   }
 
@@ -127,8 +132,12 @@ export function resolveOperationalExceptionEffect(exception = {}) {
     return "unpaid_absence";
   }
 
-  if (hasManualPunch || type === "outside_work_punch" || scope === "missing_punch") {
+  if (hasManualPunch) {
     return "manual_punch";
+  }
+
+  if (type === "missing_punch" || scope === "missing_punch") {
+    return "external_work";
   }
 
   if (type === "outside_work") {
@@ -153,7 +162,7 @@ export function resolveOperationalExceptionEffect(exception = {}) {
 function defaultAttendanceModeForEffect(effect, exception = {}) {
   if (effect === "manual_punch") return "add_manual_punch";
   if (effect === "external_work") {
-    return exception.countsAsWorkedTime === false ? "use_authorized_schedule" : "use_punches";
+    return "use_authorized_schedule";
   }
   if (effect === "paid_absence" || effect === "paid_partial_leave") return "ignore_attendance";
   if (effect === "planning_change") return "use_punches";
@@ -200,6 +209,19 @@ function minutesBetweenTimes(startTime, endTime) {
   const endTotal = (endHours * 60) + endMinutes;
 
   return Math.max(0, endTotal - startTotal);
+}
+
+function normalizeApplicableWeekdays(value, effect) {
+  if (effect !== "planning_change") return undefined;
+
+  const source = Array.isArray(value) ? value : DEFAULT_APPLICABLE_WEEKDAYS;
+  const days = [...new Set(
+    source
+      .map((day) => Number(day))
+      .filter((day) => Number.isInteger(day) && day >= 0 && day <= 6),
+  )].sort((left, right) => left - right);
+
+  return days.length ? days : DEFAULT_APPLICABLE_WEEKDAYS;
 }
 
 export function parseMonthKey(value) {
@@ -295,6 +317,7 @@ export function normalizeExceptionPayload(body, employee) {
   const effect = normalizeResolutionEffect(body?.effect, effectInput);
   const attendanceMode = normalizeAttendanceMode(body?.attendanceMode, effect, effectInput);
   const payMode = normalizePayMode(body?.payMode, effect, effectInput);
+  const applicableWeekdays = normalizeApplicableWeekdays(body?.applicableWeekdays, effect);
 
   if (!TYPE_VALUES.has(type)) {
     throw new Error("Debes seleccionar un tipo de excepcion valido.");
@@ -348,7 +371,11 @@ export function normalizeExceptionPayload(body, employee) {
     throw new Error("La hora de fin de almuerzo no es valida.");
   }
 
-  if (type === "outside_work_punch" && !manualPunchTime) {
+  if (effect === "planning_change" && (!plannedStartTime || !plannedEndTime)) {
+    throw new Error("Debes indicar el horario temporal autorizado.");
+  }
+
+  if ((effect === "manual_punch" || attendanceMode === "add_manual_punch") && !manualPunchTime) {
     throw new Error("Debes indicar la hora de la picada manual.");
   }
 
@@ -383,6 +410,7 @@ export function normalizeExceptionPayload(body, employee) {
     plannedLunchStartTime,
     plannedLunchEndTime,
     plannedLunchDurationMinutes,
+    applicableWeekdays,
     manualPunchTime,
     destination,
     countsAsWorkedTime,
@@ -431,6 +459,9 @@ export function serializeOperationalException(exception) {
     plannedLunchStartTime: exception.plannedLunchStartTime || "",
     plannedLunchEndTime: exception.plannedLunchEndTime || "",
     plannedLunchDurationMinutes: Number(exception.plannedLunchDurationMinutes) || 0,
+    applicableWeekdays: Array.isArray(exception.applicableWeekdays)
+      ? exception.applicableWeekdays
+      : undefined,
     manualPunchId: exception.manualPunch?.toString?.() || String(exception.manualPunch || ""),
     manualPunchTime: exception.manualPunchTime || "",
     destination: exception.destination || "",

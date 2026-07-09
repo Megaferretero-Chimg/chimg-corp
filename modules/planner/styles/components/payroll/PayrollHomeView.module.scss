@@ -116,6 +116,57 @@
   font-weight: 720;
 }
 
+.lockedState {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  gap: 0.85rem;
+  align-items: center;
+  border: 1px solid rgba(180, 83, 9, 0.18);
+  border-radius: var(--radius-panel);
+  background: #fff8ed;
+  box-shadow: var(--shadow-panel);
+  color: #9a5b00;
+  padding: 1rem;
+}
+
+.lockedState svg {
+  color: #b45309;
+}
+
+.lockedState strong,
+.lockedState span {
+  display: block;
+}
+
+.lockedState strong {
+  color: #10213e;
+  font-size: 0.98rem;
+  font-weight: 850;
+}
+
+.lockedState span {
+  margin-top: 0.16rem;
+  color: #6f4f24;
+  font-size: var(--font-size-sm);
+  font-weight: 620;
+}
+
+.lockedState a {
+  min-height: 2.35rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.38rem;
+  border: 1px solid rgba(154, 91, 0, 0.18);
+  border-radius: 0.7rem;
+  background: #ffffff;
+  color: #8a4b00;
+  font-size: var(--font-size-sm);
+  font-weight: 850;
+  text-decoration: none;
+  padding: 0 0.85rem;
+}
+
 .breakdownGrid {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -303,6 +354,10 @@
   .filterBar,
   .metricGrid,
   .breakdownGrid {
+    grid-template-columns: 1fr;
+  }
+
+  .lockedState {
     grid-template-columns: 1fr;
   }
 

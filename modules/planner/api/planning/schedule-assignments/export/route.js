@@ -210,13 +210,14 @@ function applyWorksheetLayout(worksheet, weekDateKeys) {
   worksheet["!freeze"] = { xSplit: 1, ySplit: 1 };
 }
 
-async function buildScheduleWorkbook({ monthKey, branchCode, areaCode, roleCode, plannerScope }) {
+async function buildScheduleWorkbook({ monthKey, branchCode, areaCode, roleCode, employeeIds = [], plannerScope }) {
   const monthKeys = [getPreviousMonthKey(monthKey), monthKey, getNextMonthKey(monthKey)];
   const query = { monthKey: { $in: monthKeys } };
 
   if (branchCode) query.branchCode = branchCode;
   if (areaCode) query.areaCode = areaCode;
   if (roleCode) query.roleCode = roleCode;
+  if (employeeIds.length) query.employee = { $in: employeeIds };
 
   applyPlannerScopeToAssignmentQuery(query, plannerScope);
 
@@ -276,7 +277,11 @@ export async function GET(request) {
     const branchCode = String(searchParams.get("branchCode") || "").trim().toUpperCase();
     const areaCode = String(searchParams.get("areaCode") || "").trim();
     const roleCode = String(searchParams.get("roleCode") || "").trim();
-    const excel = await buildScheduleWorkbook({ monthKey, branchCode, areaCode, roleCode, plannerScope });
+    const employeeIds = String(searchParams.get("employeeIds") || "")
+      .split(",")
+      .map((employeeId) => employeeId.trim())
+      .filter(Boolean);
+    const excel = await buildScheduleWorkbook({ monthKey, branchCode, areaCode, roleCode, employeeIds, plannerScope });
 
     return new Response(excel, {
       headers: {

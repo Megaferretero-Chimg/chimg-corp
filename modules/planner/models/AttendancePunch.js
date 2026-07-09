@@ -31,6 +31,24 @@ const attendancePunchSchema = new Schema(
       trim: true,
       default: "",
     },
+    isIgnored: {
+      type: Boolean,
+      default: false,
+    },
+    ignoredAt: {
+      type: Date,
+      default: null,
+    },
+    ignoredBy: {
+      type: String,
+      trim: true,
+      default: "",
+    },
+    ignoredReason: {
+      type: String,
+      trim: true,
+      default: "",
+    },
   },
   {
     timestamps: true,

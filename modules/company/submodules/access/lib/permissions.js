@@ -94,8 +94,8 @@ export const ACCESS_PERMISSION_CATALOG = [
       },
       {
         key: "planner.schedules",
-        label: "Horarios",
-        description: "Planificacion semanal, vacaciones y feriados.",
+        label: "Planificación",
+        description: "Horarios, vacaciones, feriados, novedades y excepciones.",
         permissions: [
           { key: "planner.schedules.view", label: "Ver planificacion semanal", type: "page", path: "/modules/planning/schedules" },
           { key: "planner.schedules.summary.view", label: "Ver resumen de planificacion", type: "page", path: "/modules/planning/planning" },
@@ -104,13 +104,6 @@ export const ACCESS_PERMISSION_CATALOG = [
           { key: "planner.timeOff.manage", label: "Gestionar vacaciones", type: "action" },
           { key: "planner.holidays.view", label: "Ver feriados", type: "page", path: "/modules/planning/planning/holidays" },
           { key: "planner.holidays.manage", label: "Gestionar feriados", type: "action" },
-        ],
-      },
-      {
-        key: "planner.updates",
-        label: "Novedades",
-        description: "Pendientes de aprobacion y CRUD de ajustes y excepciones.",
-        permissions: [
           { key: "planner.updates.view", label: "Ver pendientes aprobacion", type: "page", path: "/modules/planning/updates" },
           { key: "planner.updates.manage", label: "Gestionar pendientes", type: "action" },
           { key: "planner.exceptions.view", label: "Ver todos los ajustes y excepciones", type: "page", path: "/modules/planning/planning/exceptions" },
@@ -126,24 +119,8 @@ export const ACCESS_PERMISSION_CATALOG = [
           { key: "planner.attendance.upload", label: "Cargar picadas", type: "action" },
           { key: "planner.attendance.review", label: "Revisar picadas", type: "action" },
           { key: "planner.attendance.close", label: "Cerrar asistencia", type: "action" },
-        ],
-      },
-      {
-        key: "planner.closure",
-        label: "Cierre operativo",
-        description: "Consolidacion formal del periodo operativo.",
-        permissions: [
-          { key: "planner.closure.view", label: "Ver cierre operativo", type: "page", path: "/modules/planning/closure" },
-          { key: "planner.closure.manage", label: "Gestionar cierre operativo", type: "action" },
-        ],
-      },
-      {
-        key: "planner.operations",
-        label: "Base operativa",
-        description: "Cobertura, incidentes y cierres operativos.",
-        permissions: [
-          { key: "planner.operations.view", label: "Ver operación", type: "page", path: "/modules/planning/operations" },
-          { key: "planner.operations.manage", label: "Gestionar operación", type: "action" },
+          { key: "planner.operations.view", label: "Ver control operativo", type: "page", path: "/modules/planning/operations" },
+          { key: "planner.operations.manage", label: "Gestionar control operativo", type: "action" },
         ],
       },
       {
@@ -158,12 +135,10 @@ export const ACCESS_PERMISSION_CATALOG = [
       },
       {
         key: "planner.reports",
-        label: "Historial y reportes",
-        description: "Trazabilidad, reportes mensuales, semanales y comparativos.",
+        label: "Historial",
+        description: "Trazabilidad operativa y auditoría de acciones.",
         permissions: [
           { key: "planner.history.view", label: "Ver historial operativo", type: "page", path: "/modules/planning/history" },
-          { key: "planner.reports.view", label: "Ver reportes", type: "page", path: "/modules/planning/reports" },
-          { key: "planner.reports.export", label: "Exportar reportes", type: "action" },
         ],
       },
       {
@@ -229,11 +204,8 @@ export const DEFAULT_ROLE_PERMISSIONS = {
     "planner.exceptions.manage",
     "planner.attendance.view",
     "planner.attendance.review",
-    "planner.closure.view",
-    "planner.closure.manage",
     "planner.operations.view",
     "planner.history.view",
-    "planner.reports.view",
   ],
   operator: [
     "planner.home.view",
@@ -259,9 +231,7 @@ export const DEFAULT_ROLE_PERMISSIONS = {
     "planner.schedules.summary.view",
     "planner.updates.view",
     "planner.attendance.view",
-    "planner.closure.view",
     "planner.history.view",
-    "planner.reports.view",
   ],
 };
 

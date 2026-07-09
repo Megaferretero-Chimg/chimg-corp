@@ -4,7 +4,6 @@ import { createAuditLog, resolveAuditActor } from "@/lib/audit";
 import { isAuthenticated } from "@/lib/auth";
 import {
   normalizeRolePayload,
-  resolveUniqueRoleCode,
   serializeRole,
 } from "@/modules/company/submodules/organization/lib/roles";
 import { normalizeOrganizationNodeCode } from "@/modules/company/submodules/organization/lib/structure";
@@ -82,12 +81,7 @@ export async function PATCH(request, context) {
 
     await assertNoCircularSupervisor(id, payload.supervisorRoleCode);
 
-    const existingRoles = await Role.find({ _id: { $ne: id } }, { code: 1 }).lean();
-    const code = resolveUniqueRoleCode(
-      payload.code,
-      existingRoles.map((role) => role.code),
-      payload.name,
-    );
+    const code = existingRole.code;
 
     const role = await Role.findByIdAndUpdate(
       id,

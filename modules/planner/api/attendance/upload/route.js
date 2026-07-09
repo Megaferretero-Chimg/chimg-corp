@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 
-import { isAuthenticated } from "@/lib/auth";
+import { getAuthenticatedUser } from "@/lib/auth";
 import connectToDatabase from "@/lib/db/mongodb";
 import { AttendanceUpload } from "@/modules/planner/models";
 import { Branch } from "@/modules/company/models";
@@ -31,9 +31,9 @@ function hasValidExcelExtension(fileName) {
 
 export async function GET() {
   try {
-    const authenticated = await isAuthenticated();
+    const authenticatedUser = await getAuthenticatedUser();
 
-    if (!authenticated) {
+    if (!authenticatedUser) {
       return NextResponse.json({ error: "Sesión inválida o expirada." }, { status: 401 });
     }
 
@@ -62,6 +62,9 @@ export async function GET() {
         year: upload.year,
         normalizedAt: upload.normalizedAt || null,
         hasNormalization: Boolean(upload.normalizedAt),
+        uploadedBy: upload.uploadedBy || "",
+        uploadedByUser: upload.uploadedByUser || "",
+        uploadedAt: upload.uploadedAt || upload.createdAt,
         createdAt: upload.createdAt,
         updatedAt: upload.updatedAt,
       })),
@@ -76,9 +79,9 @@ export async function GET() {
 
 export async function POST(request) {
   try {
-    const authenticated = await isAuthenticated();
+    const authenticatedUser = await getAuthenticatedUser();
 
-    if (!authenticated) {
+    if (!authenticatedUser) {
       return NextResponse.json({ error: "Sesión inválida o expirada." }, { status: 401 });
     }
 
@@ -127,6 +130,14 @@ export async function POST(request) {
     }
 
     const originalFile = Buffer.from(await file.arrayBuffer());
+    const uploadedAt = new Date();
+    const uploadedBy = String(
+      authenticatedUser.employeeName ||
+        authenticatedUser.username ||
+        authenticatedUser.id ||
+        "SISTEMA",
+    ).trim();
+    const uploadedByUser = String(authenticatedUser.id || authenticatedUser.username || "").trim();
 
     if (!originalFile.length) {
       return NextResponse.json(
@@ -145,6 +156,9 @@ export async function POST(request) {
       month: period.month,
       year: period.year,
       status: "uploaded",
+      uploadedBy,
+      uploadedByUser,
+      uploadedAt,
     });
 
     return NextResponse.json({
@@ -161,6 +175,9 @@ export async function POST(request) {
         status: uploadDocument.status,
         normalizedAt: null,
         hasNormalization: false,
+        uploadedBy: uploadDocument.uploadedBy || "",
+        uploadedByUser: uploadDocument.uploadedByUser || "",
+        uploadedAt: uploadDocument.uploadedAt || uploadDocument.createdAt,
         createdAt: uploadDocument.createdAt,
       },
     });

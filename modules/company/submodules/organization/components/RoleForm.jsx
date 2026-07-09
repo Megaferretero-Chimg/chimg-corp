@@ -2,6 +2,7 @@
 
 import { Plus } from "lucide-react";
 
+import SelectInput from "@/components/ui/SelectInput";
 import styles from "@/modules/company/submodules/organization/styles/components/RoleForm.module.scss";
 
 export default function RoleForm({
@@ -17,22 +18,14 @@ export default function RoleForm({
 }) {
   return (
     <form onSubmit={onSubmit} className={`catalog-form-grid ${styles.formGrid}`}>
-      <label className="catalog-field">
-        <span className="catalog-label">Código</span>
-        <input
-          value={form.code}
-          onChange={(event) => onFieldChange("code", event.target.value.toUpperCase())}
-          className="catalog-input"
-          placeholder="Se genera automáticamente si lo dejas vacío"
-        />
-      </label>
-
-      <label className="catalog-field">
-        <span className="catalog-label">Área</span>
-        <select
+      <div className="catalog-field">
+        <SelectInput
+          label="Área"
           value={form.areaCode}
           onChange={(event) => onFieldChange("areaCode", event.target.value)}
-          className="catalog-select"
+          className={styles.selectField}
+          labelClassName="catalog-label"
+          controlClassName={styles.selectControl}
           required
         >
           <option value="">Selecciona un área</option>
@@ -41,8 +34,8 @@ export default function RoleForm({
               {area.name}
             </option>
           ))}
-        </select>
-      </label>
+        </SelectInput>
+      </div>
 
       <label className="catalog-field">
         <span className="catalog-label">Nombre</span>
@@ -55,12 +48,14 @@ export default function RoleForm({
         />
       </label>
 
-      <label className="catalog-field">
-        <span className="catalog-label">Supervisor directo</span>
-        <select
+      <div className="catalog-field">
+        <SelectInput
+          label="Supervisor directo"
           value={form.supervisorRoleCode}
           onChange={(event) => onFieldChange("supervisorRoleCode", event.target.value)}
-          className="catalog-select"
+          className={styles.selectField}
+          labelClassName="catalog-label"
+          controlClassName={styles.selectControl}
         >
           <option value="">Sin supervisor directo</option>
           {roles.map((role) => (
@@ -68,8 +63,8 @@ export default function RoleForm({
               {role.areaName ? `${role.name} · ${role.areaName}` : role.name}
             </option>
           ))}
-        </select>
-      </label>
+        </SelectInput>
+      </div>
 
       <label className="catalog-field">
         <span className="catalog-label">Descripción</span>

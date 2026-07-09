@@ -1,7 +1,7 @@
 "use client";
 
 import { createPortal } from "react-dom";
-import { AlertCircle, X } from "lucide-react";
+import { AlertCircle, CheckCircle2, X } from "lucide-react";
 
 import useClientReady from "@/hooks/useClientReady";
 import styles from "./FloatingNotice.module.scss";
@@ -9,22 +9,25 @@ import styles from "./FloatingNotice.module.scss";
 export default function FloatingNotice({ notice, onClose }) {
   const canRenderPortal = useClientReady();
 
-  if (!canRenderPortal || !notice || notice.type !== "error") {
+  if (!canRenderPortal || !notice) {
     return null;
   }
+  const isSuccess = notice.type === "success";
+  const title = isSuccess ? "Accion completada" : "Algo necesita atención";
+  const Icon = isSuccess ? CheckCircle2 : AlertCircle;
 
   return createPortal(
     <div
-      className={`${styles.toast} ${notice.isLeaving ? styles.toastLeaving : ""}`}
-      role="alert"
-      aria-live="assertive"
+      className={`${styles.toast} ${isSuccess ? styles.toastSuccess : styles.toastError} ${notice.isLeaving ? styles.toastLeaving : ""}`}
+      role={isSuccess ? "status" : "alert"}
+      aria-live={isSuccess ? "polite" : "assertive"}
     >
       <div className={styles.toastIcon}>
-        <AlertCircle size={18} />
+        <Icon size={18} />
       </div>
       <div className={styles.toastContent}>
         <p className={styles.toastTitle}>
-          Algo necesita atención
+          {title}
         </p>
         <p className={styles.toastMessage}>{notice.message}</p>
       </div>

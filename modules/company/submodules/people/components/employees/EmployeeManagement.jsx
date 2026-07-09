@@ -19,6 +19,7 @@ import CatalogDrawer from "@/components/catalog/CatalogDrawer";
 import CatalogPageLoader from "@/components/catalog/CatalogPageLoader";
 import ConfirmDialog from "@/components/ui/ConfirmDialog";
 import FloatingNotice from "@/components/ui/FloatingNotice";
+import SelectInput from "@/components/ui/SelectInput";
 import { planningModulePath } from "@/modules/planner/routes";
 import EmployeeDetailModal from "./EmployeeDetailModal";
 import EmployeeForm from "./EmployeeForm";
@@ -79,6 +80,7 @@ const INITIAL_FORM = {
   areaName: "",
   roleAssignments: [],
   salary: "",
+  employmentStartDate: "",
   birthDate: "",
   biometricCode: "",
 };
@@ -143,6 +145,7 @@ function mapEmployeeToForm(employee, branches = [], roles = []) {
           }]
         : [],
     salary: String(employee.salary ?? ""),
+    employmentStartDate: employee.employmentStartDate || "",
     birthDate: employee.birthDate || "",
     biometricCode: employee.biometricCode || "",
   };
@@ -753,13 +756,17 @@ export default function EmployeeManagement() {
               />
             </label>
 
-            <label className={styles.filterControl}>
+            <div className={styles.filterControl}>
               <Layers3 size={16} />
-              <select
+              <SelectInput
                 value={areaFilter}
                 onChange={(event) => handleAreaFilterChange(event.target.value)}
                 aria-label="Filtrar por área"
                 disabled={isPending}
+                className={styles.filterSelectField}
+                controlClassName={styles.filterSelectControl}
+                selectClassName={styles.filterSelectButton}
+                menuClassName={styles.filterSelectMenu}
               >
                 <option value="">Todas las áreas</option>
                 {areaOptions.map((area) => (
@@ -767,16 +774,20 @@ export default function EmployeeManagement() {
                     {area.name}
                   </option>
                 ))}
-              </select>
-            </label>
+              </SelectInput>
+            </div>
 
-            <label className={styles.filterControl}>
+            <div className={styles.filterControl}>
               <BriefcaseBusiness size={16} />
-              <select
+              <SelectInput
                 value={roleFilter}
                 onChange={(event) => handleRoleFilterChange(event.target.value)}
                 aria-label="Filtrar por cargo"
                 disabled={isPending}
+                className={styles.filterSelectField}
+                controlClassName={styles.filterSelectControl}
+                selectClassName={styles.filterSelectButton}
+                menuClassName={styles.filterSelectMenu}
               >
                 <option value="">Todos los cargos</option>
                 {roleOptions.map((role) => (
@@ -784,16 +795,20 @@ export default function EmployeeManagement() {
                     {role.areaName ? `${role.name} · ${role.areaName}` : role.name}
                   </option>
                 ))}
-              </select>
-            </label>
+              </SelectInput>
+            </div>
 
-            <label className={styles.filterControl}>
+            <div className={styles.filterControl}>
               <Landmark size={16} />
-              <select
+              <SelectInput
                 value={branchFilter}
                 onChange={(event) => handleBranchFilterChange(event.target.value)}
                 aria-label="Filtrar por sucursal"
                 disabled={isPending}
+                className={styles.filterSelectField}
+                controlClassName={styles.filterSelectControl}
+                selectClassName={styles.filterSelectButton}
+                menuClassName={styles.filterSelectMenu}
               >
                 <option value="">Todas las sucursales</option>
                 {branchOptions.map((branch) => (
@@ -801,16 +816,20 @@ export default function EmployeeManagement() {
                     {branch.name}
                   </option>
                 ))}
-              </select>
-            </label>
+              </SelectInput>
+            </div>
 
-            <label className={styles.filterControl}>
+            <div className={styles.filterControl}>
               <ReceiptText size={16} />
-              <select
+              <SelectInput
                 value={relationFilter}
                 onChange={(event) => handleRelationFilterChange(event.target.value)}
                 aria-label="Filtrar por relación"
                 disabled={isPending}
+                className={styles.filterSelectField}
+                controlClassName={styles.filterSelectControl}
+                selectClassName={styles.filterSelectButton}
+                menuClassName={styles.filterSelectMenu}
               >
                 <option value="">Todas las relaciones</option>
                 {EMPLOYMENT_RELATION_OPTIONS.map((relation) => (
@@ -818,8 +837,8 @@ export default function EmployeeManagement() {
                     {relation.label}
                   </option>
                 ))}
-              </select>
-            </label>
+              </SelectInput>
+            </div>
           </div>
 
           {hasActiveFilters ? (

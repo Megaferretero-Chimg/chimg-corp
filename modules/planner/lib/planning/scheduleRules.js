@@ -1,4 +1,7 @@
-import { DEFAULT_ATTENDANCE_GRACE_MINUTES } from "@/modules/planner/lib/payroll/laborConstants";
+import {
+  DEFAULT_ATTENDANCE_GRACE_MINUTES,
+  DEFAULT_LATE_DEPARTURE_TOLERANCE_MINUTES,
+} from "@/modules/planner/lib/payroll/laborConstants";
 
 export const SCHEDULE_RULE_CONFIG_KEY = "default";
 
@@ -6,6 +9,7 @@ export const DEFAULT_SCHEDULE_RULE_CONFIG = {
   key: SCHEDULE_RULE_CONFIG_KEY,
   lateToleranceMinutes: DEFAULT_ATTENDANCE_GRACE_MINUTES,
   earlyLeaveToleranceMinutes: 5,
+  lateDepartureToleranceMinutes: DEFAULT_LATE_DEPARTURE_TOLERANCE_MINUTES,
 };
 
 function normalizeNumber(value, fallback, { min = 0, max = 180 } = {}) {
@@ -26,6 +30,10 @@ export function normalizeScheduleRuleConfigPayload(body) {
       body?.earlyLeaveToleranceMinutes,
       DEFAULT_SCHEDULE_RULE_CONFIG.earlyLeaveToleranceMinutes,
     ),
+    lateDepartureToleranceMinutes: normalizeNumber(
+      body?.lateDepartureToleranceMinutes,
+      DEFAULT_SCHEDULE_RULE_CONFIG.lateDepartureToleranceMinutes,
+    ),
   };
 }
 
@@ -42,6 +50,10 @@ export function serializeScheduleRuleConfig(config) {
     earlyLeaveToleranceMinutes: normalizeNumber(
       source.earlyLeaveToleranceMinutes,
       DEFAULT_SCHEDULE_RULE_CONFIG.earlyLeaveToleranceMinutes,
+    ),
+    lateDepartureToleranceMinutes: normalizeNumber(
+      source.lateDepartureToleranceMinutes,
+      DEFAULT_SCHEDULE_RULE_CONFIG.lateDepartureToleranceMinutes,
     ),
     createdAt: source.createdAt || null,
     updatedAt: source.updatedAt || null,

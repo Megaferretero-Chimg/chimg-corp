@@ -81,15 +81,15 @@ export function normalizeUserTypePayload(body) {
   const landingPath = String(body?.landingPath || "/modules").trim() || "/modules";
 
   if (!name) {
-    throw new Error("El nombre del tipo de usuario es obligatorio.");
+    throw new Error("El nombre del perfil de acceso es obligatorio.");
   }
 
   if (!code) {
-    throw new Error("No se pudo generar el código del tipo de usuario.");
+    throw new Error("No se pudo generar el código del perfil de acceso.");
   }
 
   if (isProtectedUserTypeCode(code)) {
-    throw new Error("El rol de acceso Administrador está protegido y no se puede modificar.");
+    throw new Error("El perfil Administrador está protegido y no se puede modificar.");
   }
 
   return {

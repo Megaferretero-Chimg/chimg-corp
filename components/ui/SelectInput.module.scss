@@ -5,6 +5,12 @@
   font-weight: 700;
   gap: 5px;
   min-width: 0;
+  position: relative;
+  z-index: 1;
+}
+
+.fieldOpen {
+  z-index: 1200;
 }
 
 .label {
@@ -26,23 +32,15 @@
     box-shadow 160ms ease,
     background 160ms ease;
 
-  &::after {
-    background-image: url("data:image/svg+xml,%3Csvg width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%237890ad' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
-    background-position: center;
-    background-repeat: no-repeat;
-    background-size: 15px;
-    content: "";
-    height: 18px;
-    pointer-events: none;
-    position: absolute;
-    right: 10px;
-    width: 18px;
-  }
-
   &:focus-within {
     border-color: #1d5fe8;
     box-shadow: 0 0 0 3px rgba(29, 95, 232, 0.12);
   }
+}
+
+.controlOpen {
+  border-color: #1d5fe8;
+  box-shadow: 0 0 0 3px rgba(29, 95, 232, 0.12);
 }
 
 .controlError {
@@ -55,23 +53,99 @@
   }
 }
 
-.select {
-  appearance: none;
+.selectButton {
+  align-items: center;
   background: transparent;
   border: 0;
   color: #17233f;
   cursor: pointer;
+  display: flex;
   font: inherit;
+  gap: 8px;
+  justify-content: space-between;
   min-height: 34px;
   min-width: 0;
   outline: 0;
-  padding: 0 34px 0 10px;
+  padding: 0 9px 0 10px;
+  text-align: left;
   width: 100%;
 
   &:disabled {
     color: #94a3b8;
     cursor: not-allowed;
   }
+}
+
+.selectButton span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.chevron {
+  color: #7890ad;
+  flex: 0 0 auto;
+}
+
+.menu {
+  background: #fff;
+  border: 1px solid #d9e2ef;
+  border-radius: 10px;
+  box-shadow: 0 18px 42px rgba(16, 33, 62, 0.14);
+  display: grid;
+  gap: 4px;
+  left: 0;
+  max-height: 16rem;
+  min-width: 100%;
+  overflow: auto;
+  padding: 6px;
+  position: absolute;
+  right: 0;
+  top: calc(100% + 6px);
+  z-index: 1000;
+}
+
+.option {
+  align-items: center;
+  background: transparent;
+  border: 0;
+  border-radius: 8px;
+  color: #17233f;
+  cursor: pointer;
+  display: flex;
+  font: inherit;
+  font-size: 0.8rem;
+  font-weight: 650;
+  gap: 8px;
+  justify-content: space-between;
+  min-height: 34px;
+  padding: 7px 9px;
+  text-align: left;
+  transition:
+    background 160ms ease,
+    color 160ms ease;
+  width: 100%;
+
+  &:hover:not(:disabled),
+  &:focus-visible {
+    background: #f1f6ff;
+    color: #1d5fe8;
+    outline: 0;
+  }
+
+  &:disabled {
+    color: #94a3b8;
+    cursor: not-allowed;
+  }
+}
+
+.option span {
+  overflow-wrap: anywhere;
+}
+
+.optionSelected {
+  background: #eaf2ff;
+  color: #1d5fe8;
 }
 
 .hint,

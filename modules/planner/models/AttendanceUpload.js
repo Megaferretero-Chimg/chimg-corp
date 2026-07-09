@@ -86,6 +86,20 @@ const attendanceUploadSchema = new Schema(
       enum: ["uploaded", "processing", "processed", "failed"],
       default: "uploaded",
     },
+    uploadedBy: {
+      type: String,
+      trim: true,
+      default: "",
+    },
+    uploadedByUser: {
+      type: String,
+      trim: true,
+      default: "",
+    },
+    uploadedAt: {
+      type: Date,
+      default: null,
+    },
     totalEmployees: {
       type: Number,
       default: 0,

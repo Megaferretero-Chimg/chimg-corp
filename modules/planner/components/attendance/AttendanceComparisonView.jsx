@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { AlertTriangle } from "lucide-react";
 
 import EmployeeAutocomplete from "@/components/ui/EmployeeAutocomplete";
+import SelectInput from "@/components/ui/SelectInput";
 import { formatEcuadorMonthKey } from "@/lib/datetime/ecuador";
 import { employeeDismissalLabel, isEmployeeActiveInMonth, isEmployeeDismissedInMonth } from "@/modules/company/submodules/people/lib/employees";
 import { planningModulePath } from "@/modules/planner/routes";
@@ -90,6 +91,10 @@ function normalizeSearch(value) {
 }
 
 function operationalAlertCount(summary = {}) {
+  if (summary.issueDays !== undefined) {
+    return Number(summary.issueDays) || 0;
+  }
+
   if (summary.operationalAlertDays !== undefined) {
     return Number(summary.operationalAlertDays) || 0;
   }
@@ -100,6 +105,49 @@ function operationalAlertCount(summary = {}) {
     (Number(summary.extraPunchDays) || 0) +
     (Number(summary.unplannedWorkDays) || 0)
   );
+}
+
+function hasControlBlockingAlert(day = {}) {
+  const tags = (day.tags || []).map((tag) => {
+    if (tag === "Falta almuerzo") return "Picadas incompletas";
+    if (tag === "Tiempo adicional sin justificar") return "Tiempo adicional";
+    return tag;
+  });
+
+  return tags.some((tag) => [
+    "Sin picadas",
+    "Picadas incompletas",
+    "Picadas de más",
+    "No planificado",
+    "Trabajo sin horario",
+  ].includes(tag));
+}
+
+function hasControlLateIssue(day = {}) {
+  if (hasControlBlockingAlert(day)) return false;
+  if (day.authorization?.decision === "reviewed") return false;
+
+  return (Number(day.lateMinutes) || 0) > 0 ||
+    (Number(day.entryLateMinutes) || 0) > 0 ||
+    (Number(day.lunchOverageMinutes ?? day.lunchOverageRemainderMinutes) || 0) > 0 ||
+    (Number(day.earlyLeaveMinutes) || 0) > 0;
+}
+
+function hasControlAdditionalIssue(day = {}) {
+  if (hasControlBlockingAlert(day) || hasControlLateIssue(day)) return false;
+
+  return (day.tags || []).includes("Tiempo adicional") ||
+    (Number(day.additionalSupplementaryMinutes) || 0) > 0 ||
+    (Number(day.detectedSupplementaryMinutes) || 0) > (Number(day.supplementaryMinutes) || 0) ||
+    (Number(day.detectedExtraordinaryMinutes) || 0) > (Number(day.extraordinaryMinutes) || 0);
+}
+
+function additionalTimeCount(row = {}) {
+  if (Array.isArray(row.days)) {
+    return row.days.filter(hasControlAdditionalIssue).length;
+  }
+
+  return (Number(row.summary?.additionalSupplementaryMinutes) || 0) > 0 ? 1 : 0;
 }
 
 function MetricColumn({ label, value, tone = "neutral" }) {
@@ -190,7 +238,8 @@ export default function AttendanceComparisonView() {
 
       return rows.filter((row) => {
         if (filters.onlyIssues && operationalAlertCount(row.summary) <= 0) return false;
-        if (filters.employeeId || !search) return true;
+        if (filters.employeeId) return row.employee?.id === filters.employeeId;
+        if (!search) return true;
 
         return normalizeSearch(row.employee?.fullName).includes(search);
       });
@@ -289,7 +338,11 @@ export default function AttendanceComparisonView() {
     setFilters(nextFilters);
     syncUrl(nextFilters);
 
-    if (!Object.prototype.hasOwnProperty.call(nextValues, "onlyIssues")) {
+    const shouldReload = ["month", "branchCode", "areaCode", "roleCode"].some((key) =>
+      Object.prototype.hasOwnProperty.call(nextValues, key),
+    );
+
+    if (shouldReload) {
       loadComparison(nextFilters);
     }
   }
@@ -335,7 +388,6 @@ export default function AttendanceComparisonView() {
       if (targetFilters.branchCode) params.set("branchCode", targetFilters.branchCode);
       if (targetFilters.areaCode) params.set("areaCode", targetFilters.areaCode);
       if (targetFilters.roleCode) params.set("roleCode", targetFilters.roleCode);
-      if (targetFilters.employeeId) params.set("employeeId", targetFilters.employeeId);
 
       const response = await fetch(`/api/planner/attendance/comparison?${params.toString()}`);
       const payload = await response.json();
@@ -392,6 +444,7 @@ export default function AttendanceComparisonView() {
     if (filters.branchCode) params.set("branchCode", filters.branchCode);
     if (filters.areaCode) params.set("areaCode", filters.areaCode);
     if (filters.roleCode) params.set("roleCode", filters.roleCode);
+    if (filters.onlyIssues) params.set("onlyIssues", "1");
 
     return `${planningModulePath(`/attendance/comparison/${employeeId}`)}?${params.toString()}`;
   }
@@ -433,8 +486,9 @@ export default function AttendanceComparisonView() {
           </td>
           <td>
             <div className={styles.controlCounters}>
-              <ControlCounter label="Atrasos" value={row.summary.lateDays || 0} tone="warning" />
               <ControlCounter label="Alertas" value={operationalAlertCount(row.summary)} tone="danger" />
+              <ControlCounter label="Atrasos" value={row.summary.lateDays || 0} tone="warning" />
+              <ControlCounter label="Adicional" value={additionalTimeCount(row)} tone="additional" />
             </div>
           </td>
           <td>
@@ -467,6 +521,15 @@ export default function AttendanceComparisonView() {
   }
 
   function renderComparisonTable(rowsToRender, emptyText) {
+    if (!rowsToRender.length) {
+      return (
+        <div className={`${styles.tableShell} ${isLoadingComparison ? styles.tableLoading : ""}`}>
+          {isLoadingComparison ? <span className={styles.loadingRail} aria-hidden="true" /> : null}
+          <div className={styles.emptyTableState}>{emptyText}</div>
+        </div>
+      );
+    }
+
     return (
       <div className={`${styles.tableShell} ${isLoadingComparison ? styles.tableLoading : ""}`}>
         {isLoadingComparison ? <span className={styles.loadingRail} aria-hidden="true" /> : null}
@@ -484,13 +547,6 @@ export default function AttendanceComparisonView() {
             </thead>
             <tbody>
               {renderComparisonRows(rowsToRender)}
-              {!rowsToRender.length ? (
-                <tr>
-                  <td colSpan={6} className={styles.emptyCell}>
-                    {emptyText}
-                  </td>
-                </tr>
-              ) : null}
             </tbody>
           </table>
         </div>
@@ -512,41 +568,59 @@ export default function AttendanceComparisonView() {
             />
           </label>
 
-          <label>
-            <span>Sucursal</span>
-            <select value={filters.branchCode} onChange={(event) => handleFilterChange("branchCode", event.target.value)} disabled={isFilterDisabled}>
+          <SelectInput
+            label="Sucursal"
+            value={filters.branchCode}
+            onChange={(event) => handleFilterChange("branchCode", event.target.value)}
+            disabled={isFilterDisabled}
+            className={styles.selectField}
+            labelClassName={styles.filterLabel}
+            controlClassName={styles.selectControl}
+            selectClassName={styles.selectButton}
+          >
               <option value="">Todas</option>
               {branches.map((branch) => (
                 <option key={branch.id || branch.code} value={branch.code}>
                   {branch.name || branch.code}
                 </option>
               ))}
-            </select>
-          </label>
+          </SelectInput>
 
-          <label>
-            <span>Área</span>
-            <select value={filters.areaCode} onChange={(event) => handleFilterChange("areaCode", event.target.value)} disabled={isFilterDisabled}>
+          <SelectInput
+            label="Área"
+            value={filters.areaCode}
+            onChange={(event) => handleFilterChange("areaCode", event.target.value)}
+            disabled={isFilterDisabled}
+            className={styles.selectField}
+            labelClassName={styles.filterLabel}
+            controlClassName={styles.selectControl}
+            selectClassName={styles.selectButton}
+          >
               <option value="">Todas</option>
               {areaOptions.map(([code, name]) => (
                 <option key={code} value={code}>
                   {name}
                 </option>
               ))}
-            </select>
-          </label>
+          </SelectInput>
 
-          <label>
-            <span>Rol</span>
-            <select value={filters.roleCode} onChange={(event) => handleFilterChange("roleCode", event.target.value)} disabled={isFilterDisabled}>
+          <SelectInput
+            label="Rol"
+            value={filters.roleCode}
+            onChange={(event) => handleFilterChange("roleCode", event.target.value)}
+            disabled={isFilterDisabled}
+            className={styles.selectField}
+            labelClassName={styles.filterLabel}
+            controlClassName={styles.selectControl}
+            selectClassName={styles.selectButton}
+          >
               <option value="">Todos</option>
               {roleOptions.map(([code, name]) => (
                 <option key={code} value={code}>
                   {name}
                 </option>
               ))}
-            </select>
-          </label>
+          </SelectInput>
 
           <EmployeeAutocomplete
             employees={filteredEmployees}
@@ -560,7 +634,7 @@ export default function AttendanceComparisonView() {
           />
 
           <label className={styles.toggleFilter}>
-            <span>Novedades</span>
+            <span>Alertas</span>
             <button
               type="button"
               className={`${styles.toggleButton} ${filters.onlyIssues ? styles.toggleButtonActive : ""}`}
@@ -568,10 +642,11 @@ export default function AttendanceComparisonView() {
               aria-pressed={filters.onlyIssues}
               disabled={isFilterDisabled}
             >
-              Solo con novedades
+              {filters.onlyIssues ? "Alertas activas" : "Solo con alertas"}
             </button>
           </label>
         </div>
+
       </div>
 
       <div className={styles.summaryCards}>
@@ -618,7 +693,7 @@ export default function AttendanceComparisonView() {
         renderComparisonTable(
           visibleRows,
           filters.onlyIssues
-            ? "No hay empleados con novedades para los filtros seleccionados."
+            ? "No hay empleados con alertas para los filtros seleccionados."
             : "No hay empleados para los filtros seleccionados.",
         )
       ) : (

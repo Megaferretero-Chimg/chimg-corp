@@ -1,1 +1,1 @@
-export { default } from "@/modules/planner/pages/dashboard/operations/page";
+export { default, metadata } from "@/modules/planner/pages/dashboard/operations/page";

@@ -20,6 +20,12 @@ const scheduleRuleConfigSchema = new Schema(
       max: 180,
       default: 5,
     },
+    lateDepartureToleranceMinutes: {
+      type: Number,
+      min: 0,
+      max: 180,
+      default: 20,
+    },
   },
   {
     timestamps: true,

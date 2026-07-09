@@ -39,7 +39,9 @@ export default function MonthlyClosureMonthsView() {
           throw new Error(payload.error || "No se pudo cargar el resumen de cierres.");
         }
 
-        if (isMounted) setMonths(payload.months || []);
+        if (isMounted) {
+          setMonths((payload.months || []).filter((month) => month.isClosed));
+        }
       } catch (requestError) {
         if (isMounted) setError(requestError.message);
       } finally {
@@ -108,8 +110,8 @@ export default function MonthlyClosureMonthsView() {
                       <span>{month.monthKey}</span>
                     </td>
                     <td>
-                      <span className={month.isClosed ? styles.closedBadge : styles.openBadge}>
-                        {month.isClosed ? `Cerrado v${month.version}` : "Pendiente"}
+                      <span className={styles.closedBadge}>
+                        Cerrado v{month.version}
                       </span>
                       {month.closedAt ? <small>{new Date(month.closedAt).toLocaleString("es-EC")}</small> : null}
                     </td>
@@ -124,7 +126,7 @@ export default function MonthlyClosureMonthsView() {
                 ))}
                 {!months.length ? (
                   <tr>
-                    <td colSpan={7} className={styles.emptyCell}>No hay meses para mostrar.</td>
+                    <td colSpan={7} className={styles.emptyCell}>No hay resúmenes de cierre guardados.</td>
                   </tr>
                 ) : null}
               </tbody>

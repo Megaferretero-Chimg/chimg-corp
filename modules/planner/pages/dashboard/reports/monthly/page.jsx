@@ -1,20 +1,16 @@
-import ModuleShell from "@/components/shell/ModuleShell";
-import MonthlyReportsView from "@/modules/planner/components/reports/MonthlyReportsView";
-import { formatEcuadorMonthKey } from "@/lib/datetime/ecuador";
+import { redirect } from "next/navigation";
+
+import { planningModulePath } from "@/modules/planner/routes";
 
 export const metadata = {
-  title: "Reporte mensual | Control de Asistencia",
+  title: "Historial | Control de Asistencia",
 };
 
 export default async function ReportsMonthlyPage({ searchParams }) {
   const resolvedSearchParams = await searchParams;
+  const params = new URLSearchParams();
 
-  return (
-    <ModuleShell
-      title="Reporte mensual"
-      description="Resumen básico mes a mes con cierre, horas, costos y exportables principales."
-    >
-      <MonthlyReportsView initialMonth={resolvedSearchParams?.month || formatEcuadorMonthKey()} />
-    </ModuleShell>
-  );
+  if (resolvedSearchParams?.month) params.set("month", resolvedSearchParams.month);
+
+  redirect(`${planningModulePath("/history")}${params.size ? `?${params.toString()}` : ""}`);
 }

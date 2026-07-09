@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState, useTransition } from "react";
-import { Edit3, KeyRound, Plus, Search, Trash2 } from "lucide-react";
+import { Edit3, Plus, Search, Trash2 } from "lucide-react";
 
 import CatalogDrawer from "@/components/catalog/CatalogDrawer";
 import CatalogPageLoader from "@/components/catalog/CatalogPageLoader";
@@ -27,16 +27,15 @@ function mapTypeToForm(userType) {
     name: userType.name || "",
     description: userType.description || "",
     permissions: userType.permissions || [],
-    scopeType: userType.scopeType || "company",
-    landingPath: userType.landingPath || "/modules",
-    isActive: userType.isActive !== false,
+    scopeType: "company",
+    landingPath: "/modules",
+    isActive: true,
   };
 }
 
 export default function UserTypeManagement() {
   const [userTypes, setUserTypes] = useState([]);
   const [permissionCatalog, setPermissionCatalog] = useState([]);
-  const [scopeTypes, setScopeTypes] = useState([]);
   const [form, setForm] = useState(INITIAL_FORM);
   const [search, setSearch] = useState("");
   const [editingTypeId, setEditingTypeId] = useState("");
@@ -91,12 +90,11 @@ export default function UserTypeManagement() {
         const payload = await response.json();
 
         if (!response.ok) {
-          throw new Error(payload.error || "No se pudo cargar la lista de roles de acceso.");
+          throw new Error(payload.error || "No se pudo cargar la lista de perfiles de acceso.");
         }
 
         setUserTypes(payload.userTypes || []);
         setPermissionCatalog(payload.permissionCatalog || []);
-        setScopeTypes(payload.scopeTypes || []);
       } catch (requestError) {
         setNotice({ type: "error", message: requestError.message, isLeaving: false });
       } finally {
@@ -130,12 +128,11 @@ export default function UserTypeManagement() {
 
     if (!response.ok) {
       setIsLoadingTypes(false);
-      throw new Error(payload.error || "No se pudo recargar la lista de roles de acceso.");
+      throw new Error(payload.error || "No se pudo recargar la lista de perfiles de acceso.");
     }
 
     setUserTypes(payload.userTypes || []);
     setPermissionCatalog(payload.permissionCatalog || []);
-    setScopeTypes(payload.scopeTypes || []);
     setIsLoadingTypes(false);
   }
 
@@ -204,25 +201,26 @@ export default function UserTypeManagement() {
       try {
         const method = editingTypeId ? "PATCH" : "POST";
         const endpoint = editingTypeId ? `/api/company/user-types/${editingTypeId}` : "/api/company/user-types";
+        const { code: _code, ...payloadForm } = form;
         const response = await fetch(endpoint, {
           method,
           headers: {
             "Content-Type": "application/json",
           },
-          body: JSON.stringify(form),
+          body: JSON.stringify(payloadForm),
         });
         const payload = await response.json();
 
         if (!response.ok) {
-          throw new Error(payload.error || "No se pudo guardar el rol de acceso.");
+          throw new Error(payload.error || "No se pudo guardar el perfil de acceso.");
         }
 
         await refreshTypes();
         showNotice(
           "success",
           editingTypeId
-            ? "Rol de acceso actualizado correctamente."
-            : "Rol de acceso creado correctamente.",
+            ? "Perfil de acceso actualizado correctamente."
+            : "Perfil de acceso creado correctamente.",
         );
         closeDrawer();
       } catch (requestError) {
@@ -250,11 +248,11 @@ export default function UserTypeManagement() {
         const payload = await response.json();
 
         if (!response.ok) {
-          throw new Error(payload.error || "No se pudo eliminar el rol de acceso.");
+          throw new Error(payload.error || "No se pudo eliminar el perfil de acceso.");
         }
 
         await refreshTypes();
-        showNotice("success", "Rol de acceso eliminado correctamente.");
+        showNotice("success", "Perfil de acceso eliminado correctamente.");
         setTypeToDelete(null);
       } catch (requestError) {
         showNotice("error", requestError.message);
@@ -275,7 +273,7 @@ export default function UserTypeManagement() {
               <section className={`catalog-panel page-entrance page-entrance-delay-sm ${styles.tablePanel}`}>
                 <div className="catalog-toolbar">
                   <p className="catalog-count">
-                    {filteredTypes.length} rol{filteredTypes.length === 1 ? "" : "es"} de acceso
+                    {filteredTypes.length} perfil{filteredTypes.length === 1 ? "" : "es"} de acceso
                     {search.trim() ? ` de ${userTypes.length}` : ""}
                   </p>
 
@@ -285,7 +283,7 @@ export default function UserTypeManagement() {
                       type="search"
                       value={search}
                       onChange={(event) => setSearch(event.target.value)}
-                      placeholder="Buscar rol"
+                      placeholder="Buscar perfil"
                       className="catalog-search-input"
                       disabled={isLoadingTypes || isSaving}
                     />
@@ -297,8 +295,8 @@ export default function UserTypeManagement() {
                     onClick={openCreateDrawer}
                     aria-haspopup="dialog"
                     aria-expanded={isDrawerOpen}
-                    aria-label="Crear rol de acceso"
-                    title="Crear rol de acceso"
+                    aria-label="Crear perfil de acceso"
+                    title="Crear perfil de acceso"
                   >
                     <Plus size={16} />
                     Crear
@@ -313,15 +311,13 @@ export default function UserTypeManagement() {
                           <col className={styles.typeColumn} />
                           <col className={styles.descriptionColumn} />
                           <col className={styles.permissionsColumn} />
-                          <col className={styles.statusColumn} />
                           <col className={styles.actionsColumn} />
                         </colgroup>
                         <thead>
                           <tr>
-                            <th>Tipo</th>
+                            <th>Perfil</th>
                             <th>Descripción</th>
                             <th>Permisos</th>
-                            <th>Estado</th>
                             <th>Acciones</th>
                           </tr>
                         </thead>
@@ -330,10 +326,6 @@ export default function UserTypeManagement() {
                             <tr key={userType.id}>
                               <td>
                                 <div className={styles.typeIdentity}>
-                                  <div className={styles.typeCode}>
-                                    <KeyRound size={14} />
-                                    {userType.code}
-                                  </div>
                                   <strong className={styles.typeName}>{userType.name}</strong>
                                   {userType.isProtected ? (
                                     <span className={styles.protectedBadge}>Protegido</span>
@@ -352,17 +344,12 @@ export default function UserTypeManagement() {
                                 </div>
                               </td>
                               <td>
-                                <span className={`catalog-status-badge ${userType.isActive ? "is-active" : "is-inactive"}`}>
-                                  {userType.isActive ? "Activo" : "Inactivo"}
-                                </span>
-                              </td>
-                              <td>
                                 <div className="catalog-row-actions">
                                   <button
                                     type="button"
                                     onClick={() => handleEdit(userType)}
                                     className="catalog-icon-button"
-                                    title={userType.isProtected ? "Este rol de acceso no se puede editar" : "Editar rol"}
+                                    title={userType.isProtected ? "Este perfil de acceso no se puede editar" : "Editar perfil"}
                                     aria-label={`Editar ${userType.name}`}
                                     disabled={userType.isProtected}
                                   >
@@ -372,7 +359,7 @@ export default function UserTypeManagement() {
                                     type="button"
                                     onClick={() => setTypeToDelete(userType)}
                                     className="catalog-icon-button danger"
-                                    title={userType.isProtected ? "Este rol de acceso no se puede eliminar" : "Eliminar rol"}
+                                    title={userType.isProtected ? "Este perfil de acceso no se puede eliminar" : "Eliminar perfil"}
                                     aria-label={`Eliminar ${userType.name}`}
                                     disabled={userType.isProtected}
                                   >
@@ -388,7 +375,7 @@ export default function UserTypeManagement() {
                   </div>
                 ) : (
                   <div className="catalog-empty-state">
-                    No encontramos roles de acceso con ese criterio.
+                    No encontramos perfiles de acceso con ese criterio.
                   </div>
                 )}
               </section>
@@ -398,13 +385,12 @@ export default function UserTypeManagement() {
           <CatalogDrawer
             isOpen={isDrawerOpen}
             eyebrow={editingTypeId ? "Modo edición" : "Nuevo registro"}
-            title={editingTypeId ? "Editar rol de acceso" : "Formulario de rol de acceso"}
+            title={editingTypeId ? "Editar perfil de acceso" : "Formulario de perfil de acceso"}
             onClose={closeDrawer}
           >
             <UserTypeForm
               form={form}
               permissionCatalog={permissionCatalog}
-              scopeTypes={scopeTypes}
               isEditing={Boolean(editingTypeId)}
               isSaving={isSaving}
               canSubmit={canSubmit}
@@ -418,8 +404,8 @@ export default function UserTypeManagement() {
 
           <ConfirmDialog
             isOpen={Boolean(typeToDelete)}
-            title="Eliminar rol de acceso"
-            message={`¿Deseas eliminar el rol "${typeToDelete?.name || ""}"? Los usuarios existentes conservarán su etiqueta actual.`}
+            title="Eliminar perfil de acceso"
+            message={`¿Deseas eliminar el perfil "${typeToDelete?.name || ""}"? Los usuarios existentes conservarán su etiqueta actual.`}
             confirmLabel={isSaving ? "Eliminando..." : "Eliminar"}
             isPending={isSaving}
             onCancel={() => setTypeToDelete(null)}

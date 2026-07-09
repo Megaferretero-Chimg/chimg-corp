@@ -9,6 +9,7 @@ import styles from "@/modules/planner/styles/components/planning/ScheduleRulesMa
 const DEFAULT_CONFIG = {
   lateToleranceMinutes: 10,
   earlyLeaveToleranceMinutes: 5,
+  lateDepartureToleranceMinutes: 20,
 };
 
 function toNumber(value) {
@@ -19,6 +20,7 @@ function buildSignature(config) {
   return JSON.stringify({
     lateToleranceMinutes: toNumber(config.lateToleranceMinutes),
     earlyLeaveToleranceMinutes: toNumber(config.earlyLeaveToleranceMinutes),
+    lateDepartureToleranceMinutes: toNumber(config.lateDepartureToleranceMinutes),
   });
 }
 
@@ -41,6 +43,11 @@ export default function ScheduleRulesManager() {
 
     return minutes === 1 ? "1 minuto" : `${minutes} minutos`;
   }, [config.earlyLeaveToleranceMinutes]);
+  const lateDepartureStatusLabel = useMemo(() => {
+    const minutes = toNumber(config.lateDepartureToleranceMinutes);
+
+    return minutes === 1 ? "1 minuto" : `${minutes} minutos`;
+  }, [config.lateDepartureToleranceMinutes]);
 
   useEffect(() => {
     let isActive = true;
@@ -103,6 +110,7 @@ export default function ScheduleRulesManager() {
           body: JSON.stringify({
             lateToleranceMinutes: toNumber(config.lateToleranceMinutes),
             earlyLeaveToleranceMinutes: toNumber(config.earlyLeaveToleranceMinutes),
+            lateDepartureToleranceMinutes: toNumber(config.lateDepartureToleranceMinutes),
           }),
         });
         const payload = await response.json();
@@ -145,6 +153,9 @@ export default function ScheduleRulesManager() {
           <span>
             Salida anticipada <strong>{earlyLeaveStatusLabel}</strong>
           </span>
+          <span>
+            Salida tardía <strong>{lateDepartureStatusLabel}</strong>
+          </span>
         </div>
         <button className={styles.primaryButton} type="submit" disabled={!hasChanges || isPending}>
           <Save size={16} />
@@ -178,6 +189,14 @@ export default function ScheduleRulesManager() {
             max="180"
             value={config.earlyLeaveToleranceMinutes}
             onChange={(event) => updateField("earlyLeaveToleranceMinutes", event.target.value)}
+          />
+          <TextInput
+            label="Salida tardía permitida (min)"
+            type="number"
+            min="0"
+            max="180"
+            value={config.lateDepartureToleranceMinutes}
+            onChange={(event) => updateField("lateDepartureToleranceMinutes", event.target.value)}
           />
         </div>
       </section>

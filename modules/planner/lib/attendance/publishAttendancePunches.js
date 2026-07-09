@@ -1,6 +1,7 @@
 import { AttendancePunch } from "@/modules/planner/models";
 import { Employee } from "@/modules/company/models";
 import { buildPunchMinuteKey } from "@/modules/planner/lib/attendance/punchIdentity";
+import { applyAttendancePunchTimeAdjustments } from "@/modules/planner/lib/attendance/punchTimeAdjustments";
 import { formatEcuadorDateKey, getEcuadorParts, makeEcuadorDate } from "@/lib/datetime/ecuador";
 import { buildEmployeeActiveInMonthQuery, isEmployeeActiveOnDate } from "@/modules/company/submodules/people/lib/employees";
 
@@ -52,7 +53,12 @@ async function findActiveEmployee(normalizedEmployee, upload) {
 }
 
 export async function publishAttendancePunches(upload) {
-  const normalizedSnapshot = upload.normalizedSnapshot;
+  const normalizedSnapshot = applyAttendancePunchTimeAdjustments(upload.normalizedSnapshot, {
+    branchCode: upload.branchCode,
+    branchName: upload.branchName,
+  });
+
+  upload.normalizedSnapshot = normalizedSnapshot;
 
   await AttendancePunch.deleteMany({ upload: upload._id });
 

@@ -2,6 +2,7 @@
 
 import { KeyRound, Plus } from "lucide-react";
 
+import SelectInput from "@/components/ui/SelectInput";
 import styles from "@/modules/company/submodules/access/styles/components/UserForm.module.scss";
 
 export default function UserForm({
@@ -18,13 +19,15 @@ export default function UserForm({
 }) {
   return (
     <form onSubmit={onSubmit} className={`catalog-form-grid ${styles.formGrid}`}>
-      <label className="catalog-field">
-        <span className="catalog-label">Empleado vinculado</span>
-        <select
+      <div className="catalog-field">
+        <SelectInput
+          label="Empleado vinculado"
           value={form.employeeId}
           onChange={(event) => onFieldChange("employeeId", event.target.value)}
-          className="catalog-select"
           disabled={isEditing}
+          className={styles.selectField}
+          labelClassName="catalog-label"
+          controlClassName={styles.selectControl}
         >
           <option value="">Sin empleado vinculado</option>
           {employees.map((employee) => {
@@ -38,8 +41,8 @@ export default function UserForm({
               </option>
             );
           })}
-        </select>
-      </label>
+        </SelectInput>
+      </div>
 
       <label className="catalog-field">
         <span className="catalog-label">Usuario</span>
@@ -63,20 +66,22 @@ export default function UserForm({
         />
       </label>
 
-      <label className="catalog-field">
-        <span className="catalog-label">Rol de acceso</span>
-        <select
+      <div className="catalog-field">
+        <SelectInput
+          label="Rol de acceso"
           value={form.accessRole}
           onChange={(event) => onFieldChange("accessRole", event.target.value)}
-          className="catalog-select"
+          className={styles.selectField}
+          labelClassName="catalog-label"
+          controlClassName={styles.selectControl}
         >
           {userTypes.map((role) => (
             <option key={role.code} value={role.code}>
               {role.name}
             </option>
           ))}
-        </select>
-      </label>
+        </SelectInput>
+      </div>
 
       <label className="catalog-field">
         <span className="catalog-label">{isEditing ? "Nueva clave" : "Clave temporal"}</span>

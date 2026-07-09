@@ -7,6 +7,8 @@ import {
   startOfDay,
 } from "date-fns";
 
+import { DEFAULT_LATE_DEPARTURE_TOLERANCE_MINUTES } from "@/modules/planner/lib/payroll/laborConstants";
+
 const MIN_TWO_PUNCH_SPAN_MINUTES = 60;
 
 function minutesBetween(start, end) {
@@ -87,7 +89,7 @@ export default function calculateDailyAttendance({ date, punches, schedule }) {
   if (!hasValidPunchLayout) {
     dailyAttendance.notes = `Picadas incompletas (${punchCount}) para ${format(dayDate, "dd/MM/yyyy")}.`;
   } else if (punchCount === 2 && hasInsufficientTwoPunchSpan) {
-    dailyAttendance.notes = `Picadas insuficientes (${twoPunchSpanMinutes}m) para ${format(dayDate, "dd/MM/yyyy")}.`;
+    dailyAttendance.notes = `Picadas incompletas (${twoPunchSpanMinutes}m) para ${format(dayDate, "dd/MM/yyyy")}.`;
   } else if (punchCount === 2) {
     dailyAttendance.workedMinutes = minutesBetween(
       sortedPunches[0],
@@ -116,6 +118,11 @@ export default function calculateDailyAttendance({ date, punches, schedule }) {
     }
 
     if (scheduleEnd && dailyAttendance.checkOut) {
+      const lateDepartureToleranceMinutes = Math.max(
+        0,
+        Number(schedule.lateDepartureToleranceMinutes ?? DEFAULT_LATE_DEPARTURE_TOLERANCE_MINUTES) || 0,
+      );
+
       if (isBefore(dailyAttendance.checkOut, scheduleEnd)) {
         dailyAttendance.earlyLeaveMinutes = differenceInMinutes(
           scheduleEnd,
@@ -124,10 +131,12 @@ export default function calculateDailyAttendance({ date, punches, schedule }) {
       }
 
       if (isAfter(dailyAttendance.checkOut, scheduleEnd)) {
-        dailyAttendance.overtimeMinutes = differenceInMinutes(
+        const rawOvertimeMinutes = differenceInMinutes(
           dailyAttendance.checkOut,
           scheduleEnd,
         );
+        dailyAttendance.overtimeMinutes =
+          rawOvertimeMinutes > lateDepartureToleranceMinutes ? rawOvertimeMinutes : 0;
       }
     }
   }

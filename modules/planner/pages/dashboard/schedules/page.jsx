@@ -8,20 +8,18 @@ export const metadata = {
 export default async function DashboardSchedulesPage({ searchParams }) {
   const {
     month = "",
-    branchCode = "",
-    areaCode = "",
-    roleCode = "",
+    groupId = "",
     week = "",
   } = await searchParams;
 
   return (
     <ModuleShell
       title="Planificacion semanal"
-      description="Organiza horarios por sucursal, area y cargo en una sola matriz semanal para trabajar la semana completa del equipo."
+      description="Organiza horarios semanales por grupo de trabajo en una sola matriz para gestionar el equipo correcto."
     >
       <SchedulePlanner
         basePath="/schedules"
-        initialFilters={{ month, branchCode, areaCode, roleCode, week }}
+        initialFilters={{ month, groupId, week }}
       />
     </ModuleShell>
   );

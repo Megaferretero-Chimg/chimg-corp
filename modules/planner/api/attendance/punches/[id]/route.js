@@ -36,12 +36,16 @@ function serializeBefore(punch) {
     punchedAt: punch.punchedAt,
     source: punch.source || "upload",
     note: punch.note || "",
+    isIgnored: Boolean(punch.isIgnored),
+    ignoredAt: punch.ignoredAt || null,
+    ignoredBy: punch.ignoredBy || "",
+    ignoredReason: punch.ignoredReason || "",
   };
 }
 
 export async function PATCH() {
   return NextResponse.json(
-    { error: "No se permite modificar picadas. Elimina la picada y agrega una nueva con auditoría." },
+    { error: "No se permite modificar picadas. Anula la picada y conserva la evidencia con auditoría." },
     { status: 405 },
   );
 }
@@ -65,11 +69,20 @@ export async function DELETE(request, context) {
     const before = serializeBefore(punch);
     const actor = await resolveAuditActor();
 
-    await punch.deleteOne();
+    if (punch.isIgnored) {
+      return NextResponse.json({ disabled: true });
+    }
+
+    punch.isIgnored = true;
+    punch.ignoredAt = new Date();
+    punch.ignoredBy = actor;
+    punch.ignoredReason = reason;
+    punch.note = punch.note ? `${punch.note} | Anulada: ${reason}` : `Anulada: ${reason}`;
+    await punch.save();
 
     await createAuditLog({
       actor,
-      action: "attendancePunch.delete",
+      action: "attendancePunch.disable",
       entityType: "attendancePunch",
       entityId: id,
       entityLabel: before.employeeName,
@@ -81,11 +94,11 @@ export async function DELETE(request, context) {
     });
 
     return NextResponse.json({
-      deleted: true,
+      disabled: true,
     });
   } catch (error) {
     return NextResponse.json(
-      { error: error.message || "No se pudo eliminar la picada." },
+      { error: error.message || "No se pudo anular la picada." },
       { status: error.status || 400 },
     );
   }

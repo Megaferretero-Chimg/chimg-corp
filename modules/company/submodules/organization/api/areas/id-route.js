@@ -4,7 +4,6 @@ import { createAuditLog, resolveAuditActor } from "@/lib/audit";
 import { isAuthenticated } from "@/lib/auth";
 import {
   normalizeAreaPayload,
-  resolveUniqueAreaCode,
   serializeArea,
 } from "@/modules/company/submodules/organization/lib/areas";
 import { syncAreaRelations } from "@/modules/company/submodules/organization/lib/areaRelations";
@@ -30,14 +29,7 @@ export async function PATCH(request, context) {
     }
 
     const payload = normalizeAreaPayload(body);
-    const existingAreas = await Area.find({ _id: { $ne: id } }, { code: 1 }).lean();
-    const code = payload.code
-      ? resolveUniqueAreaCode(
-        payload.code,
-        existingAreas.map((area) => area.code),
-        payload.name,
-      )
-      : existingArea.code;
+    const code = existingArea.code;
 
     const area = await Area.findByIdAndUpdate(id, { ...payload, code }, {
       new: true,

@@ -4,7 +4,6 @@ import { createAuditLog, resolveAuditActor } from "@/lib/audit";
 import { isAuthenticated } from "@/lib/auth";
 import {
   normalizeBranchPayload,
-  resolveUniqueBranchCode,
   serializeBranch,
 } from "@/modules/company/submodules/organization/lib/branches";
 import connectToDatabase from "@/lib/db/mongodb";
@@ -28,12 +27,7 @@ export async function PATCH(request, context) {
     }
 
     const payload = normalizeBranchPayload(body);
-    const existingBranches = await Branch.find({ _id: { $ne: id } }, { code: 1 }).lean();
-    const code = resolveUniqueBranchCode(
-      payload.code,
-      existingBranches.map((branch) => branch.code),
-      payload.name,
-    );
+    const code = existingBranch.code;
 
     const branch = await Branch.findByIdAndUpdate(id, { ...payload, code }, {
       new: true,

@@ -8,5 +8,5 @@ export default async function ReportsPlanVsRealPage({ searchParams }) {
 
   if (resolvedSearchParams?.month) params.set("month", resolvedSearchParams.month);
 
-  redirect(`${planningModulePath("/reports/monthly")}${params.size ? `?${params.toString()}` : ""}`);
+  redirect(`${planningModulePath("/history")}${params.size ? `?${params.toString()}` : ""}`);
 }

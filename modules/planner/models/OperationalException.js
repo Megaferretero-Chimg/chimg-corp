@@ -123,6 +123,16 @@ const operationalExceptionSchema = new Schema(
       min: 0,
       default: 0,
     },
+    applicableWeekdays: {
+      type: [Number],
+      default: undefined,
+      validate: {
+        validator(days) {
+          return !Array.isArray(days) || days.every((day) => Number.isInteger(day) && day >= 0 && day <= 6);
+        },
+        message: "Los dias aplicables deben estar entre 0 y 6.",
+      },
+    },
     manualPunch: {
       type: Schema.Types.ObjectId,
       ref: "AttendancePunch",

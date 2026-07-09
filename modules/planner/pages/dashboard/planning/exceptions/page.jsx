@@ -7,21 +7,50 @@ export const metadata = {
   title: "Todos los ajustes y excepciones | Control de Asistencia",
 };
 
-export default async function PlanningExceptionsPage() {
+function firstSearchValue(value) {
+  return Array.isArray(value) ? value[0] : value;
+}
+
+function normalizeInitialDraft(searchParams = {}) {
+  const employeeId = String(firstSearchValue(searchParams.employeeId) || "").trim();
+  const dateKey = String(firstSearchValue(searchParams.dateKey) || "").trim();
+  const flowType = String(firstSearchValue(searchParams.flowType) || "").trim();
+  const scope = String(firstSearchValue(searchParams.scope) || "").trim();
+  const notes = String(firstSearchValue(searchParams.notes) || "").trim();
+  const month = String(firstSearchValue(searchParams.month) || "").trim();
+
+  if (!employeeId && !dateKey && !flowType && !scope && !notes && !month) {
+    return null;
+  }
+
+  return {
+    employeeId,
+    dateKey,
+    flowType,
+    scope,
+    notes,
+    month,
+  };
+}
+
+export default async function PlanningExceptionsPage({ searchParams }) {
   const user = await requireAuthenticatedUser();
+  const resolvedSearchParams = await searchParams;
 
   return (
     <ModuleShell
       title="Todos los ajustes y excepciones"
-      description="CRUD completo para crear, editar, resolver o anular ajustes y excepciones por empleado."
+      description=""
       moduleConfig={getPlanningModuleForUser(user)}
     >
       <ExceptionManager
-        eyebrow="Novedades"
-        title="Todos los ajustes y excepciones"
-        description="Consulta todo el historial mensual y gestiona los registros que explican permisos, trabajo externo, cambios de horario o descuentos."
+        eyebrow=""
+        title=""
+        description=""
         currentUserAccessRole={user.accessRole}
         listTitle="Todos los registros"
+        initialDraft={normalizeInitialDraft(resolvedSearchParams)}
+        compactListView
       />
     </ModuleShell>
   );

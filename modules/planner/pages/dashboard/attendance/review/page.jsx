@@ -9,7 +9,7 @@ export default function AttendanceReviewPage() {
   return (
     <ModuleShell
       title="Revisar picadas"
-      description="Consulta, agrega, edita o elimina picadas con auditoría obligatoria por cada cambio manual."
+      description="Consulta las picadas cargadas desde el biométrico y revisa registros manuales ya auditados."
     >
       <AttendancePunchReview />
     </ModuleShell>

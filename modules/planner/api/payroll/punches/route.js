@@ -22,7 +22,9 @@ import { Employee } from "@/modules/company/models";
 import { PayrollIncompleteDayDecision } from "@/modules/planner/models";
 import { PayrollLateDecision } from "@/modules/planner/models";
 import { PayrollSupplementaryDecision } from "@/modules/planner/models";
+import { ScheduleRuleConfig } from "@/modules/planner/models";
 import { WorkSchedule } from "@/modules/planner/models";
+import { DEFAULT_LATE_DEPARTURE_TOLERANCE_MINUTES } from "@/modules/planner/lib/payroll/laborConstants";
 
 function parseDateParam(value) {
   if (!value) {
@@ -134,6 +136,7 @@ export async function GET(request) {
 
     const punches = await AttendancePunch.find({
       employee: employeeId,
+      isIgnored: { $ne: true },
       punchedAt: {
         $gte: range.start,
         $lte: range.end,
@@ -156,14 +159,8 @@ export async function GET(request) {
       weekKey: { $in: weekKeys },
     }).lean();
 
-    const comparison = comparePayrollPunches({
-      start: range.start,
-      end: range.end,
-      punches,
-      schedules,
-    });
-
-    const [supplementaryDecisions, lateDecisions, incompleteDayDecisions] = await Promise.all([
+    const [scheduleRuleConfig, supplementaryDecisions, lateDecisions, incompleteDayDecisions] = await Promise.all([
+      ScheduleRuleConfig.findOne({ key: "default" }).lean(),
       PayrollSupplementaryDecision.find({
         employee: employeeId,
         date: {
@@ -186,6 +183,18 @@ export async function GET(request) {
         },
       }).lean(),
     ]);
+    const scheduleRules = {
+      lateDepartureToleranceMinutes: Number(
+        scheduleRuleConfig?.lateDepartureToleranceMinutes ?? DEFAULT_LATE_DEPARTURE_TOLERANCE_MINUTES,
+      ),
+    };
+    const comparison = comparePayrollPunches({
+      start: range.start,
+      end: range.end,
+      punches,
+      schedules,
+      scheduleRules,
+    });
 
     const supplementaryByDate = new Map(
       supplementaryDecisions.map((item) => [
@@ -241,6 +250,7 @@ export async function GET(request) {
           ...day,
           savedSupplementaryDecision: savedDecision?.decision || "",
           savedSupplementaryHours: savedDecision?.candidateHours || 0,
+          savedSupplementaryMinutes: savedDecision?.candidateMinutes || 0,
           savedLateConfirmation: savedLate?.confirmed || false,
           savedLateMinutes: savedLate?.lateMinutes || 0,
           savedIncompleteDayDecision: savedIncompleteDay?.decision || "",

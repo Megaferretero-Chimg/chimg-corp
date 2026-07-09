@@ -7,7 +7,6 @@ import styles from "@/modules/company/submodules/access/styles/components/UserTy
 export default function UserTypeForm({
   form,
   permissionCatalog,
-  scopeTypes,
   isEditing,
   isSaving,
   canSubmit,
@@ -22,7 +21,7 @@ export default function UserTypeForm({
   return (
     <form onSubmit={onSubmit} className="catalog-form-grid">
       <label className="catalog-field">
-        <span className="catalog-label">Nombre del rol</span>
+        <span className="catalog-label">Nombre del perfil</span>
         <input
           value={form.name}
           onChange={(event) => onFieldChange("name", event.target.value)}
@@ -33,73 +32,25 @@ export default function UserTypeForm({
       </label>
 
       <label className="catalog-field">
-        <span className="catalog-label">Código</span>
-        <input
-          value={form.code}
-          onChange={(event) => onFieldChange("code", event.target.value)}
-          className="catalog-input"
-          placeholder="Se genera desde el nombre"
-        />
-      </label>
-
-      <label className="catalog-field">
         <span className="catalog-label">Descripción</span>
         <textarea
           value={form.description}
           onChange={(event) => onFieldChange("description", event.target.value)}
           className="catalog-input"
-          placeholder="Uso general del rol de acceso"
+          placeholder="Ej. Puede planificar horarios, revisar novedades o consultar reportes."
           rows={4}
         />
-      </label>
-
-      <label className="catalog-field">
-        <span className="catalog-label">Alcance operativo</span>
-        <select
-          value={form.scopeType}
-          onChange={(event) => onFieldChange("scopeType", event.target.value)}
-          className="catalog-select"
-        >
-          {scopeTypes.map((scope) => (
-            <option key={scope.value} value={scope.value}>
-              {scope.label}
-            </option>
-          ))}
-        </select>
-      </label>
-
-      <label className="catalog-field">
-        <span className="catalog-label">Ruta inicial</span>
-        <input
-          value={form.landingPath}
-          onChange={(event) => onFieldChange("landingPath", event.target.value)}
-          className="catalog-input"
-          placeholder="/modules"
-        />
-      </label>
-
-      <label className="catalog-field">
-        <span className="catalog-label">Estado</span>
-        <button
-          type="button"
-          className={`catalog-switch ${form.isActive ? "is-active" : ""}`}
-          onClick={() => onFieldChange("isActive", !form.isActive)}
-          aria-pressed={form.isActive}
-        >
-          <span className="catalog-switchKnob" />
-          <span>{form.isActive ? "Activo" : "Inactivo"}</span>
-        </button>
       </label>
 
       <section className={styles.permissionMatrix}>
         <div className={styles.permissionHeader}>
           <div>
-            <span className="catalog-label">Permisos del rol</span>
-            <p>Selecciona módulos, páginas y acciones habilitadas para este perfil.</p>
+            <span className="catalog-label">Permisos del perfil</span>
+            <p>Define qué pantallas puede abrir y qué acciones puede ejecutar. El alcance sobre empleados o grupos se asigna al usuario.</p>
           </div>
           <div className={styles.permissionCounter}>
             <CheckSquare size={16} />
-            {selectedPermissions.size}
+            <span>{selectedPermissions.size} seleccionados</span>
           </div>
         </div>
 
@@ -160,7 +111,7 @@ export default function UserTypeForm({
         </button>
         <button type="submit" disabled={isSaving || !canSubmit} className="catalog-button-primary">
           <Plus size={16} />
-          {isSaving ? "Guardando..." : isEditing ? "Actualizar" : "Crear"}
+          {isSaving ? "Guardando..." : isEditing ? "Actualizar perfil" : "Crear perfil"}
         </button>
       </div>
     </form>

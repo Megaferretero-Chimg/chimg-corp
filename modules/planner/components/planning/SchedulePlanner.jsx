@@ -2,11 +2,12 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { CalendarDays, Check, ChevronDown, ChevronLeft, ChevronRight, ClipboardPaste, Download, Info, Plus, RefreshCw, RotateCcw, Save, X } from "lucide-react";
+import { CalendarDays, Check, ChevronDown, ClipboardPaste, Download, Info, Plus, RefreshCw, RotateCcw, Save, Trash2, X } from "lucide-react";
 
 import AutocompleteSelect from "@/components/ui/AutocompleteSelect";
 import FloatingModal from "@/components/ui/FloatingModal";
 import FloatingNotice from "@/components/ui/FloatingNotice";
+import SelectInput from "@/components/ui/SelectInput";
 import TextInput from "@/components/ui/TextInput";
 import { formatEcuadorMonthKey } from "@/lib/datetime/ecuador";
 import { dateKeyFromValue, employeeDismissalLabel, isEmployeeActiveOnDate, isEmployeeDismissedInMonth } from "@/modules/company/submodules/people/lib/employees";
@@ -194,7 +195,15 @@ function shiftMonthKey(monthKey, offset) {
   return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`;
 }
 
-function getPlanningOverlayMonthKeys(monthKey) {
+function getPlanningOverlayMonthKeys(monthKey, dateKeys = []) {
+  const dateMonthKeys = dateKeys
+    .map((dateKey) => String(dateKey || "").slice(0, 7))
+    .filter((key) => /^\d{4}-\d{2}$/.test(key));
+
+  if (dateMonthKeys.length) {
+    return [...new Set(dateMonthKeys)];
+  }
+
   return [...new Set([
     shiftMonthKey(monthKey, -1),
     monthKey,
@@ -216,8 +225,8 @@ function dedupeById(items) {
   return [...result.values()];
 }
 
-async function fetchPlanningOverlays(monthKey) {
-  const overlayPayloads = await Promise.all(getPlanningOverlayMonthKeys(monthKey).map(async (overlayMonthKey) => {
+async function fetchPlanningOverlays(monthKey, dateKeys = []) {
+  const overlayPayloads = await Promise.all(getPlanningOverlayMonthKeys(monthKey, dateKeys).map(async (overlayMonthKey) => {
     const [exceptionsResponse, vacationsResponse, holidaysResponse] = await Promise.all([
       fetch(`/api/planner/planning/exceptions?month=${overlayMonthKey}`),
       fetch(`/api/planner/planning/vacations?month=${overlayMonthKey}`),
@@ -286,6 +295,31 @@ function getWeekDateKeys(weekStartKey) {
   });
 }
 
+function getHistoryVersionKey(entry) {
+  const savedAt = entry?.savedAt || entry?.versionSavedAt
+    ? new Date(entry.savedAt || entry.versionSavedAt).toISOString()
+    : "sin-fecha";
+  const actor = entry?.savedByUser || entry?.versionSavedByUser || entry?.savedBy || entry?.versionSavedBy || "sistema";
+  const entryGroupId = entry?.groupId || "";
+
+  return `${entryGroupId}|${savedAt}|${actor}`;
+}
+
+function isEmployeeActiveForPlanningWeek(employee, weekDateKeys = []) {
+  const weekStartKey = weekDateKeys[0] || "";
+  const employmentStartKey = dateKeyFromValue(employee?.employmentStartDate);
+
+  if (!weekStartKey) {
+    return false;
+  }
+
+  if (employmentStartKey && employmentStartKey > weekStartKey) {
+    return false;
+  }
+
+  return weekDateKeys.some((dateKey) => isEmployeeActiveOnDate(employee, dateKey));
+}
+
 function getDateRangeKeys(startDateKey, endDateKey = startDateKey) {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(String(startDateKey || ""))) {
     return [];
@@ -324,37 +358,6 @@ function usesVariableSchedule(employee) {
     employee?.areaCode &&
     employee?.roleCode &&
     employee?.roleScheduleMode !== "fixed",
-  );
-}
-
-function employeeAreaOptions(employee) {
-  const options = new Map();
-
-  if (employee?.areaCode) {
-    options.set(employee.areaCode, employee.areaName || employee.areaCode);
-  }
-
-  (Array.isArray(employee?.roleAssignments) ? employee.roleAssignments : []).forEach((assignment) => {
-    if (assignment.areaCode) {
-      options.set(assignment.areaCode, assignment.areaName || assignment.areaCode);
-    }
-  });
-
-  return [...options.entries()].map(([code, name]) => ({ code, name }));
-}
-
-function employeeMatchesPlanningArea(employee, targetAreaCode) {
-  if (!targetAreaCode) return true;
-
-  return employeeAreaOptions(employee).some((area) => area.code === targetAreaCode);
-}
-
-function employeeMatchesPlanningRole(employee, targetRoleCode, targetAreaCode = "") {
-  if (!targetRoleCode) return true;
-  if (employee?.roleCode === targetRoleCode && employeeMatchesPlanningArea(employee, targetAreaCode)) return true;
-
-  return (Array.isArray(employee?.roleAssignments) ? employee.roleAssignments : []).some((assignment) =>
-    assignment.code === targetRoleCode && (!targetAreaCode || assignment.areaCode === targetAreaCode),
   );
 }
 
@@ -818,14 +821,26 @@ function buildPlannerUrl(filters, basePath = "/schedules") {
   const weekIndex = Number(filters.weekIndex);
 
   if (filters.monthKey) params.set("month", filters.monthKey);
-  if (filters.branchCode) params.set("branchCode", filters.branchCode);
-  if (filters.areaCode) params.set("areaCode", filters.areaCode);
-  if (filters.roleCode) params.set("roleCode", filters.roleCode);
+  if (filters.groupId) params.set("groupId", filters.groupId);
   if (Number.isInteger(weekIndex) && weekIndex > 0) params.set("week", String(weekIndex + 1));
 
   const query = params.toString();
 
   return `${planningModulePath(basePath)}${query ? `?${query}` : ""}`;
+}
+
+function buildScheduleAuditUrl({ monthKey, groupId, employeeIds, weekStartKey, entry }) {
+  const params = new URLSearchParams();
+
+  if (monthKey) params.set("month", monthKey);
+  if (groupId) params.set("groupId", groupId);
+  if (employeeIds) params.set("employeeIds", employeeIds);
+  if (weekStartKey) params.set("weekStartKey", weekStartKey);
+  if (entry?.savedAt) params.set("savedAt", new Date(entry.savedAt).toISOString());
+  if (entry?.savedByUser) params.set("savedByUser", entry.savedByUser);
+  if (entry?.savedBy) params.set("savedBy", entry.savedBy);
+
+  return `${planningModulePath("/schedules/audit")}?${params.toString()}`;
 }
 
 function parseWeekIndex(value) {
@@ -1092,10 +1107,6 @@ function isWorkShift(shiftKey) {
   return shiftKey && shiftKey !== "off";
 }
 
-function getReservedOperationalNote(shiftKey) {
-  return "";
-}
-
 function shouldShowDayNote(shiftKey, note) {
   const normalizedNote = normalizeText(note);
 
@@ -1244,12 +1255,6 @@ function applyPlanningOverlaysToDraftDays({ draftDays, employees, weekDateKeys, 
   return next;
 }
 
-function isManagementRole(role) {
-  const text = `${role?.code || ""} ${role?.name || ""}`.toUpperCase();
-
-  return text.includes("JEF");
-}
-
 function ShiftPicker({ value, options, onChange, disabled = false }) {
   const [isOpen, setIsOpen] = useState(false);
   const [searchTerm, setSearchTerm] = useState("");
@@ -1354,13 +1359,12 @@ function ShiftPicker({ value, options, onChange, disabled = false }) {
 export default function SchedulePlanner({ initialFilters = {}, basePath = "/schedules" }) {
   const router = useRouter();
   const [monthKey, setMonthKey] = useState(initialFilters.month || currentMonthKey());
+  const [groupId, setGroupId] = useState(initialFilters.groupId || "");
   const [branchCode, setBranchCode] = useState(initialFilters.branchCode || "");
-  const [areaCode, setAreaCode] = useState(initialFilters.areaCode || "");
-  const [roleCode, setRoleCode] = useState(initialFilters.roleCode || "");
   const [employees, setEmployees] = useState([]);
-  const [branches, setBranches] = useState([]);
   const [roles, setRoles] = useState([]);
   const [templates, setTemplates] = useState([]);
+  const [workGroups, setWorkGroups] = useState([]);
   const [assignments, setAssignments] = useState([]);
   const [exceptions, setExceptions] = useState([]);
   const [vacations, setVacations] = useState([]);
@@ -1475,57 +1479,27 @@ export default function SchedulePlanner({ initialFilters = {}, basePath = "/sche
     () => new Map(templates.map((template) => [template.id, template])),
     [templates],
   );
-
-  const areaOptions = useMemo(() => {
-    const options = new Map();
-
-    employees.forEach((employee) => {
-      if (!weekDateKeys.some((dateKey) => isEmployeeActiveOnDate(employee, dateKey)) || !usesVariableSchedule(employee)) return;
-      if (branchCode && employee.branchCode !== branchCode) return;
-      employeeAreaOptions(employee).forEach((area) => {
-        options.set(area.code, area.name || area.code);
-      });
-    });
-
-    return [...options.entries()].sort((left, right) => left[1].localeCompare(right[1], "es"));
-  }, [branchCode, employees, weekDateKeys]);
-
-  const roleOptions = useMemo(() => {
-    const options = new Map();
-
-    employees.forEach((employee) => {
-      if (!weekDateKeys.some((dateKey) => isEmployeeActiveOnDate(employee, dateKey)) || !usesVariableSchedule(employee)) return;
-      if (branchCode && employee.branchCode !== branchCode) return;
-      if (areaCode && !employeeMatchesPlanningArea(employee, areaCode)) return;
-
-      if (employee.roleCode && (!areaCode || employee.areaCode === areaCode)) {
-        options.set(employee.roleCode, employee.roleName || employee.roleCode);
-      }
-
-      (Array.isArray(employee.roleAssignments) ? employee.roleAssignments : []).forEach((assignment) => {
-        if (!assignment.code || (areaCode && assignment.areaCode !== areaCode)) return;
-        options.set(assignment.code, assignment.name || assignment.code);
-      });
-    });
-
-    return [...options.entries()].sort((left, right) => left[1].localeCompare(right[1], "es"));
-  }, [areaCode, branchCode, employees, weekDateKeys]);
+  const selectedWorkGroup = useMemo(
+    () => workGroups.find((group) => group.id === groupId) || null,
+    [groupId, workGroups],
+  );
+  const selectedWorkGroupEmployeeIds = useMemo(
+    () => new Set((selectedWorkGroup?.members || []).map((member) => member.employeeId).filter(Boolean)),
+    [selectedWorkGroup],
+  );
+  const workGroupOptions = useMemo(() =>
+    workGroups
+      .filter((group) => group.isActive !== false)
+      .sort((left, right) => String(left.name || "").localeCompare(String(right.name || ""), "es")),
+  [workGroups]);
 
   const rolesByCode = useMemo(
     () => new Map(roles.map((role) => [role.code, role])),
     [roles],
   );
 
-  const selectedBranch = useMemo(
-    () => branches.find((branch) => branch.code === branchCode) || null,
-    [branchCode, branches],
-  );
-  const selectedAreaName = useMemo(
-    () => areaOptions.find(([code]) => code === areaCode)?.[1] || "",
-    [areaCode, areaOptions],
-  );
-  const hasPlanningScope = Boolean(branchCode && areaCode);
-  const assignmentsScopeKey = `${monthKey}|${branchCode}|${areaCode}|${roleCode}`;
+  const hasPlanningScope = Boolean(selectedWorkGroup);
+  const assignmentsScopeKey = `${monthKey}|${groupId}|${selectedWeek?.weekStartKey || ""}`;
   const hasLoadedCurrentAssignments = loadedAssignmentsKey === assignmentsScopeKey;
   const shouldShowScopedLoading = hasPlanningScope && (isAssignmentsLoading || !hasLoadedCurrentAssignments);
 
@@ -1534,13 +1508,20 @@ export default function SchedulePlanner({ initialFilters = {}, basePath = "/sche
       employees.filter((employee) => {
         if (!hasPlanningScope) return false;
         if (!usesVariableSchedule(employee)) return false;
-        if (!weekDateKeys.some((dateKey) => isEmployeeActiveOnDate(employee, dateKey))) return false;
-        if (employee.branchCode !== branchCode) return false;
-        if (!employeeMatchesPlanningArea(employee, areaCode)) return false;
-        return employeeMatchesPlanningRole(employee, roleCode, areaCode);
+        if (!isEmployeeActiveForPlanningWeek(employee, weekDateKeys)) return false;
+        return selectedWorkGroupEmployeeIds.has(employee.id);
       }),
-    [areaCode, branchCode, employees, hasPlanningScope, roleCode, weekDateKeys],
+    [employees, hasPlanningScope, selectedWorkGroupEmployeeIds, weekDateKeys],
   );
+  const selectedWorkGroupEmployeeIdsParam = useMemo(() => {
+    if (!selectedWorkGroup) return "";
+
+    return filteredEmployees
+      .map((employee) => employee.id)
+      .filter(Boolean)
+      .sort()
+      .join(",");
+  }, [filteredEmployees, selectedWorkGroup]);
 
   const coverageRolesForEmployee = useCallback((employee) => {
     const assignments = Array.isArray(employee?.roleAssignments) ? employee.roleAssignments : [];
@@ -1551,7 +1532,7 @@ export default function SchedulePlanner({ initialFilters = {}, basePath = "/sche
       const role = rolesByCode.get(code);
       const optionAreaCode = role?.areaCode || assignment.areaCode || "";
 
-      if (!code || (areaCode && optionAreaCode !== areaCode)) return;
+      if (!code) return;
 
       optionsByCode.set(code, {
         code,
@@ -1569,18 +1550,16 @@ export default function SchedulePlanner({ initialFilters = {}, basePath = "/sche
       const role = rolesByCode.get(employee.roleCode);
       const optionAreaCode = role?.areaCode || employee.areaCode || "";
 
-      if (!areaCode || optionAreaCode === areaCode) {
-        optionsByCode.set(employee.roleCode, {
-          code: employee.roleCode,
-          name: role?.name || employee.roleName || employee.roleCode,
-          areaCode: optionAreaCode,
-          areaName: role?.areaName || employee.areaName || "",
-        });
-      }
+      optionsByCode.set(employee.roleCode, {
+        code: employee.roleCode,
+        name: role?.name || employee.roleName || employee.roleCode,
+        areaCode: optionAreaCode,
+        areaName: role?.areaName || employee.areaName || "",
+      });
     }
 
     return [...optionsByCode.values()].sort((left, right) => left.name.localeCompare(right.name, "es"));
-  }, [areaCode, rolesByCode]);
+  }, [rolesByCode]);
 
   const getShiftOptionsForEmployee = useCallback((employee) => {
     const optionsByKey = new Map([
@@ -1640,12 +1619,6 @@ export default function SchedulePlanner({ initialFilters = {}, basePath = "/sche
     }),
   [draftDays, filteredEmployees, overlaysByEmployeeDate, weekDateKeys]);
 
-  const getWorkShiftKeysForEmployee = useCallback((employee) => {
-    return getShiftOptionsForEmployee(employee)
-      .filter((shift) => shift.dayType === "workday")
-      .map((shift) => shift.key);
-  }, [getShiftOptionsForEmployee]);
-
   const weekRoleForEmployee = useCallback((employee, weekStartKey) => {
     const roleCodeForWeek = draftWeekRoles[employee.id]?.[weekStartKey] || employee.roleCode || "";
     const employeeRoles = coverageRolesForEmployee(employee);
@@ -1681,18 +1654,11 @@ export default function SchedulePlanner({ initialFilters = {}, basePath = "/sche
     };
   }, [coverageRolesForEmployee, draftDayRoles, weekRoleForEmployee]);
 
-  const managementRoleForEmployee = useCallback((employee) =>
-    coverageRolesForEmployee(employee).find(isManagementRole) || null,
-  [coverageRolesForEmployee]);
-
-  const isPrimaryManagementEmployee = useCallback((employee) =>
-    isManagementRole({ code: employee?.roleCode, name: employee?.roleName }),
-  []);
-
   const activeEmployeesByDay = useMemo(() =>
     new Map(weekDateKeys.map((dateKey) => [
       dateKey,
       filteredEmployees.filter((employee) =>
+        isEmployeeActiveOnDate(employee, dateKey) &&
         isWorkShift(effectiveDraftDays[employee.id]?.[dateKey] || "off"),
       ).length,
     ])),
@@ -1776,18 +1742,98 @@ export default function SchedulePlanner({ initialFilters = {}, basePath = "/sche
     const approvedAssignments = employeeAssignments.filter((assignment) =>
       (assignment.planningApprovals || []).some((approval) => approval.weekStartKey === weekStartKey),
     );
-    const latestHistory = employeeAssignments
-      .flatMap((assignment) => assignment.scheduleHistory || [])
-      .filter((entry) => entry.weekStartKey === weekStartKey)
-      .sort((left, right) => new Date(right.savedAt || 0).getTime() - new Date(left.savedAt || 0).getTime())[0] || null;
+    const historyVersionsByKey = new Map();
+    const approvalCountsByVersionKey = new Map();
+
+    employeeAssignments.forEach((assignment) => {
+      const approvedVersionKeysForEmployee = new Set();
+      const historyVersionKeysForEmployee = new Set();
+
+      (assignment.planningApprovals || [])
+        .filter((approval) => approval.weekStartKey === weekStartKey)
+        .forEach((approval) => {
+          const approvalVersionKey = approval.versionSavedAt
+            ? getHistoryVersionKey({
+              savedAt: approval.versionSavedAt,
+              savedBy: approval.versionSavedBy,
+              savedByUser: approval.versionSavedByUser,
+            })
+            : "legacy";
+
+          approvedVersionKeysForEmployee.add(approvalVersionKey);
+        });
+
+      approvedVersionKeysForEmployee.forEach((approvalVersionKey) => {
+        approvalCountsByVersionKey.set(approvalVersionKey, (approvalCountsByVersionKey.get(approvalVersionKey) || 0) + 1);
+      });
+
+      (assignment.scheduleHistory || [])
+        .filter((entry) => entry.weekStartKey === weekStartKey)
+        .forEach((entry) => {
+          const versionKey = getHistoryVersionKey(entry);
+
+          if (historyVersionKeysForEmployee.has(versionKey)) {
+            const current = historyVersionsByKey.get(versionKey);
+
+            if (current) {
+              current.daysCount += Number(entry.daysCount) || 0;
+            }
+            return;
+          }
+
+          historyVersionKeysForEmployee.add(versionKey);
+
+          const current = historyVersionsByKey.get(versionKey);
+
+          if (current) {
+            current.employeeCount += 1;
+            current.daysCount += Number(entry.daysCount) || 0;
+            return;
+          }
+
+          historyVersionsByKey.set(versionKey, {
+            ...entry,
+            versionKey,
+            employeeCount: 1,
+            daysCount: Number(entry.daysCount) || 0,
+            approvedCount: 0,
+            isApproved: false,
+          });
+        });
+    });
+
+    const historyEntries = [...historyVersionsByKey.values()]
+      .map((entry) => {
+        const approvedCount = approvalCountsByVersionKey.get(entry.versionKey) || 0;
+
+        return {
+          ...entry,
+          approvedCount,
+          isApproved: Boolean(filteredEmployees.length) && approvedCount === filteredEmployees.length,
+        };
+      })
+      .sort((left, right) => new Date(right.savedAt || 0).getTime() - new Date(left.savedAt || 0).getTime());
+    const latestHistory = historyEntries[0] || null;
+    const approvedVersion = historyEntries.find((entry) => entry.isApproved) || null;
 
     return {
-      isApproved: Boolean(filteredEmployees.length) && approvedAssignments.length === filteredEmployees.length,
+      isApproved: Boolean(approvedVersion) || (Boolean(filteredEmployees.length) && approvedAssignments.length === filteredEmployees.length && !historyEntries.length),
       approvedCount: approvedAssignments.length,
       totalCount: filteredEmployees.length,
+      historyEntries,
       latestHistory,
+      approvedVersion,
     };
   }, [assignments, filteredEmployees, selectedWeek]);
+
+  const hasWeekSchedules = useMemo(() =>
+    filteredEmployees.some((employee) =>
+      weekDateKeys.some((dateKey) =>
+        isEmployeeActiveOnDate(employee, dateKey) &&
+        isWorkShift(effectiveDraftDays[employee.id]?.[dateKey] || "off"),
+      ),
+    ),
+  [effectiveDraftDays, filteredEmployees, weekDateKeys]);
 
   const clearNoticeTimers = useCallback(() => {
     if (noticeExitTimeoutRef.current) window.clearTimeout(noticeExitTimeoutRef.current);
@@ -1819,13 +1865,11 @@ export default function SchedulePlanner({ initialFilters = {}, basePath = "/sche
   const replaceFilters = useCallback((nextFilters) => {
     router.replace(buildPlannerUrl({
       monthKey,
-      branchCode,
-      areaCode,
-      roleCode,
+      groupId,
       weekIndex: resolvedSelectedWeekIndex,
       ...nextFilters,
     }, basePath), { scroll: false });
-  }, [areaCode, basePath, branchCode, monthKey, resolvedSelectedWeekIndex, roleCode, router]);
+  }, [basePath, groupId, monthKey, resolvedSelectedWeekIndex, router]);
 
   const selectWeekIndex = useCallback((nextWeekIndex) => {
     const boundedWeekIndex = Math.min(Math.max(Number(nextWeekIndex) || 0, 0), maxWeekIndex);
@@ -1847,29 +1891,29 @@ export default function SchedulePlanner({ initialFilters = {}, basePath = "/sche
 
     async function loadData() {
       try {
-        const [employeesResponse, branchesResponse, rolesResponse, templatesResponse] = await Promise.all([
+        const [employeesResponse, rolesResponse, templatesResponse, workGroupsResponse] = await Promise.all([
           fetch("/api/company/employees?scope=planning"),
-          fetch("/api/company/branches"),
           fetch("/api/company/roles"),
           fetch("/api/planner/planning/base-schedules"),
+          fetch("/api/planner/planning/work-groups"),
         ]);
-        const [employeesPayload, branchesPayload, rolesPayload, templatesPayload] = await Promise.all([
+        const [employeesPayload, rolesPayload, templatesPayload, workGroupsPayload] = await Promise.all([
           employeesResponse.json(),
-          branchesResponse.json(),
           rolesResponse.json(),
           templatesResponse.json(),
+          workGroupsResponse.json(),
         ]);
 
         if (!employeesResponse.ok) throw new Error(employeesPayload.error || "No se pudieron cargar los empleados.");
-        if (!branchesResponse.ok) throw new Error(branchesPayload.error || "No se pudieron cargar las sucursales.");
         if (!rolesResponse.ok) throw new Error(rolesPayload.error || "No se pudieron cargar los roles.");
         if (!templatesResponse.ok) throw new Error(templatesPayload.error || "No se pudieron cargar las plantillas.");
+        if (!workGroupsResponse.ok) throw new Error(workGroupsPayload.error || "No se pudieron cargar los grupos de trabajo.");
 
         if (!isCancelled) {
           setEmployees(employeesPayload.employees || []);
-          setBranches(branchesPayload.branches || []);
           setRoles(rolesPayload.roles || []);
           setTemplates(templatesPayload.templates || []);
+          setWorkGroups(workGroupsPayload.groups || []);
         }
       } catch (error) {
         if (!isCancelled) showNotice("error", error.message);
@@ -1889,27 +1933,52 @@ export default function SchedulePlanner({ initialFilters = {}, basePath = "/sche
   useEffect(() => {
     if (isLoading) return;
 
-    if (!branchCode) {
-      return;
-    }
-
     let isCancelled = false;
 
     async function loadAssignments() {
+      if (!hasPlanningScope) {
+        await Promise.resolve();
+
+        if (!isCancelled) {
+          setIsAssignmentsLoading(false);
+          setLoadedAssignmentsKey("");
+        }
+        return;
+      }
+
       const requestDraftRevision = draftRevisionRef.current;
 
       try {
         setIsAssignmentsLoading(true);
         const params = new URLSearchParams({ month: monthKey });
+        const queryBranchCode = selectedWorkGroup?.branchCode || branchCode;
 
-        if (branchCode) params.set("branchCode", branchCode);
-        if (areaCode) params.set("areaCode", areaCode);
-        if (roleCode) params.set("roleCode", roleCode);
+        if (queryBranchCode) params.set("branchCode", queryBranchCode);
+        if (selectedWorkGroup) {
+          if (!selectedWorkGroupEmployeeIdsParam) {
+            const nextAssignments = [];
 
-        const [response, overlaysPayload] = await Promise.all([
-          fetch(`/api/planner/planning/schedule-assignments?${params.toString()}`),
-          fetchPlanningOverlays(monthKey),
-        ]);
+            setAssignments(nextAssignments);
+            setExceptions([]);
+            setVacations([]);
+            setHolidays([]);
+            setDraftDays(buildDraftDays(nextAssignments, baseShiftOptions));
+            setDraftWeekRoles(buildDraftWeekRoles(nextAssignments, employees, weekOptions));
+            setDraftDayRoles(buildDraftDayRoles(nextAssignments));
+            setDraftDayNotes(buildDraftDayNotes(nextAssignments));
+            setClearScheduleTargets([]);
+            setHasDraftChanges(false);
+            setLoadedAssignmentsKey(assignmentsScopeKey);
+            setIsAssignmentsLoading(false);
+            return;
+          }
+
+          params.set("employeeIds", selectedWorkGroupEmployeeIdsParam);
+          params.set("groupId", selectedWorkGroup.id);
+        }
+        if (selectedWeek?.weekStartKey) params.set("weekStartKey", selectedWeek.weekStartKey);
+
+        const response = await fetch(`/api/planner/planning/schedule-assignments?${params.toString()}`);
         const payload = await response.json();
 
         if (!response.ok) throw new Error(payload.error || "No se pudieron cargar las asignaciones.");
@@ -1918,9 +1987,9 @@ export default function SchedulePlanner({ initialFilters = {}, basePath = "/sche
           const nextAssignments = payload.assignments || [];
 
           setAssignments(nextAssignments);
-          setExceptions(overlaysPayload.exceptions || []);
-          setVacations(overlaysPayload.vacations || []);
-          setHolidays(overlaysPayload.holidays || []);
+          setExceptions([]);
+          setVacations([]);
+          setHolidays([]);
           setDraftDays(buildDraftDays(nextAssignments, baseShiftOptions));
           setDraftWeekRoles(buildDraftWeekRoles(nextAssignments, employees, weekOptions));
           setDraftDayRoles(buildDraftDayRoles(nextAssignments));
@@ -1928,6 +1997,19 @@ export default function SchedulePlanner({ initialFilters = {}, basePath = "/sche
           setClearScheduleTargets([]);
           setHasDraftChanges(false);
           setLoadedAssignmentsKey(assignmentsScopeKey);
+          setIsAssignmentsLoading(false);
+
+          fetchPlanningOverlays(monthKey, weekDateKeys)
+            .then((overlaysPayload) => {
+              if (isCancelled || requestDraftRevision !== draftRevisionRef.current) return;
+
+              setExceptions(overlaysPayload.exceptions || []);
+              setVacations(overlaysPayload.vacations || []);
+              setHolidays(overlaysPayload.holidays || []);
+            })
+            .catch((overlayError) => {
+              if (!isCancelled) showNotice("error", overlayError.message || "No se pudieron cargar las novedades.");
+            });
         }
       } catch (error) {
         if (!isCancelled) showNotice("error", error.message);
@@ -1941,7 +2023,7 @@ export default function SchedulePlanner({ initialFilters = {}, basePath = "/sche
     return () => {
       isCancelled = true;
     };
-  }, [areaCode, assignmentsScopeKey, baseShiftOptions, branchCode, employees, isLoading, monthKey, roleCode, showNotice, weekOptions]);
+  }, [assignmentsScopeKey, baseShiftOptions, branchCode, employees, hasPlanningScope, isLoading, monthKey, selectedWeek, selectedWorkGroup, selectedWorkGroupEmployeeIdsParam, showNotice, weekDateKeys, weekOptions]);
 
   function setCell(employeeId, dateKey, shiftKey) {
     markDraftEdited();
@@ -1954,14 +2036,9 @@ export default function SchedulePlanner({ initialFilters = {}, basePath = "/sche
       },
     }));
     setDraftDayNotes((current) => {
-      const nextNote = getReservedOperationalNote(shiftKey);
       const employeeNotes = { ...(current[employeeId] || {}) };
 
-      if (nextNote) {
-        employeeNotes[dateKey] = nextNote;
-      } else {
-        delete employeeNotes[dateKey];
-      }
+      delete employeeNotes[dateKey];
 
       return {
         ...current,
@@ -2041,6 +2118,11 @@ export default function SchedulePlanner({ initialFilters = {}, basePath = "/sche
     setIsQuickTemplateModalOpen(true);
   }
 
+  function openBlankQuickTemplateModal() {
+    setQuickTemplateForm(DEFAULT_QUICK_TEMPLATE_FORM);
+    setIsQuickTemplateModalOpen(true);
+  }
+
   function closeQuickTemplateModal() {
     if (isQuickTemplateSaving) return;
 
@@ -2067,7 +2149,7 @@ export default function SchedulePlanner({ initialFilters = {}, basePath = "/sche
   }
 
   async function saveQuickTemplate() {
-    if (isQuickTemplateSaving || !adjustmentTarget) return;
+    if (isQuickTemplateSaving) return;
 
     const row = buildQuickTemplateRow(quickTemplateForm);
     const startMinutes = parseTimeToMinutes(row.startTime);
@@ -2098,7 +2180,9 @@ export default function SchedulePlanner({ initialFilters = {}, basePath = "/sche
       if (!response.ok) throw new Error(payload.error || "No se pudo crear la plantilla.");
 
       const savedTemplate = payload.template;
-      const templateDay = resolveTemplateScheduleForDate(savedTemplate, adjustmentTarget.dateKey);
+      const templateDay = adjustmentTarget
+        ? resolveTemplateScheduleForDate(savedTemplate, adjustmentTarget.dateKey)
+        : null;
 
       setTemplates((current) => {
         const exists = current.some((template) => template.id === savedTemplate.id);
@@ -2108,18 +2192,21 @@ export default function SchedulePlanner({ initialFilters = {}, basePath = "/sche
 
         return nextTemplates.sort((left, right) => String(left.name || "").localeCompare(String(right.name || ""), "es"));
       });
-      setAdjustmentForm((current) => ({
-        ...current,
-        scheduleTemplateId: savedTemplate.id,
-        ...(templateDay ? {
-          plannedStartTime: templateDay.startTime || "",
-          plannedLunchStartTime: templateDay.lunchStartTime || "",
-          plannedLunchEndTime: templateDay.lunchEndTime || "",
-          plannedEndTime: templateDay.endTime || "",
-        } : {}),
-      }));
+      if (adjustmentTarget) {
+        setAdjustmentForm((current) => ({
+          ...current,
+          scheduleTemplateId: savedTemplate.id,
+          ...(templateDay ? {
+            plannedStartTime: templateDay.startTime || "",
+            plannedLunchStartTime: templateDay.lunchStartTime || "",
+            plannedLunchEndTime: templateDay.lunchEndTime || "",
+            plannedEndTime: templateDay.endTime || "",
+          } : {}),
+        }));
+      }
       setIsQuickTemplateModalOpen(false);
       setQuickTemplateForm(DEFAULT_QUICK_TEMPLATE_FORM);
+      showNotice("success", "Plantilla creada correctamente.");
     } catch (error) {
       showNotice("error", error.message);
     } finally {
@@ -2177,6 +2264,7 @@ export default function SchedulePlanner({ initialFilters = {}, basePath = "/sche
           body: JSON.stringify({
             action: "operational-save",
             monthKey,
+            groupId,
             weekStartKey: selectedWeek?.weekStartKey || "",
             employeeDays,
             clearScheduleTargets,
@@ -2245,7 +2333,7 @@ export default function SchedulePlanner({ initialFilters = {}, basePath = "/sche
         throw new Error(payload.error || "No se pudo crear el ajuste.");
       }
 
-      const overlaysPayload = await fetchPlanningOverlays(monthKey);
+      const overlaysPayload = await fetchPlanningOverlays(monthKey, weekDateKeys);
 
       setExceptions(overlaysPayload.exceptions || []);
       setVacations(overlaysPayload.vacations || []);
@@ -2255,140 +2343,6 @@ export default function SchedulePlanner({ initialFilters = {}, basePath = "/sche
     } catch (error) {
       showNotice("error", error.message || "No se pudo crear el ajuste.");
     }
-  }
-
-  function goToPreviousWeek() {
-    if (resolvedSelectedWeekIndex > 0) {
-      selectWeekIndex(resolvedSelectedWeekIndex - 1);
-      return;
-    }
-
-    const previousMonthKey = shiftMonthKey(monthKey, -1);
-    const previousWeekIndex = Math.max(0, getMonthWeekOptions(previousMonthKey).length - 1);
-
-    setMonthKey(previousMonthKey);
-    setSelectedWeekIndex(previousWeekIndex);
-    replaceFilters({ monthKey: previousMonthKey, weekIndex: previousWeekIndex });
-  }
-
-  function goToNextWeek() {
-    if (resolvedSelectedWeekIndex < weekOptions.length - 1) {
-      selectWeekIndex(resolvedSelectedWeekIndex + 1);
-      return;
-    }
-
-    const nextMonthKey = shiftMonthKey(monthKey, 1);
-
-    setMonthKey(nextMonthKey);
-    setSelectedWeekIndex(0);
-    replaceFilters({ monthKey: nextMonthKey, weekIndex: 0 });
-  }
-
-  function generateWeek() {
-    markDraftEdited();
-
-    const sundayKey = weekDateKeys.find((dateKey) => getDayOfWeek(dateKey) === 0);
-    const managementBackup = sundayKey
-      ? filteredEmployees.find((employee) => !isPrimaryManagementEmployee(employee) && managementRoleForEmployee(employee))
-      : null;
-    const managementBackupRole = managementBackup ? managementRoleForEmployee(managementBackup) : null;
-
-    setDraftDays((current) => {
-      const next = { ...current };
-      const employeesByRole = filteredEmployees.reduce((map, employee) => {
-        const key = employee.roleCode || "SIN_ROL";
-
-        if (!map.has(key)) map.set(key, []);
-        map.get(key).push(employee);
-        return map;
-      }, new Map());
-
-      for (const [, roleEmployees] of employeesByRole.entries()) {
-        roleEmployees.forEach((employee, employeeIndex) => {
-          const employeeDays = { ...(next[employee.id] || {}) };
-          const workShiftKeys = getWorkShiftKeysForEmployee(employee);
-
-          if (isPrimaryManagementEmployee(employee)) {
-            weekDateKeys.forEach((dateKey, dayIndex) => {
-              if (!isEmployeeActiveOnDate(employee, dateKey)) {
-                employeeDays[dateKey] = "off";
-                return;
-              }
-
-              if (getDayOfWeek(dateKey) === 0) {
-                employeeDays[dateKey] = "off";
-                return;
-              }
-
-              employeeDays[dateKey] = workShiftKeys[(employeeIndex + dayIndex) % workShiftKeys.length] || "off";
-            });
-
-            next[employee.id] = employeeDays;
-            return;
-          }
-
-          const firstRestIndex = roleEmployees.length > 1 ? (employeeIndex * 2) % Math.max(weekDateKeys.length, 1) : 5;
-          const restIndexes = new Set([
-            firstRestIndex,
-            (firstRestIndex + 1) % Math.max(weekDateKeys.length, 1),
-          ]);
-
-          weekDateKeys.forEach((dateKey, dayIndex) => {
-            if (!isEmployeeActiveOnDate(employee, dateKey)) {
-              employeeDays[dateKey] = "off";
-              return;
-            }
-
-            if (restIndexes.has(dayIndex)) {
-              employeeDays[dateKey] = "off";
-              return;
-            }
-
-            employeeDays[dateKey] = workShiftKeys[(employeeIndex + dayIndex) % workShiftKeys.length] || "off";
-          });
-
-          next[employee.id] = employeeDays;
-        });
-      }
-
-      if (managementBackup && sundayKey) {
-        const employeeDays = { ...(next[managementBackup.id] || {}) };
-        const workShiftKeys = getWorkShiftKeysForEmployee(managementBackup);
-
-        employeeDays[sundayKey] = isEmployeeActiveOnDate(managementBackup, sundayKey) ? workShiftKeys[0] || "off" : "off";
-        next[managementBackup.id] = employeeDays;
-      }
-
-      return next;
-    });
-    setDraftDayRoles((current) => {
-      if (!sundayKey) {
-        return current;
-      }
-
-      const next = { ...current };
-
-      filteredEmployees.forEach((employee) => {
-        const employeeRoles = { ...(next[employee.id] || {}) };
-        const role = coverageRolesForEmployee(employee).find((option) => option.code === employeeRoles[sundayKey]);
-
-        if (role && isManagementRole(role)) {
-          delete employeeRoles[sundayKey];
-        }
-
-        next[employee.id] = employeeRoles;
-      });
-
-      if (managementBackup && managementBackupRole) {
-        next[managementBackup.id] = {
-          ...(next[managementBackup.id] || {}),
-          [sundayKey]: managementBackupRole.code,
-        };
-      }
-
-      return next;
-    });
-    showNotice("success", "Semana generada. Revisa cobertura y descansos antes de guardar.");
   }
 
   function resetWeek() {
@@ -2621,6 +2575,7 @@ export default function SchedulePlanner({ initialFilters = {}, basePath = "/sche
           body: JSON.stringify({
             action: "operational-save",
             monthKey,
+            groupId,
             weekStartKey: selectedWeek?.weekStartKey || "",
             employeeDays,
             clearScheduleTargets,
@@ -2631,19 +2586,25 @@ export default function SchedulePlanner({ initialFilters = {}, basePath = "/sche
         if (!response.ok) throw new Error(payload.error || "No se pudo guardar la programacion.");
 
         const nextAssignments = payload.assignments || [];
-        const overlaysPayload = await fetchPlanningOverlays(monthKey);
 
         setAssignments(nextAssignments);
-        setExceptions(overlaysPayload.exceptions || []);
-        setVacations(overlaysPayload.vacations || []);
-        setHolidays(overlaysPayload.holidays || []);
         setDraftDays(buildDraftDays(nextAssignments, shiftOptions));
         setDraftWeekRoles(buildDraftWeekRoles(nextAssignments, employees, weekOptions));
         setDraftDayRoles(buildDraftDayRoles(nextAssignments));
         setDraftDayNotes(buildDraftDayNotes(nextAssignments));
         setClearScheduleTargets([]);
         setHasDraftChanges(false);
-        showNotice("success", payload.message);
+        showNotice("success", payload.message || "Programacion guardada correctamente.");
+
+        fetchPlanningOverlays(monthKey, weekDateKeys)
+          .then((overlaysPayload) => {
+            setExceptions(overlaysPayload.exceptions || []);
+            setVacations(overlaysPayload.vacations || []);
+            setHolidays(overlaysPayload.holidays || []);
+          })
+          .catch((overlayError) => {
+            showNotice("error", overlayError.message || "No se pudieron refrescar las novedades.");
+          });
       } catch (error) {
         showNotice("error", error.message);
       }
@@ -2656,6 +2617,13 @@ export default function SchedulePlanner({ initialFilters = {}, basePath = "/sche
       return;
     }
 
+    if (!weeklyApprovalState.latestHistory) {
+      showNotice("error", "Guarda una version antes de aprobar la planificacion.");
+      return;
+    }
+
+    const versionToApprove = weeklyApprovalState.latestHistory;
+
     startTransition(async () => {
       try {
         const response = await fetch("/api/planner/planning/schedule-assignments", {
@@ -2664,8 +2632,12 @@ export default function SchedulePlanner({ initialFilters = {}, basePath = "/sche
           body: JSON.stringify({
             action: "approve-week",
             monthKey,
+            groupId,
             weekStartKey: selectedWeek?.weekStartKey || "",
             employeeIds: filteredEmployees.map((employee) => employee.id),
+            versionSavedAt: versionToApprove.savedAt,
+            versionSavedBy: versionToApprove.savedBy || "",
+            versionSavedByUser: versionToApprove.savedByUser || "",
           }),
         });
         const payload = await response.json();
@@ -2676,6 +2648,41 @@ export default function SchedulePlanner({ initialFilters = {}, basePath = "/sche
         showNotice("success", payload.message || "Planificacion aprobada.");
       } catch (error) {
         showNotice("error", error.message || "No se pudo aprobar la planificacion.");
+      }
+    });
+  }
+
+  function deleteHistoryVersion(entry) {
+    if (!entry?.savedAt || !selectedWeek?.weekStartKey) return;
+
+    const shouldDelete = window.confirm("Eliminar esta version del historial? El horario vigente no se modifica.");
+
+    if (!shouldDelete) return;
+
+    startTransition(async () => {
+      try {
+        const response = await fetch("/api/planner/planning/schedule-assignments/history", {
+          method: "DELETE",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            monthKey,
+            groupId,
+            branchCode,
+            employeeIds: filteredEmployees.map((employee) => employee.id),
+            weekStartKey: selectedWeek.weekStartKey,
+            savedAt: new Date(entry.savedAt).toISOString(),
+            savedBy: entry.savedBy || "",
+            savedByUser: entry.savedByUser || "",
+          }),
+        });
+        const payload = await response.json();
+
+        if (!response.ok) throw new Error(payload.error || "No se pudo eliminar la version.");
+
+        setAssignments(payload.assignments || []);
+        showNotice("success", payload.message || "Version eliminada del historial.");
+      } catch (error) {
+        showNotice("error", error.message || "No se pudo eliminar la version.");
       }
     });
   }
@@ -2692,10 +2699,10 @@ export default function SchedulePlanner({ initialFilters = {}, basePath = "/sche
       setIsExportingSchedule(true);
 
       const params = new URLSearchParams({ month: monthKey });
+      const exportBranchCode = selectedWorkGroup?.branchCode || branchCode;
 
-      if (branchCode) params.set("branchCode", branchCode);
-      if (areaCode) params.set("areaCode", areaCode);
-      if (roleCode) params.set("roleCode", roleCode);
+      if (exportBranchCode) params.set("branchCode", exportBranchCode);
+      params.set("employeeIds", filteredEmployees.map((employee) => employee.id).join(","));
 
       const response = await fetch(`/api/planner/planning/schedule-assignments/export?${params.toString()}`);
 
@@ -2707,7 +2714,9 @@ export default function SchedulePlanner({ initialFilters = {}, basePath = "/sche
       const blob = await response.blob();
       const url = URL.createObjectURL(blob);
       const link = document.createElement("a");
-      const scopeSuffix = [branchCode, areaCode, roleCode].filter(Boolean).join("-").toLowerCase();
+      const scopeSuffix = selectedWorkGroup
+        ? selectedWorkGroup.name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "")
+        : "grupo";
 
       link.href = url;
       link.download = `horarios-semanales-${monthKey}${scopeSuffix ? `-${scopeSuffix}` : ""}.xlsx`;
@@ -2728,9 +2737,7 @@ export default function SchedulePlanner({ initialFilters = {}, basePath = "/sche
 
     const params = new URLSearchParams({ month: monthKey });
 
-    if (branchCode) params.set("branchCode", branchCode);
-    if (areaCode) params.set("areaCode", areaCode);
-    if (roleCode) params.set("roleCode", roleCode);
+    if (groupId) params.set("groupId", groupId);
 
     router.push(`${planningModulePath(`/planning/monthly/${employeeId}`)}?${params.toString()}`);
   }
@@ -2739,7 +2746,7 @@ export default function SchedulePlanner({ initialFilters = {}, basePath = "/sche
     return (
       <section className={`${styles.loadingScene} page-entrance`} aria-live="polite">
         <div className={styles.loadingFilters}>
-          {Array.from({ length: 5 }, (_, index) => <span key={index} className={styles.skeletonField} />)}
+          {Array.from({ length: 2 }, (_, index) => <span key={index} className={styles.skeletonField} />)}
         </div>
         <div className={styles.loadingWeekToolbar}>
           <div className={styles.loadingWeekTabs}>
@@ -3000,13 +3007,6 @@ export default function SchedulePlanner({ initialFilters = {}, basePath = "/sche
       </FloatingModal>
 
       <section className={`${styles.toolbar} page-entrance page-entrance-delay-sm`}>
-        <div>
-          <p className={styles.eyebrow}>Programacion de horarios</p>
-          <h2>Planificacion semanal por equipo</h2>
-          <p className={styles.toolbarHint}>
-            Selecciona sucursal y area para cargar la parrilla. Cada celda guarda una copia del horario elegido; los ajustes se crean aparte y no borran el horario planificado.
-          </p>
-        </div>
         <label>
           <span>Mes</span>
           <input
@@ -3020,72 +3020,45 @@ export default function SchedulePlanner({ initialFilters = {}, basePath = "/sche
             }}
           />
         </label>
-        <label>
-          <span>Sucursal</span>
-          <select
-            value={branchCode}
-            disabled={isPending}
-            onChange={(event) => {
-              const nextBranchCode = event.target.value;
+        <SelectInput
+          label="Grupo"
+          className={styles.groupSelect}
+          labelClassName={styles.toolbarSelectLabel}
+          controlClassName={styles.toolbarSelectControl}
+          selectClassName={styles.toolbarSelectButton}
+          value={groupId}
+          disabled={isPending}
+          onChange={(event) => {
+            const nextGroupId = event.target.value;
+            const nextGroup = workGroups.find((group) => group.id === nextGroupId);
 
-              setBranchCode(nextBranchCode);
-              setAreaCode("");
-              setRoleCode("");
-              replaceFilters({ branchCode: nextBranchCode, areaCode: "", roleCode: "" });
-            }}
-          >
-            <option value="">Seleccionar</option>
-            {branches.map((branch) => (
-              <option key={branch.code} value={branch.code}>{branch.name}</option>
-            ))}
-          </select>
-        </label>
-        <label>
-          <span>Area</span>
-          <select
-            value={areaCode}
-            disabled={!branchCode || isPending}
-            onChange={(event) => {
-              setAreaCode(event.target.value);
-              setRoleCode("");
-              replaceFilters({ areaCode: event.target.value, roleCode: "" });
-            }}
-          >
-            <option value="">{branchCode ? "Seleccionar" : "Elige una sucursal"}</option>
-            {areaOptions.map(([code, name]) => (
-              <option key={code} value={code}>{name}</option>
-            ))}
-          </select>
-        </label>
-        <label>
-          <span>Rol</span>
-          <select
-            value={roleCode}
-            disabled={!hasPlanningScope || isPending}
-            onChange={(event) => {
-              setRoleCode(event.target.value);
-              replaceFilters({ roleCode: event.target.value });
-            }}
-          >
-            <option value="">Todos</option>
-            {roleOptions.map(([code, name]) => (
-              <option key={code} value={code}>{name}</option>
-            ))}
-          </select>
-        </label>
+            setGroupId(nextGroupId);
+            setBranchCode(nextGroup?.branchCode || "");
+            replaceFilters({
+              groupId: nextGroupId,
+            });
+          }}
+        >
+          <option value="">Seleccionar grupo</option>
+          {workGroupOptions.map((group) => (
+            <option key={group.id} value={group.id}>
+              {group.name} ({group.memberCount})
+            </option>
+          ))}
+        </SelectInput>
       </section>
 
       {!hasPlanningScope ? (
         <section className={`${styles.scopeEmptyState} page-entrance page-entrance-delay-md`}>
-          <strong>Selecciona una sucursal y un area para empezar</strong>
+          <strong>Selecciona un grupo para empezar</strong>
           <span>
-            Elige el alcance para cargar empleados disponibles, plantillas y novedades de la semana. Si una persona no tiene horario, deja la celda en descanso.
+            Los grupos definen quien planifica a quien y mantienen el historial semanal separado por equipo.
           </span>
         </section>
       ) : null}
 
       {shouldShowScopedLoading ? (
-        <section className={`${styles.loadingScene} ${styles.scopedLoadingScene} page-entrance`} aria-live="polite">
+        <section className={`${styles.loadingScene} page-entrance`} aria-live="polite">
           <div className={styles.loadingWeekToolbar}>
             <div className={styles.loadingWeekTabs}>
               {Array.from({ length: 4 }, (_, index) => <span key={index} className={styles.skeletonWeekTab} />)}
@@ -3124,14 +3097,6 @@ export default function SchedulePlanner({ initialFilters = {}, basePath = "/sche
 
       {hasPlanningScope && !shouldShowScopedLoading ? (
         <>
-      <section className={`${styles.scopeHeader} page-entrance page-entrance-delay-sm`}>
-        <div>
-          <span>Alcance actual</span>
-          <strong>{selectedBranch?.name || branchCode} · {selectedAreaName || areaCode}</strong>
-        </div>
-        <small>{roleCode ? `Rol filtrado: ${roleOptions.find(([code]) => code === roleCode)?.[1] || roleCode}` : "Todos los roles del area"}</small>
-      </section>
-
       <section className={`${styles.weekToolbar} page-entrance page-entrance-delay-sm`}>
         <div className={styles.weekTabs}>
           {weekOptions.map((week, index) => (
@@ -3146,58 +3111,10 @@ export default function SchedulePlanner({ initialFilters = {}, basePath = "/sche
             </button>
           ))}
         </div>
-        <div className={styles.weekActions}>
-          <span className={`${styles.approvalPill} ${weeklyApprovalState.isApproved ? styles.approvalPillApproved : ""}`}>
-            {weeklyApprovalState.isApproved
-              ? "Aprobada"
-              : `Pendiente ${weeklyApprovalState.approvedCount}/${weeklyApprovalState.totalCount}`}
-          </span>
-          <button
-            type="button"
-            className={styles.resetAction}
-            onClick={resetWeek}
-            disabled={isPending || !filteredEmployees.length}
-          >
-            <RotateCcw size={16} />
-            Limpiar horarios
-          </button>
-          <button
-            type="button"
-            onClick={downloadScheduleExcel}
-            disabled={isExportingSchedule || isPending || !filteredEmployees.length}
-          >
-            {isExportingSchedule ? <RefreshCw size={16} /> : <Download size={16} />}
-            {isExportingSchedule ? "Descargando..." : "Excel semanal"}
-          </button>
-          <button type="button" onClick={saveWeek} disabled={isPending || !hasDraftChanges || !filteredEmployees.length}>
-            {isPending ? <RefreshCw size={16} /> : <Save size={16} />}
-            {isPending ? "Guardando..." : "Guardar semana"}
-          </button>
-          <button
-            type="button"
-            onClick={approveWeek}
-            disabled={isPending || hasDraftChanges || !filteredEmployees.length || weeklyApprovalState.isApproved}
-            title={hasDraftChanges ? "Guarda los cambios antes de aprobar" : "Aprobar planificacion semanal"}
-          >
-            {isPending ? <RefreshCw size={16} /> : <Check size={16} />}
-            Aprobar
-          </button>
-        </div>
       </section>
-      {weeklyApprovalState.latestHistory ? (
-        <p className={styles.weekHistoryHint}>
-          Ultimo guardado: {new Date(weeklyApprovalState.latestHistory.savedAt).toLocaleString("es-EC")} · {weeklyApprovalState.latestHistory.savedBy || "Sistema"}
-        </p>
-      ) : null}
 
       <section className={`${styles.importPanel} page-entrance page-entrance-delay-md`}>
-        <div className={styles.importHeader}>
-          <div>
-            <span className={styles.eyebrow}>Pegado desde Excel</span>
-            <strong>Cargar horarios de la semana visible</strong>
-            <small>Solo se aceptan horarios que existan como plantilla. Las novedades se crean desde el boton + de cada celda.</small>
-          </div>
-          <div className={styles.importActions}>
+        <div className={styles.importActions}>
             {hasClipboardSchedule ? (
               <>
                 <button
@@ -3219,7 +3136,31 @@ export default function SchedulePlanner({ initialFilters = {}, basePath = "/sche
                 Pegar tabla
               </button>
             )}
-          </div>
+          <button
+            type="button"
+            className={styles.resetAction}
+            onClick={resetWeek}
+            disabled={isPending || !filteredEmployees.length || !hasWeekSchedules}
+          >
+            <RotateCcw size={16} />
+            Limpiar horarios
+          </button>
+          <button
+            type="button"
+            onClick={downloadScheduleExcel}
+            disabled={isExportingSchedule || isPending || !filteredEmployees.length}
+          >
+            {isExportingSchedule ? <RefreshCw size={16} /> : <Download size={16} />}
+            {isExportingSchedule ? "Descargando..." : "Exportar"}
+          </button>
+          <button
+            type="button"
+            onClick={openBlankQuickTemplateModal}
+            disabled={isQuickTemplateSaving}
+          >
+            <Plus size={16} />
+            Crear plantilla
+          </button>
         </div>
         {hasClipboardSchedule ? (
           <div className={styles.importStats} aria-live="polite">
@@ -3243,7 +3184,7 @@ export default function SchedulePlanner({ initialFilters = {}, basePath = "/sche
         </article>
         <button
           type="button"
-          className={`${styles.summaryInfoCard} ${summary.extraCostAmount ? styles.summaryInfoCardActive : ""}`}
+          className={summary.extraCostAmount ? styles.summaryInfoCardActive : ""}
           onClick={() => setIsCostModalOpen(true)}
           disabled={!variableCostDetails.length}
         >
@@ -3258,24 +3199,6 @@ export default function SchedulePlanner({ initialFilters = {}, basePath = "/sche
           <div className={styles.tableHeaderTitle}>
             <CalendarDays size={18} />
             <span>{filteredEmployees.length} empleados para programar</span>
-          </div>
-          <div className={styles.tableWeekNav} aria-label="Navegacion semanal de la tabla">
-            <button
-              type="button"
-              onClick={goToPreviousWeek}
-              aria-label={resolvedSelectedWeekIndex <= 0 ? "Mes anterior" : "Semana anterior"}
-              title={resolvedSelectedWeekIndex <= 0 ? "Mes anterior" : "Semana anterior"}
-            >
-              <ChevronLeft size={16} />
-            </button>
-            <button
-              type="button"
-              onClick={goToNextWeek}
-              aria-label={resolvedSelectedWeekIndex >= weekOptions.length - 1 ? "Mes siguiente" : "Semana siguiente"}
-              title={resolvedSelectedWeekIndex >= weekOptions.length - 1 ? "Mes siguiente" : "Semana siguiente"}
-            >
-              <ChevronRight size={16} />
-            </button>
           </div>
         </div>
         <div className={styles.tableWrap}>
@@ -3308,6 +3231,7 @@ export default function SchedulePlanner({ initialFilters = {}, basePath = "/sche
             <tbody>
               {filteredEmployees.map((employee) => {
                 const workedCount = weekDateKeys.filter((dateKey) =>
+                  isEmployeeActiveOnDate(employee, dateKey) &&
                   isWorkShift(effectiveDraftDays[employee.id]?.[dateKey] || "off"),
                 ).length;
                 const weekRole = weekRoleForEmployee(employee, selectedWeek.weekStartKey);
@@ -3326,7 +3250,7 @@ export default function SchedulePlanner({ initialFilters = {}, basePath = "/sche
                     <td data-label="Empleado">
                       <strong>{employee.fullName}</strong>
                       <small className={styles.employeeMeta}>
-                        {employee.branchName || employee.branchCode || "Sin sucursal"} / {weekRole.name || employee.roleName || "Sin cargo"}
+                        {weekRole.name || employee.roleName || "Sin cargo"}
                       </small>
                     </td>
                     {weekDateKeys.map((dateKey) => {
@@ -3475,6 +3399,84 @@ export default function SchedulePlanner({ initialFilters = {}, basePath = "/sche
           </table>
         </div>
       </section>
+
+      <section className={`${styles.bottomActions} page-entrance page-entrance-delay-md`}>
+        <button type="button" onClick={saveWeek} disabled={isPending || !hasDraftChanges || !filteredEmployees.length}>
+          {isPending ? <RefreshCw size={16} /> : <Save size={16} />}
+          {isPending ? "Guardando..." : "Guardar"}
+        </button>
+        <button
+          type="button"
+          onClick={approveWeek}
+          disabled={isPending || hasDraftChanges || !filteredEmployees.length || !weeklyApprovalState.latestHistory || weeklyApprovalState.latestHistory.isApproved}
+          title={hasDraftChanges ? "Guarda los cambios antes de aprobar" : "Aprobar planificacion semanal"}
+        >
+          {isPending ? <RefreshCw size={16} /> : <Check size={16} />}
+          Aprobar
+        </button>
+      </section>
+
+      {weeklyApprovalState.historyEntries.length ? (
+        <section className={`${styles.versionHistory} page-entrance page-entrance-delay-md`}>
+          <div className={styles.versionHistoryHeader}>
+            <span>Historial de versiones</span>
+            <strong>{weeklyApprovalState.historyEntries.length} guardado{weeklyApprovalState.historyEntries.length === 1 ? "" : "s"}</strong>
+          </div>
+          <div className={styles.versionList}>
+            {weeklyApprovalState.historyEntries.slice(0, 8).map((entry, index) => (
+              <article
+                key={entry.versionKey || `${entry.savedAt || "sin-fecha"}-${entry.savedBy || "sistema"}-${index}`}
+                className={styles.versionClickable}
+                tabIndex={0}
+                role="button"
+                onClick={() => router.push(buildScheduleAuditUrl({
+                  monthKey,
+                  groupId,
+                  employeeIds: selectedWorkGroupEmployeeIdsParam,
+                  weekStartKey: selectedWeek?.weekStartKey || "",
+                  entry,
+                }))}
+                onKeyDown={(event) => {
+                  if (event.key !== "Enter" && event.key !== " ") return;
+                  event.preventDefault();
+                  router.push(buildScheduleAuditUrl({
+                    monthKey,
+                    groupId,
+                    employeeIds: selectedWorkGroupEmployeeIdsParam,
+                    weekStartKey: selectedWeek?.weekStartKey || "",
+                    entry,
+                  }));
+                }}
+              >
+                <div>
+                  <strong>Version {weeklyApprovalState.historyEntries.length - index}</strong>
+                  <span>
+                    {new Date(entry.savedAt || 0).toLocaleString("es-EC")} · {entry.savedBy || "Sistema"} · {entry.employeeCount} empleado{entry.employeeCount === 1 ? "" : "s"}
+                  </span>
+                  {entry.isApproved ? (
+                    <em className={styles.approvedVersionBadge}>Version aprobada</em>
+                  ) : null}
+                </div>
+                <div className={styles.versionActions}>
+                  <button
+                    type="button"
+                    className={styles.dangerVersionAction}
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      deleteHistoryVersion(entry);
+                    }}
+                    disabled={isPending}
+                    title="Eliminar version"
+                    aria-label="Eliminar version"
+                  >
+                    <Trash2 size={15} />
+                  </button>
+                </div>
+              </article>
+            ))}
+          </div>
+        </section>
+      ) : null}
         </>
       ) : null}
     </div>

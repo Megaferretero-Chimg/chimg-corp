@@ -58,7 +58,7 @@ export default function EmployeeDetailModal({ employee, onClose, onEdit, onDelet
     ["Numero de contacto", employee?.phone],
     ["Direccion", employee?.address],
   ];
-  const workDetails = [
+  const baseWorkDetails = [
     ["Relacion", EMPLOYMENT_RELATION_LABELS[employee?.employmentRelation] || "Nomina"],
     ["Sucursal", employee?.branchName || employee?.branch],
     ["Cargo principal", employee?.roleName],
@@ -67,9 +67,11 @@ export default function EmployeeDetailModal({ employee, onClose, onEdit, onDelet
     ["Area", employee?.areaName],
     ["Sueldo", formatMoney(employee?.salary)],
     ["Biometrico", employee?.biometricCode],
-    ["Fecha de salida", employee?.terminationDate],
-    ["Fecha de nacimiento", employee?.birthDate],
+    ["Fecha de ingreso", employee?.employmentStartDate],
   ];
+  const workDetails = employee?.isActive === false
+    ? [...baseWorkDetails, ["Fecha de salida", employee?.terminationDate], ["Fecha de nacimiento", employee?.birthDate]]
+    : [...baseWorkDetails, ["Fecha de nacimiento", employee?.birthDate]];
 
   return (
     <CatalogDrawer

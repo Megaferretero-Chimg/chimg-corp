@@ -37,36 +37,14 @@
   flex-wrap: wrap;
 }
 
-.searchField {
-  min-width: min(100%, 19rem);
-  min-height: 2.45rem;
-  display: inline-flex;
-  align-items: center;
-  gap: 0.55rem;
-  border: 1px solid rgba(16, 33, 62, 0.12);
-  border-radius: 999px;
-  background: white;
-  color: #7183a0;
-  padding: 0 0.85rem;
+.employeeFilter {
+  width: min(100%, 22rem);
+  position: relative;
+  z-index: 20;
 }
 
-.searchField:focus-within {
-  border-color: rgba(0, 95, 178, 0.32);
-  box-shadow: 0 0 0 3px rgba(0, 95, 178, 0.08);
-}
-
-.searchField input {
-  width: 100%;
-  border: 0;
-  outline: 0;
-  background: transparent;
-  color: #10213e;
-  font: inherit;
-  font-size: var(--font-size-sm);
-}
-
-.searchField input::placeholder {
-  color: #8a98ad;
+.employeeFilter > label {
+  gap: 0.28rem;
 }
 
 .filterNotice {
@@ -331,7 +309,7 @@
 
 .table {
   width: 100%;
-  min-width: 900px;
+  min-width: 560px;
   border-collapse: collapse;
   table-layout: fixed;
 }
@@ -356,6 +334,11 @@
   font-size: var(--font-size-base);
 }
 
+.optionsColumn {
+  text-align: right;
+  width: 8.5rem;
+}
+
 .clickableRow {
   cursor: pointer;
   transition: background 0.16s ease;
@@ -373,7 +356,8 @@
 }
 
 .pendingPill,
-.resolvedPill {
+.resolvedPill,
+.rejectedPill {
   display: inline-flex;
   align-items: center;
   width: fit-content;
@@ -393,8 +377,14 @@
   color: #166534;
 }
 
+.rejectedPill {
+  background: #fee2e2;
+  color: #991b1b;
+}
+
 .rowActions {
   justify-content: flex-end;
+  width: 100%;
 }
 
 .paginationBar {
@@ -518,90 +508,6 @@
   gap: 0.8rem;
 }
 
-.optionGrid {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 0.65rem;
-}
-
-.flowFieldset {
-  display: grid;
-  gap: 0.65rem;
-  min-width: 0;
-  border: 0;
-  margin: 0;
-  padding: 0;
-}
-
-.flowFieldset legend {
-  color: #1c315d;
-  font-size: var(--font-size-base);
-  font-weight: 700;
-  padding: 0;
-}
-
-.flowGrid {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 0.65rem;
-}
-
-.flowOption {
-  min-height: 6.1rem;
-  display: grid;
-  align-content: start;
-  gap: 0.35rem;
-  border: 1px solid rgba(16, 33, 62, 0.1);
-  border-radius: 8px;
-  background: #fbfdff;
-  color: #10213e;
-  cursor: pointer;
-  font: inherit;
-  padding: 0.85rem;
-  text-align: left;
-  transition: border-color 0.16s ease, background 0.16s ease, box-shadow 0.16s ease;
-}
-
-.flowOption strong {
-  font-size: var(--font-size-sm);
-  font-weight: 900;
-}
-
-.flowOption span {
-  color: #7183a0;
-  font-size: var(--font-size-sm);
-  font-weight: 500;
-  line-height: 1.35;
-}
-
-.flowOption:hover,
-.flowOption[data-active="true"] {
-  border-color: rgba(0, 95, 178, 0.34);
-  background: #eef5ff;
-  box-shadow: 0 8px 22px rgba(0, 95, 178, 0.08);
-}
-
-.flowSummary {
-  display: grid;
-  gap: 0.28rem;
-  border: 1px solid rgba(0, 95, 178, 0.12);
-  border-radius: 8px;
-  background: #f8fbff;
-  padding: 0.75rem 0.85rem;
-}
-
-.flowSummary strong {
-  color: #17428c;
-  font-size: var(--font-size-sm);
-  font-weight: 900;
-}
-
-.flowSummary span {
-  color: #40516e;
-  font-size: var(--font-size-sm);
-  line-height: 1.45;
-}
-
 .checkField {
   display: flex;
   gap: 0.55rem;
@@ -635,6 +541,32 @@
   font-weight: 800;
 }
 
+.weekdayPicker {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 0.45rem;
+}
+
+.weekdayButton,
+.weekdayButtonActive {
+  min-width: 0;
+  border: 1px solid rgba(16, 33, 62, 0.12);
+  border-radius: 8px;
+  background: white;
+  color: #40516e;
+  padding: 0.62rem 0.35rem;
+  font: inherit;
+  font-size: var(--font-size-sm);
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.weekdayButtonActive {
+  border-color: rgba(37, 99, 235, 0.38);
+  background: #eef5ff;
+  color: #1d4ed8;
+}
+
 .presetActions {
   display: flex;
   flex-wrap: wrap;
@@ -659,6 +591,12 @@
   background: #eef5ff;
 }
 
+.presetActions button[data-active="true"] {
+  border-color: rgba(37, 99, 235, 0.38);
+  background: #eef5ff;
+  color: #1d4ed8;
+}
+
 .employeeSnapshot {
   border: 1px solid rgba(16, 33, 62, 0.08);
   border-radius: 8px;
@@ -681,10 +619,86 @@
   font-size: var(--font-size-sm);
 }
 
+.reviewStack {
+  display: grid;
+  gap: 1rem;
+}
+
+.reviewHeader {
+  display: grid;
+  gap: 0.35rem;
+  border: 1px solid rgba(16, 33, 62, 0.08);
+  border-radius: 8px;
+  background: #f8fbff;
+  padding: 0.9rem;
+}
+
+.reviewHeader strong {
+  color: #10213e;
+  font-size: var(--font-size-title-xs);
+}
+
+.reviewHeader small {
+  color: #7183a0;
+  font-size: var(--font-size-sm);
+  font-weight: 700;
+}
+
+.reviewGrid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.75rem;
+  margin: 0;
+}
+
+.reviewGrid div {
+  min-width: 0;
+}
+
+.reviewGrid dt,
+.reviewNotes span {
+  color: #7183a0;
+  font-size: var(--font-size-micro);
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.reviewGrid dd {
+  margin: 0.2rem 0 0;
+  color: #10213e;
+  font-size: var(--font-size-sm);
+  font-weight: 800;
+  overflow-wrap: anywhere;
+}
+
+.reviewNotes {
+  display: grid;
+  gap: 0.35rem;
+}
+
+.reviewNotes p {
+  margin: 0;
+  border: 1px solid rgba(16, 33, 62, 0.08);
+  border-radius: 8px;
+  background: white;
+  color: #10213e;
+  line-height: 1.5;
+  padding: 0.8rem;
+}
+
+.reviewActions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.65rem;
+}
+
 @media (max-width: 820px) {
-  .twoColumnGrid,
-  .optionGrid,
-  .flowGrid {
+  .twoColumnGrid {
+    grid-template-columns: 1fr;
+  }
+
+  .reviewGrid {
     grid-template-columns: 1fr;
   }
 

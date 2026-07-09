@@ -30,6 +30,8 @@
 }
 
 .filterControl {
+  position: relative;
+  z-index: 1;
   min-width: 0;
   min-height: 2.55rem;
   display: inline-flex;
@@ -45,23 +47,45 @@
     flex: 0 0 auto;
   }
 
-  select {
-    width: 100%;
-    min-width: 0;
-    max-width: 100%;
-    border: 0;
-    outline: 0;
-    background: transparent;
-    color: #1f3457;
-    font: inherit;
-    font-size: var(--font-size-sm);
-    font-weight: 600;
-  }
-
   &:focus-within {
+    z-index: 1200;
     border-color: rgba(31, 111, 255, 0.5);
     box-shadow: 0 0 0 3px rgba(31, 111, 255, 0.12);
   }
+}
+
+.filterSelectField {
+  position: static;
+  flex: 1 1 auto;
+  min-width: 0;
+  gap: 0;
+  font-size: var(--font-size-sm);
+  font-weight: 600;
+}
+
+.filterSelectControl {
+  position: static;
+  min-height: 2.35rem;
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+
+  &:focus-within {
+    border-color: transparent;
+    box-shadow: none;
+  }
+}
+
+.filterSelectButton {
+  min-height: 2.35rem;
+  padding: 0;
+  color: #1f3457;
+}
+
+.filterSelectMenu {
+  left: 0;
+  right: 0;
+  width: 100%;
 }
 
 .table {

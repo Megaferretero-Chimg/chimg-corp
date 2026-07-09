@@ -18,6 +18,10 @@ export default function ModuleShell({ title, description, actions = null, childr
     return pathname === href || pathname.startsWith(`${href}/`);
   }
 
+  function isItemActive(href) {
+    return pathname === href;
+  }
+
   const [isMobileNavOpen, setIsMobileNavOpen] = useState(false);
   const [openSection, setOpenSection] = useState(() => {
     const sectionWithActiveChild = navigation.find((section) =>
@@ -170,7 +174,7 @@ export default function ModuleShell({ title, description, actions = null, childr
                   <div className={`${styles.navSectionBody} ${!hasChildren ? styles.navSectionBodyHidden : ""}`}>
                     <div className={styles.navSectionItems}>
                       {section.items.map((item) => {
-                        const active = isPathActive(item.href);
+                        const active = isItemActive(item.href);
 
                         return (
                           <div key={item.href} className={styles.navItemWrap}>
@@ -202,7 +206,7 @@ export default function ModuleShell({ title, description, actions = null, childr
           <div>
             <p className={styles.eyebrow}>Dashboard</p>
             <h1 className={styles.title}>{title}</h1>
-            <p className={styles.description}>{description}</p>
+            {description ? <p className={styles.description}>{description}</p> : null}
           </div>
           {actions ? <div className={styles.headerActions}>{actions}</div> : null}
         </header>

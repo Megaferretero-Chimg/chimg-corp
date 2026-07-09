@@ -203,12 +203,13 @@ export default function AreaManagement() {
       try {
         const method = editingAreaId ? "PATCH" : "POST";
         const endpoint = editingAreaId ? `/api/company/areas/${editingAreaId}` : "/api/company/areas";
+        const { code: _code, ...payloadForm } = form;
         const response = await fetch(endpoint, {
           method,
           headers: {
             "Content-Type": "application/json",
           },
-          body: JSON.stringify(form),
+          body: JSON.stringify(payloadForm),
         });
         const payload = await response.json();
 

@@ -183,30 +183,13 @@
 
 .header {
   display: grid;
-  gap: 0.8rem;
-}
-
-.eyebrow {
-  margin: 0;
-  font-size: var(--font-size-xs);
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.3em;
-  color: var(--primary);
+  gap: 0.55rem;
 }
 
 .title {
   margin: 0;
-  font-size: var(--font-size-title-lg);
-  line-height: 1.08;
-}
-
-.description {
-  margin: 0;
-  color: var(--text-muted);
-  line-height: 1.65;
-  font-size: var(--font-size-base);
-  max-width: 58rem;
+  font-size: var(--font-size-title-md);
+  line-height: 1.15;
 }
 
 .field {
@@ -217,7 +200,7 @@
 
 .fieldGrid {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(12rem, 0.42fr);
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 0.85rem;
   align-items: end;
 }
@@ -228,7 +211,6 @@
   font-weight: 700;
 }
 
-.select,
 .input {
   width: 100%;
   min-height: 2.8rem;
@@ -243,6 +225,18 @@
     color: var(--text-muted);
     background: #f8fafc;
   }
+}
+
+.selectControl {
+  min-height: 2.8rem;
+  border-color: var(--border);
+  border-radius: 0.7rem;
+}
+
+.selectButton {
+  min-height: calc(2.8rem - 2px);
+  padding: 0 0.85rem;
+  font: inherit;
 }
 
 .input {
@@ -517,7 +511,7 @@
 }
 
 .historyTitle {
-  margin: 0.35rem 0 0;
+  margin: 0;
   font-size: var(--font-size-title-sm);
   color: #10213e;
 }

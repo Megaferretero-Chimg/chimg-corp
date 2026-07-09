@@ -198,6 +198,25 @@ function formatWorkedHoursLabel(workedMinutes) {
   return `${fullHours}h`;
 }
 
+function formatMinutesLabel(minutes) {
+  if (!Number.isFinite(minutes) || minutes <= 0) {
+    return "--";
+  }
+
+  const hours = Math.floor(minutes / 60);
+  const remainingMinutes = minutes % 60;
+
+  if (!hours) {
+    return `${remainingMinutes}m`;
+  }
+
+  if (!remainingMinutes) {
+    return `${hours}h`;
+  }
+
+  return `${hours}h ${remainingMinutes}m`;
+}
+
 function resolveDisplayedWorkedMinutes(day, incompleteDayDecision) {
   if (day.needsManualDayReview) {
     if (incompleteDayDecision === "valid_day") {
@@ -1124,9 +1143,10 @@ export default function PayrollPunchesView() {
                                   ))}
                               </select>
                               <span className={styles.overtimeHint}>
-                                {formatExtraWorkedLabel(day.extraWorkedMinutes || day.overtimeCandidateMinutes)} fuera de base
+                                {formatMinutesLabel(day.overtimeCandidateMinutes)} requiere revisión
+                                {day.lateDepartureToleranceMinutes ? ` · ${day.lateDepartureToleranceMinutes}m de tolerancia` : ""}
                                 {" · "}
-                                {day.overtimeCandidateHours}h potencial
+                                salida excedida {formatMinutesLabel(day.rawOvertimeCandidateMinutes)}
                               </span>
                             </div>
                           ) : (

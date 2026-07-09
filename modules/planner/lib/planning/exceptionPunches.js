@@ -5,16 +5,14 @@ import { formatEcuadorDateTime } from "@/lib/datetime/ecuador";
 import { AttendancePunch } from "@/modules/planner/models";
 import { OperationalException } from "@/modules/planner/models";
 
-export const OUTSIDE_WORK_PUNCH_TYPE = "outside_work_punch";
-
 function buildManualPunchReason(exception) {
   const detail = exception.notes ? ` Motivo: ${exception.notes}` : "";
 
-  return `Picada manual por excepcion de trabajo externo.${detail}`.trim();
+  return `Picada manual por excepcion de ejecucion.${detail}`.trim();
 }
 
 function buildManualPunchDateTime(exception) {
-  if (exception.type !== OUTSIDE_WORK_PUNCH_TYPE) {
+  if (exception.effect !== "manual_punch" && exception.attendanceMode !== "add_manual_punch") {
     return null;
   }
 
@@ -65,7 +63,7 @@ export async function syncExceptionManualPunch(exception) {
       await OperationalException.findByIdAndUpdate(exception._id, {
         $set: {
           manualPunch: null,
-          ...(exception.type !== OUTSIDE_WORK_PUNCH_TYPE ? { manualPunchTime: "" } : {}),
+          ...(exception.effect !== "manual_punch" ? { manualPunchTime: "" } : {}),
         },
       });
     }

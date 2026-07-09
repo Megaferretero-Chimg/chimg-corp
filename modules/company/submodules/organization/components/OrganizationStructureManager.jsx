@@ -12,8 +12,6 @@ import {
   Minimize2,
   Pencil,
   Plus,
-  RefreshCw,
-  Search,
   Signpost,
   Trash2,
   Unlink,
@@ -262,7 +260,6 @@ export default function OrganizationStructureManager() {
   const [isLoadingEmployees, setIsLoadingEmployees] = useState(false);
   const [canManage, setCanManage] = useState(false);
   const [form, setForm] = useState(INITIAL_FORM);
-  const [search, setSearch] = useState("");
   const [editingNodeId, setEditingNodeId] = useState("");
   const [draggingNodeId, setDraggingNodeId] = useState("");
   const [canvasScale, setCanvasScale] = useState(INITIAL_CANVAS_SCALE);
@@ -527,22 +524,6 @@ export default function OrganizationStructureManager() {
       })
       .filter(Boolean);
   }, [canvasNodeMap, canvasNodes]);
-
-  const filteredNodes = useMemo(() => {
-    const normalizedSearch = search.trim().toLowerCase();
-
-    if (!normalizedSearch) {
-      return flatNodes;
-    }
-
-    return flatNodes.filter((node) =>
-      [node.code, node.title, node.subtitle, node.areaName, node.roleName, node.responsibleEmployeeName, node.parentTitle]
-        .filter(Boolean)
-        .join(" ")
-        .toLowerCase()
-        .includes(normalizedSearch),
-    );
-  }, [flatNodes, search]);
 
   const parentOptions = useMemo(() => {
     return nodes.filter((node) => node.id !== editingNodeId);
@@ -1142,10 +1123,11 @@ export default function OrganizationStructureManager() {
         const endpoint = editingNodeId
           ? `/api/company/organization-structure/${editingNodeId}`
           : "/api/company/organization-structure";
+        const { code: _code, ...payloadForm } = form;
         const response = await fetch(endpoint, {
           method,
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(form),
+          body: JSON.stringify(payloadForm),
         });
         const payload = await response.json();
 
@@ -1319,22 +1301,6 @@ export default function OrganizationStructureManager() {
               <h2>Estructura funcional</h2>
             </div>
 
-            <label className="catalog-search">
-              <Search size={16} />
-              <input
-                type="search"
-                value={search}
-                onChange={(event) => setSearch(event.target.value)}
-                placeholder="Buscar nodo"
-                className="catalog-search-input"
-              />
-            </label>
-
-            <button type="button" className="catalog-button-ghost" onClick={refreshStructure} disabled={isSaving}>
-              <RefreshCw size={16} />
-              Actualizar
-            </button>
-
             <button type="button" className="catalog-button-primary" onClick={() => openCreateDrawer()} disabled={!canManage}>
               <Plus size={16} />
               Agregar
@@ -1354,11 +1320,11 @@ export default function OrganizationStructureManager() {
                   <Link2 size={18} />
                   <strong>Conexiones</strong>
                 </div>
-                <span className={styles.connectionCount}>{filteredNodes.length} relación{filteredNodes.length === 1 ? "" : "es"}</span>
+                <span className={styles.connectionCount}>{flatNodes.length} relación{flatNodes.length === 1 ? "" : "es"}</span>
               </div>
 
               <div className={styles.nodeList}>
-                {filteredNodes.length ? filteredNodes.map((node) => (
+                {flatNodes.length ? flatNodes.map((node) => (
                   <button
                     type="button"
                     key={node.id}
@@ -1402,11 +1368,6 @@ export default function OrganizationStructureManager() {
               <label className="catalog-field">
                 <span className="catalog-label">Nombre</span>
                 <input value={form.title} onChange={(event) => updateField("title", event.target.value)} className="catalog-input" required />
-              </label>
-
-              <label className="catalog-field">
-                <span className="catalog-label">Código</span>
-                <input value={form.code} onChange={(event) => updateField("code", event.target.value)} className="catalog-input" placeholder="Se genera desde el nombre" />
               </label>
 
               <label className="catalog-field">

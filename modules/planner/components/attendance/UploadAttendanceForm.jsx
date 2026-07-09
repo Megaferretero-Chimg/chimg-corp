@@ -7,12 +7,12 @@ import { es } from "date-fns/locale";
 import {
   Clock3,
   FileSpreadsheet,
-  Inbox,
   History,
   Upload,
   X,
 } from "lucide-react";
 import FloatingNotice from "@/components/ui/FloatingNotice";
+import SelectInput from "@/components/ui/SelectInput";
 import { planningModulePath } from "@/modules/planner/routes";
 import { formatEcuadorMonthKey } from "@/lib/datetime/ecuador";
 import styles from "@/modules/planner/styles/components/attendance/UploadAttendanceForm.module.scss";
@@ -77,6 +77,28 @@ function formatPeriod(month, year) {
   return format(date, "MMMM yyyy", { locale: es });
 }
 
+function formatAuditActor(upload) {
+  return upload?.uploadedBy || upload?.uploadedByUser || "Sistema";
+}
+
+async function readJsonResponse(response) {
+  const text = await response.text();
+
+  if (!text) {
+    return {};
+  }
+
+  try {
+    return JSON.parse(text);
+  } catch {
+    return {
+      error: response.ok
+        ? "La respuesta del servidor no tuvo el formato esperado."
+        : "El servidor devolvió una respuesta no legible.",
+    };
+  }
+}
+
 export default function UploadAttendanceForm() {
   const [selectedFile, setSelectedFile] = useState(null);
   const [branchCode, setBranchCode] = useState("");
@@ -93,6 +115,11 @@ export default function UploadAttendanceForm() {
   const noticeRemoveTimeoutRef = useRef(null);
   const isUploadLocked = Boolean(savedUpload);
   const isInitialLoading = isHistoryLoading && !branches.length && !uploadsHistory.length && !savedUpload;
+  const branchOptions = branches.map((branch) => ({
+    value: branch.code,
+    label: branch.name || branch.code,
+  }));
+  const canSubmit = Boolean(selectedFile && branchCode && monthKey && !isPending && !isUploadLocked);
 
   const clearNoticeTimers = useCallback(() => {
     if (noticeExitTimeoutRef.current) {
@@ -197,7 +224,7 @@ export default function UploadAttendanceForm() {
           body: formData,
         });
 
-        const payload = await request.json();
+        const payload = await readJsonResponse(request);
 
         if (!request.ok) {
           throw new Error(payload.error || "No se pudo guardar el archivo.");
@@ -232,8 +259,8 @@ export default function UploadAttendanceForm() {
           fetch("/api/planner/attendance/upload"),
           fetch("/api/company/branches"),
         ]);
-        const payload = await response.json();
-        const branchesPayload = await branchesResponse.json();
+        const payload = await readJsonResponse(response);
+        const branchesPayload = await readJsonResponse(branchesResponse);
 
         if (!response.ok) {
           throw new Error(payload.error || "No se pudo cargar el historial.");
@@ -307,33 +334,30 @@ export default function UploadAttendanceForm() {
               <div className={styles.uploadColumn}>
                 <form onSubmit={handleSubmit} className={styles.form}>
                   <div className={styles.header}>
-                    <p className={styles.eyebrow}>Subir archivo</p>
-                    <h2 className={styles.title}>Guarda el reporte original del biométrico</h2>
-                    <p className={styles.description}>
-                      Arrastra el CSV de Ambato o el attlog de Salcedo, elige la sucursal de origen y guardaremos el archivo completo para procesarlo después.
-                    </p>
+                    <h2 className={styles.title}>Nueva carga</h2>
                   </div>
 
                   <div className={styles.fieldGrid}>
-                    <label className={styles.field}>
-                      <span className={styles.label}>Sucursal del biométrico</span>
-                      <select
-                        value={branchCode}
-                        onChange={(event) => setBranchCode(event.target.value)}
-                        className={styles.select}
-                        disabled={isUploadLocked || isPending}
-                      >
-                        <option value="">Selecciona una sucursal</option>
-                        {branches.map((branch) => (
-                          <option key={branch.id || branch.code} value={branch.code}>
-                            {branch.name || branch.code}
-                          </option>
-                        ))}
-                      </select>
-                    </label>
+                    <SelectInput
+                      label="Sucursal"
+                      className={styles.field}
+                      labelClassName={styles.label}
+                      controlClassName={styles.selectControl}
+                      selectClassName={styles.selectButton}
+                      value={branchCode}
+                      onChange={(event) => setBranchCode(event.target.value)}
+                      disabled={isUploadLocked || isPending}
+                    >
+                      <option value="">Seleccionar</option>
+                      {branchOptions.map((branch) => (
+                        <option key={branch.value} value={branch.value}>
+                          {branch.label}
+                        </option>
+                      ))}
+                    </SelectInput>
 
                     <label className={styles.field}>
-                      <span className={styles.label}>Mes de la carga</span>
+                      <span className={styles.label}>Mes</span>
                       <input
                         type="month"
                         value={monthKey}
@@ -378,21 +402,21 @@ export default function UploadAttendanceForm() {
                     }}
                   >
                     <div className={styles.dropzoneIcon}>
-                      {selectedFile ? <FileSpreadsheet size={26} /> : <Inbox size={26} />}
+                      <FileSpreadsheet size={26} />
                     </div>
                     <span className={styles.fieldTitle}>
                       {isUploadLocked
-                        ? "Archivo guardado en la base de datos"
+                        ? "Archivo guardado"
                         : selectedFile
-                          ? "Archivo listo para guardar"
-                          : "Arrastra tu archivo Excel aquí"}
+                          ? selectedFile.name
+                          : "Arrastra el archivo aquí"}
                     </span>
                     <span className={styles.fieldHint}>
                       {isUploadLocked
-                        ? "La carga quedó cerrada para evitar reemplazos accidentales desde esta misma vista."
+                        ? "Abre la revisión para validar y cargar las picadas."
                         : selectedFile
-                          ? "Revisa el archivo seleccionado y luego confirma el guardado."
-                          : `También puedes hacer clic para buscarlo. Permitidos: ${ACCEPTED_FILES_LABEL}`}
+                          ? `${formatFileSize(selectedFile.size)} · ${selectedFile.type || "Tipo no disponible"}`
+                          : `Clic para buscar. Permitidos: ${ACCEPTED_FILES_LABEL}`}
                     </span>
 
                     <input
@@ -433,11 +457,11 @@ export default function UploadAttendanceForm() {
                   <div className={styles.actions}>
                     <button
                       type="submit"
-                      disabled={!selectedFile || !branchCode || !monthKey || isPending || isUploadLocked}
+                      disabled={!canSubmit}
                       className={styles.submit}
                     >
                       <Upload size={16} />
-                      {isPending ? "Guardando archivo..." : "Confirmar guardado"}
+                      {isPending ? "Guardando..." : "Guardar archivo"}
                     </button>
                   </div>
                 </form>
@@ -451,7 +475,8 @@ export default function UploadAttendanceForm() {
                         { label: "Periodo", value: formatPeriod(savedUpload.month, savedUpload.year) },
                         { label: "Estado", value: formatUploadStatus(savedUpload.status) },
                         { label: "Tamaño", value: formatFileSize(savedUpload.fileSize || 0) },
-                        { label: "Guardado", value: formatDateTime(savedUpload.createdAt) },
+                        { label: "Subido por", value: formatAuditActor(savedUpload) },
+                        { label: "Hora de subida", value: formatDateTime(savedUpload.uploadedAt || savedUpload.createdAt) },
                       ].map((item) => (
                         <div key={item.label} className={styles.summaryCard}>
                           <p className={styles.summaryLabel}>{item.label}</p>
@@ -474,8 +499,7 @@ export default function UploadAttendanceForm() {
               <aside className={styles.historySection}>
                 <div className={styles.historyHeader}>
                   <div>
-                    <p className={styles.eyebrow}>Historial</p>
-                    <h3 className={styles.historyTitle}>Archivos cargados recientemente</h3>
+                    <h3 className={styles.historyTitle}>Historial reciente</h3>
                   </div>
                   <div className={styles.historyBadge}>
                     <History size={16} />
@@ -495,7 +519,13 @@ export default function UploadAttendanceForm() {
                         <div className={styles.historyItemMain}>
                           <p className={styles.historyFileName}>{upload.fileName}</p>
                           <p className={styles.historyMeta}>
-                            {[upload.branchName || upload.branchCode, formatPeriod(upload.month, upload.year), formatFileSize(upload.fileSize || 0), formatDateTime(upload.createdAt)]
+                            {[
+                              upload.branchName || upload.branchCode,
+                              formatPeriod(upload.month, upload.year),
+                              formatFileSize(upload.fileSize || 0),
+                              formatAuditActor(upload),
+                              formatDateTime(upload.uploadedAt || upload.createdAt),
+                            ]
                               .filter(Boolean)
                               .join(" · ")}
                           </p>
@@ -503,7 +533,7 @@ export default function UploadAttendanceForm() {
                         <div className={styles.historyItemSide}>
                           <span className={styles.historyStatus}>{formatUploadStatus(upload.status)}</span>
                           <Link href={planningModulePath(`/attendance/uploads/${upload.id}`)} className={styles.historyAction}>
-                            {upload.hasNormalization ? "Abrir revisión" : "Abrir y revisar"}
+                            Revisar
                           </Link>
                         </div>
                       </article>

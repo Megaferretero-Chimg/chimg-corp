@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { AlertTriangle, CheckCircle2, Download, RefreshCw, Save } from "lucide-react";
+import { AlertTriangle, Download, RefreshCw, Save } from "lucide-react";
 
 import ConfirmDialog from "@/components/ui/ConfirmDialog";
 import { formatEcuadorMonthKey } from "@/lib/datetime/ecuador";
@@ -12,110 +12,31 @@ function currentMonthKey() {
   return formatEcuadorMonthKey();
 }
 
-function baseCompletionStorageKey(month) {
-  return `monthlyClosureCross:${month}`;
-}
-
-function readStoredBaseCompletionSelection(month) {
-  if (typeof window === "undefined" || !month) {
-    return {
-      employeeIds: [],
-      hasStoredSelection: false,
-    };
-  }
-
-  try {
-    const storedValue = window.sessionStorage.getItem(baseCompletionStorageKey(month));
-
-    if (!storedValue) {
-      return {
-        employeeIds: [],
-        hasStoredSelection: false,
-      };
-    }
-
-    const parsedValue = JSON.parse(storedValue);
-
-    if (Array.isArray(parsedValue)) {
-      return {
-        employeeIds: parsedValue.filter(Boolean).map(String),
-        hasStoredSelection: true,
-      };
-    }
-
-    return {
-      employeeIds: Array.isArray(parsedValue?.employeeIds) ? parsedValue.employeeIds.filter(Boolean).map(String) : [],
-      hasStoredSelection: parsedValue?.hasStoredSelection === true,
-    };
-  } catch {
-    return {
-      employeeIds: [],
-      hasStoredSelection: false,
-    };
-  }
-}
-
-function storeBaseCompletionIds(month, employeeIds) {
-  if (typeof window === "undefined" || !month) return;
-
-  try {
-    const nextEmployeeIds = employeeIds.filter(Boolean).map(String);
-    window.sessionStorage.setItem(baseCompletionStorageKey(month), JSON.stringify({
-      employeeIds: nextEmployeeIds,
-      hasStoredSelection: true,
-    }));
-  } catch {
-    // Session storage is only a convenience for navigation between closure screens.
-  }
-}
-
-function clearStoredBaseCompletionIds(month) {
-  if (typeof window === "undefined" || !month) return;
-
-  try {
-    window.sessionStorage.removeItem(baseCompletionStorageKey(month));
-  } catch {
-    // Ignore unavailable session storage.
-  }
-}
-
 function readInitialState(defaultMonth = "") {
   if (typeof window === "undefined") {
     return {
       month: defaultMonth || currentMonthKey(),
       mode: "saved",
-      baseCompletionEmployeeIds: [],
-      hasBaseCompletionSelection: false,
     };
   }
 
   const params = new URLSearchParams(window.location.search);
   const month = params.get("month") || defaultMonth || currentMonthKey();
-  const urlBaseCompletionEmployeeIds = (params.get("baseCompletionEmployeeIds") || "").split(",").filter(Boolean);
-  const storedSelection = readStoredBaseCompletionSelection(month);
-  const hasUrlSelection = params.has("baseCompletionEmployeeIds");
-  const hasBaseCompletionSelection = hasUrlSelection || storedSelection.hasStoredSelection;
-  const baseCompletionEmployeeIds = hasUrlSelection ? urlBaseCompletionEmployeeIds : storedSelection.employeeIds;
 
   return {
     month,
-    mode: params.get("mode") === "live" || hasBaseCompletionSelection ? "live" : "saved",
+    mode: params.get("mode") === "live" ? "live" : "saved",
     closureId: params.get("closureId") || "",
-    baseCompletionEmployeeIds,
-    hasBaseCompletionSelection,
   };
 }
 
-function syncState(month, mode = "saved", closureId = "", baseCompletionEmployeeIds = []) {
+function syncState(month, mode = "saved", closureId = "") {
   if (typeof window === "undefined") return;
 
   const params = new URLSearchParams();
   params.set("month", month);
   if (mode === "live") params.set("mode", "live");
   if (mode !== "live" && closureId) params.set("closureId", closureId);
-  if (mode === "live" && baseCompletionEmployeeIds.length) {
-    params.set("baseCompletionEmployeeIds", baseCompletionEmployeeIds.join(","));
-  }
   window.history.replaceState(null, "", `${window.location.pathname}?${params.toString()}`);
 }
 
@@ -168,7 +89,8 @@ function canCompleteRow(row) {
 export default function MonthlyClosureView({ view = "summary", fixedMonth = "" }) {
   const isCrossView = view === "cross";
   const isPayrollView = view === "payroll";
-  const isLiveOnlyView = isCrossView || isPayrollView;
+  const isSummaryView = view === "summary";
+  const isLiveOnlyView = isCrossView;
   const hasFixedMonth = Boolean(fixedMonth);
   const [initialState] = useState(() => readInitialState(fixedMonth));
   const initialStateRef = useRef(initialState);
@@ -177,17 +99,18 @@ export default function MonthlyClosureView({ view = "summary", fixedMonth = "" }
   const [payload, setPayload] = useState(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
-  const [isApplyingBaseCompletion, setIsApplyingBaseCompletion] = useState(false);
-  const [hasPendingBaseCompletionChanges, setHasPendingBaseCompletionChanges] = useState(false);
-  const [showOnlyCompletableRows, setShowOnlyCompletableRows] = useState(true);
   const [exportMode, setExportMode] = useState("");
   const [isConfirmOpen, setIsConfirmOpen] = useState(false);
   const [selectedClosureId, setSelectedClosureId] = useState(() => initialState.closureId || "");
-  const [baseCompletionEmployeeIds, setBaseCompletionEmployeeIds] = useState(() => initialState.baseCompletionEmployeeIds || []);
   const [error, setError] = useState("");
 
   const isLiveMode = mode === "live";
-  const data = isLiveMode ? payload?.preview : (payload?.closure || payload?.preview) || null;
+  const savedClosure = payload?.closure || null;
+  const hasSavedCrossClosure = Boolean(savedClosure && savedClosure.completeBaseHours !== false);
+  const requiresSavedCrossClosure = isPayrollView || isSummaryView;
+  const data = requiresSavedCrossClosure && !hasSavedCrossClosure
+    ? null
+    : isLiveMode ? payload?.preview : (savedClosure || payload?.preview) || null;
   const isClosed = Boolean(payload?.isClosed);
   const rows = (data?.rows || []).slice().sort((left, right) =>
     String(left.employeeName || "").localeCompare(String(right.employeeName || ""), "es"),
@@ -196,11 +119,9 @@ export default function MonthlyClosureView({ view = "summary", fixedMonth = "" }
   const selectedClosureValue = selectedClosureId || payload?.closure?.id || "";
   const isUpdatingClosure = isSaving || (isLoading && Boolean(payload));
   const totals = data?.totals || {};
-  const selectedCompletionSet = useMemo(() => new Set(baseCompletionEmployeeIds), [baseCompletionEmployeeIds]);
   const incompleteRows = rows.filter((row) => missingRegularMinutes(row) > 0);
   const completableRows = incompleteRows.filter(canCompleteRow);
-  const displayedRows = isCrossView ? (showOnlyCompletableRows ? completableRows : incompleteRows) : rows;
-  const allCompletableSelected = completableRows.length > 0 && completableRows.every((row) => selectedCompletionSet.has(row.employeeId));
+  const displayedRows = isCrossView ? completableRows : rows;
   const areaRows = useMemo(() => {
     const groups = new Map();
 
@@ -240,7 +161,6 @@ export default function MonthlyClosureView({ view = "summary", fixedMonth = "" }
     nextMonth,
     nextMode,
     nextClosureId = "",
-    nextBaseCompletionEmployeeIds = [],
     shouldApplyDefaultBaseCompletion = false,
     isSilent = false,
   ) => {
@@ -252,10 +172,6 @@ export default function MonthlyClosureView({ view = "summary", fixedMonth = "" }
       params.set("month", nextMonth);
       if (nextMode === "live") params.set("mode", "live");
       if (nextMode !== "live" && nextClosureId) params.set("closureId", nextClosureId);
-      params.set("completeBaseHours", nextBaseCompletionEmployeeIds.length ? "1" : "0");
-      if (nextBaseCompletionEmployeeIds.length) {
-        params.set("baseCompletionEmployeeIds", nextBaseCompletionEmployeeIds.join(","));
-      }
 
       const response = await fetch(`/api/planner/attendance/monthly-closure?${params.toString()}`);
       const nextPayload = await response.json();
@@ -265,27 +181,11 @@ export default function MonthlyClosureView({ view = "summary", fixedMonth = "" }
       }
 
       const nextData = nextMode === "live" ? nextPayload.preview : (nextPayload.closure || nextPayload.preview) || null;
-      const completedIds = (nextData?.rows || [])
-        .filter((row) => (Number(row.baseCompletionMinutes) || 0) > 0)
-        .map((row) => row.employeeId)
-        .filter(Boolean);
-      const defaultIds = shouldApplyDefaultBaseCompletion && !nextBaseCompletionEmployeeIds.length
-        ? (nextData?.rows || []).filter(canCompleteRow).map((row) => row.employeeId).filter(Boolean)
-        : [];
-      const selectedIds = nextBaseCompletionEmployeeIds.length
-        ? completedIds
-        : defaultIds.length
-          ? defaultIds
-          : completedIds;
-
       setPayload(nextPayload);
-      setBaseCompletionEmployeeIds(selectedIds);
-      setHasPendingBaseCompletionChanges(false);
 
-      if (defaultIds.length) {
+      if (shouldApplyDefaultBaseCompletion && nextMode !== "live") {
         setMode("live");
-        storeBaseCompletionIds(nextMonth, defaultIds);
-        syncState(nextMonth, "live", nextClosureId, defaultIds);
+        syncState(nextMonth, "live", nextClosureId);
       }
     } catch (requestError) {
       setError(requestError.message);
@@ -295,68 +195,26 @@ export default function MonthlyClosureView({ view = "summary", fixedMonth = "" }
   }, []);
 
   function handleMonthChange(value) {
-    const storedSelection = readStoredBaseCompletionSelection(value);
-    const nextMode = isLiveOnlyView || storedSelection.hasStoredSelection ? "live" : "saved";
+    const nextMode = isLiveOnlyView ? "live" : "saved";
 
     setMonth(value);
     setMode(nextMode);
     setSelectedClosureId("");
-    setBaseCompletionEmployeeIds(storedSelection.employeeIds);
-    setHasPendingBaseCompletionChanges(false);
-    syncState(value, nextMode, "", storedSelection.employeeIds);
-    loadClosure(value, nextMode, "", storedSelection.employeeIds, isLiveOnlyView && !storedSelection.hasStoredSelection);
+    syncState(value, nextMode, "");
+    loadClosure(value, nextMode, "", isLiveOnlyView);
   }
 
   function handleModeChange(nextMode) {
     setMode(nextMode);
-    syncState(month, nextMode, selectedClosureId, baseCompletionEmployeeIds);
-    loadClosure(month, nextMode, selectedClosureId, baseCompletionEmployeeIds);
+    syncState(month, nextMode, selectedClosureId);
+    loadClosure(month, nextMode, selectedClosureId);
   }
 
   function handleClosureVersionChange(value) {
     setSelectedClosureId(value);
     setMode("saved");
-    syncState(month, "saved", value, []);
-    loadClosure(month, "saved", value, []);
-  }
-
-  function updateBaseCompletionSelection(nextEmployeeIds) {
-    const normalizedEmployeeIds = nextEmployeeIds.filter(Boolean).map(String);
-    const nextMode = isLiveOnlyView || normalizedEmployeeIds.length ? "live" : isClosed ? "saved" : mode;
-
-    setBaseCompletionEmployeeIds(normalizedEmployeeIds);
-    setMode(nextMode);
-    setHasPendingBaseCompletionChanges(true);
-  }
-
-  function toggleBaseCompletion(employeeId) {
-    const nextSet = new Set(baseCompletionEmployeeIds);
-
-    if (nextSet.has(employeeId)) nextSet.delete(employeeId);
-    else nextSet.add(employeeId);
-
-    updateBaseCompletionSelection([...nextSet]);
-  }
-
-  function toggleAllCompletableRows() {
-    updateBaseCompletionSelection(allCompletableSelected ? [] : completableRows.map((row) => row.employeeId).filter(Boolean));
-  }
-
-  async function applyBaseCompletionChanges() {
-    if (isApplyingBaseCompletion || isLoading) return;
-
-    const nextMode = "live";
-
-    try {
-      setIsApplyingBaseCompletion(true);
-      setError("");
-      setMode(nextMode);
-      storeBaseCompletionIds(month, baseCompletionEmployeeIds);
-      syncState(month, nextMode, selectedClosureId, baseCompletionEmployeeIds);
-      await loadClosure(month, nextMode, selectedClosureId, baseCompletionEmployeeIds, false, true);
-    } finally {
-      setIsApplyingBaseCompletion(false);
-    }
+    syncState(month, "saved", value);
+    loadClosure(month, "saved", value);
   }
 
   async function saveClosure() {
@@ -374,8 +232,7 @@ export default function MonthlyClosureView({ view = "summary", fixedMonth = "" }
         },
         body: JSON.stringify({
           month,
-          completeBaseHours: baseCompletionEmployeeIds.length > 0,
-          baseCompletionEmployeeIds,
+          completeBaseHours: true,
         }),
       });
       const nextPayload = await response.json();
@@ -386,9 +243,8 @@ export default function MonthlyClosureView({ view = "summary", fixedMonth = "" }
 
       setMode("saved");
       setSelectedClosureId("");
-      syncState(month, "saved", "", []);
-      clearStoredBaseCompletionIds(month);
-      await loadClosure(month, "saved", "", []);
+      syncState(month, "saved", "");
+      await loadClosure(month, "saved", "");
     } catch (requestError) {
       setError(requestError.message);
     } finally {
@@ -415,13 +271,6 @@ export default function MonthlyClosureView({ view = "summary", fixedMonth = "" }
       params.set("export", nextExportMode);
       if (isLiveMode) params.set("mode", "live");
       if (!isLiveMode && selectedClosureValue) params.set("closureId", selectedClosureValue);
-      if (isLiveMode) {
-        params.set("completeBaseHours", baseCompletionEmployeeIds.length ? "1" : "0");
-        if (baseCompletionEmployeeIds.length) {
-          params.set("baseCompletionEmployeeIds", baseCompletionEmployeeIds.join(","));
-        }
-      }
-
       const response = await fetch(`/api/planner/attendance/monthly-closure?${params.toString()}`);
 
       if (!response.ok) {
@@ -454,8 +303,7 @@ export default function MonthlyClosureView({ view = "summary", fixedMonth = "" }
       initialStateRef.current.month,
       isLiveOnlyView ? "live" : initialStateRef.current.mode,
       initialStateRef.current.closureId,
-      initialStateRef.current.baseCompletionEmployeeIds,
-      isLiveOnlyView && !initialStateRef.current.hasBaseCompletionSelection,
+      isLiveOnlyView,
     );
   }, [isLiveOnlyView, loadClosure]);
 
@@ -483,35 +331,15 @@ export default function MonthlyClosureView({ view = "summary", fixedMonth = "" }
 
         <div className={`${styles.actions} ${isCrossView ? styles.crossActions : ""}`}>
           {isCrossView ? (
-            <>
-              <label className={styles.switchControl}>
-                <input
-                  type="checkbox"
-                  checked={showOnlyCompletableRows}
-                  onChange={(event) => setShowOnlyCompletableRows(event.target.checked)}
-                  disabled={isLoading || isApplyingBaseCompletion}
-                />
-                <span aria-hidden="true" />
-                <strong>Solo con cruce</strong>
-              </label>
-              <button
-                type="button"
-                className={styles.secondaryButton}
-                onClick={toggleAllCompletableRows}
-                disabled={isSaving || isLoading || isApplyingBaseCompletion || !completableRows.length}
-              >
-                {allCompletableSelected ? "Quitar cruces" : "Cruzar todos"}
-              </button>
-              <button
-                type="button"
-                className={styles.saveButton}
-                onClick={applyBaseCompletionChanges}
-                disabled={isSaving || isLoading || isApplyingBaseCompletion || !hasPendingBaseCompletionChanges}
-              >
-                {isApplyingBaseCompletion ? <RefreshCw size={16} /> : <Save size={16} />}
-                Guardar cambios
-              </button>
-            </>
+            <button
+              type="button"
+              className={styles.saveButton}
+              onClick={handleSaveRequest}
+              disabled={isSaving || isLoading || !completableRows.length}
+            >
+              {isSaving ? <RefreshCw size={16} /> : <Save size={16} />}
+              Guardar cruce
+            </button>
           ) : isPayrollView ? (
             <button
               type="button"
@@ -528,7 +356,7 @@ export default function MonthlyClosureView({ view = "summary", fixedMonth = "" }
                 type="button"
                 className={styles.exportButton}
                 onClick={() => exportClosure("detailed-xlsx")}
-                disabled={Boolean(exportMode) || isSaving || isLoading || !rows.length}
+                disabled={Boolean(exportMode) || isSaving || isLoading || !rows.length || !hasSavedCrossClosure}
               >
                 {exportMode === "detailed-xlsx" ? <RefreshCw size={16} /> : <Download size={16} />}
                 Excel completo
@@ -538,27 +366,17 @@ export default function MonthlyClosureView({ view = "summary", fixedMonth = "" }
                 type="button"
                 className={styles.exportButton}
                 onClick={() => exportClosure("payroll-xlsx")}
-                disabled={Boolean(exportMode) || isSaving || isLoading || !rows.length}
+                disabled={Boolean(exportMode) || isSaving || isLoading || !rows.length || !hasSavedCrossClosure}
               >
                 {exportMode === "payroll-xlsx" ? <RefreshCw size={16} /> : <Download size={16} />}
                 Formato nómina
-              </button>
-
-              <button
-                type="button"
-                className={styles.saveButton}
-                onClick={handleSaveRequest}
-                disabled={(isClosed && !isLiveMode) || isSaving || isLoading}
-              >
-                {isSaving ? <RefreshCw size={16} /> : isClosed && !isLiveMode ? <CheckCircle2 size={16} /> : <Save size={16} />}
-                {isClosed ? (isLiveMode ? "Actualizar cierre" : "Guardado") : "Guardar cierre"}
               </button>
             </>
           )}
         </div>
       </div>
 
-      {!isLiveOnlyView && isClosed ? (
+      {!isLiveOnlyView && !requiresSavedCrossClosure && isClosed ? (
         <div className={`${styles.viewModeBar} ${isLiveMode ? styles.viewModeBarLive : ""}`}>
           <div>
             <span>Vista</span>
@@ -624,7 +442,7 @@ export default function MonthlyClosureView({ view = "summary", fixedMonth = "" }
         </div>
       ) : (
         <>
-          {!isLiveOnlyView ? (
+          {!isLiveOnlyView && data ? (
             <section className={styles.areaSection}>
             <div className={styles.sectionHeader}>
               <div>
@@ -679,9 +497,18 @@ export default function MonthlyClosureView({ view = "summary", fixedMonth = "" }
                 </div>
               </>
             ) : null}
-            <div className={styles.tableScroller}>
-              <table>
-                {isPayrollView ? (
+            {!displayedRows.length ? (
+              <div className={styles.emptyState}>
+                {isPayrollView
+                  ? "Primero guarda el cruce de horas para este mes."
+                  : isCrossView
+                    ? "No hay empleados que requieran cruce de horas."
+                    : "Primero guarda el cruce de horas para este mes."}
+              </div>
+            ) : (
+              <div className={styles.tableScroller}>
+                <table>
+                  {isPayrollView ? (
                   <>
                     <thead>
                       <tr>
@@ -721,11 +548,6 @@ export default function MonthlyClosureView({ view = "summary", fixedMonth = "" }
                         </tr>
                         );
                       })}
-                      {!displayedRows.length ? (
-                        <tr>
-                          <td colSpan={5} className={styles.emptyCell}>No hay empleados para generar nómina en este mes.</td>
-                        </tr>
-                      ) : null}
                     </tbody>
                   </>
                 ) : (
@@ -733,7 +555,6 @@ export default function MonthlyClosureView({ view = "summary", fixedMonth = "" }
                     <thead>
                       <tr>
                         <th>Empleado</th>
-                        {isCrossView ? <th>Cruzar horas</th> : null}
                         <th>Laborables</th>
                         <th>Suplementarias</th>
                         <th>Extraordinarias</th>
@@ -756,36 +577,25 @@ export default function MonthlyClosureView({ view = "summary", fixedMonth = "" }
                             <strong className={styles.employeeName}>{row.employeeName}</strong>
                             <span>{row.branchName} · {row.areaName} · {row.roleName}</span>
                           </td>
-                          {isCrossView ? (
-                            <td>
-                              {canCompleteRow(row) ? (
-                                <label className={styles.rowSwitch}>
-                                  <input
-                                    type="checkbox"
-                                  checked={selectedCompletionSet.has(row.employeeId)}
-                                  onChange={() => toggleBaseCompletion(row.employeeId)}
-                                  disabled={isSaving || isLoading || isApplyingBaseCompletion}
-                                />
-                                  <span aria-hidden="true" />
-                                  <strong>{selectedCompletionSet.has(row.employeeId) ? "Aplicado" : "Cruzar"}</strong>
-                                  <small>Faltan {metricValue(minutesLabel(missingRegularMinutes(row)))}</small>
-                                </label>
-                              ) : (
-                                <span className={styles.notAvailable}>Sin horas disponibles</span>
-                              )}
-                            </td>
-                          ) : null}
                           <td>
                             <span className={styles.metricValue}>{laborableValue(row)}</span>
-                            {row.baseCompletionMinutes > 0 ? (
+                            {isCrossView ? (
+                              <span>Faltan {metricValue(minutesLabel(missingRegularMinutes(row)))}</span>
+                            ) : row.baseCompletionMinutes > 0 ? (
                               <span>Cruzadas {metricValue(row.baseCompletionLabel)}</span>
                             ) : null}
                           </td>
                           <td>
                             <span className={styles.metricValue}>{metricValue(row.supplementaryLabel)}</span>
+                            {isCrossView ? (
+                              <span>Disponible {metricValue(minutesLabel(Math.min(Number(row.supplementaryMinutes) || 0, missingRegularMinutes(row))))}</span>
+                            ) : null}
                           </td>
                           <td>
                             <span className={styles.metricValue}>{metricValue(row.extraordinaryLabel)}</span>
+                            {isCrossView ? (
+                              <span>Disponible {metricValue(minutesLabel(Math.max(0, Math.min(Number(row.extraordinaryMinutes) || 0, missingRegularMinutes(row) - (Number(row.supplementaryMinutes) || 0)))))}</span>
+                            ) : null}
                           </td>
                           <td>
                             <span className={styles.metricValue}>{metricValue(row.lateLabel)}</span>
@@ -796,34 +606,26 @@ export default function MonthlyClosureView({ view = "summary", fixedMonth = "" }
                         </tr>
                         );
                       })}
-                      {!displayedRows.length ? (
-                        <tr>
-                          <td colSpan={isCrossView ? 7 : 6} className={styles.emptyCell}>
-                            {isCrossView
-                              ? showOnlyCompletableRows
-                                ? "No hay empleados con cruce disponible."
-                                : "No hay empleados con horas laborables incompletas."
-                              : "No hay empleados para cerrar en este mes."}
-                          </td>
-                        </tr>
-                      ) : null}
                     </tbody>
                   </>
                 )}
-              </table>
-            </div>
+                </table>
+              </div>
+            )}
           </div>
         </>
       )}
       <ConfirmDialog
         isOpen={isConfirmOpen}
-        title={isClosed ? "Actualizar cierre" : "Guardar cierre"}
+        title={isCrossView ? "Guardar cruce de horas" : isClosed ? "Actualizar cierre" : "Guardar cierre"}
         message={
-          isClosed
-            ? `Se guardará una nueva versión cruzando horas en ${baseCompletionEmployeeIds.length} empleados seleccionados. Nómina usará la última copia guardada.`
-            : `Se guardará una copia fija cruzando horas en ${baseCompletionEmployeeIds.length} empleados seleccionados.`
+          isCrossView
+            ? "Se guardará una versión mensual con el cruce de horas revisado. Las siguientes pantallas usarán esta copia guardada."
+            : isClosed
+            ? "Se guardará una nueva versión con el cruce automático de horas. Nómina usará la última copia guardada."
+            : "Se guardará una copia fija con el cruce automático de horas."
         }
-        confirmLabel={isClosed ? "Actualizar cierre" : "Guardar cierre"}
+        confirmLabel={isCrossView ? "Guardar cruce" : isClosed ? "Actualizar cierre" : "Guardar cierre"}
         cancelLabel="Cancelar"
         tone="warning"
         isPending={isSaving}

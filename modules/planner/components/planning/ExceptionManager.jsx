@@ -8,25 +8,26 @@ import {
   CalendarDays,
   ChevronLeft,
   ChevronRight,
-  Edit3,
   Plus,
   Save,
-  Search,
   XCircle,
 } from "lucide-react";
 
 import CatalogDrawer from "@/components/catalog/CatalogDrawer";
+import AutocompleteSelect from "@/components/ui/AutocompleteSelect";
 import ConfirmDialog from "@/components/ui/ConfirmDialog";
 import EmployeeAutocomplete from "@/components/ui/EmployeeAutocomplete";
+import FloatingModal from "@/components/ui/FloatingModal";
 import FloatingNotice from "@/components/ui/FloatingNotice";
 import { PLANNING_EXCEPTIONS_ACCESS_ROLE } from "@/lib/access-roles";
 import styles from "@/modules/planner/styles/components/planning/ExceptionManager.module.scss";
 
 const EXCEPTION_FLOWS = [
   {
-    value: "paid_absence",
-    label: "Falta justificada",
-    description: "Reconoce las horas laborables planificadas del dia, sin suplementarias ni extraordinarias.",
+    category: "planning",
+    value: "full_day_permission",
+    label: "Permiso",
+    description: "Cubre una ausencia autorizada dentro de la jornada. No representa trabajo realizado.",
     type: "permission",
     scope: "full_day",
     resolution: "approved_work_time",
@@ -35,20 +36,10 @@ const EXCEPTION_FLOWS = [
     payMode: "regular_only",
   },
   {
-    value: "partial_leave",
-    label: "Permiso por horas",
-    description: "Justifica solo un rango de horas y mantiene las picadas del resto del dia.",
-    type: "medical_appointment",
-    scope: "partial_day",
-    resolution: "approved_work_time",
-    effect: "paid_partial_leave",
-    attendanceMode: "ignore_attendance",
-    payMode: "regular_only",
-  },
-  {
-    value: "schedule_change",
-    label: "Cambio de horario",
-    description: "Cambia lo planificado para comparar contra las picadas reales.",
+    category: "planning",
+    value: "temporary_schedule_change",
+    label: "Cambio temporal de horario",
+    description: "Cambia el horario esperado por un periodo definido, sin tocar el cargo ni el grupo.",
     type: "schedule_change",
     scope: "full_day",
     resolution: "approved_work_time",
@@ -57,47 +48,56 @@ const EXCEPTION_FLOWS = [
     payMode: "no_pay_change",
   },
   {
+    category: "planning",
     value: "external_work",
     label: "Trabajo externo",
-    description: "Justifica una jornada realizada fuera del punto habitual y cubre el horario planificado sin exigir picadas.",
+    description: "Reconoce trabajo realizado fuera de la empresa cuando no aplica la picada normal.",
     type: "outside_work",
     scope: "full_day",
     resolution: "approved_work_time",
     effect: "external_work",
     attendanceMode: "use_authorized_schedule",
-    payMode: "regular_and_extra",
+    payMode: "regular_only",
   },
   {
-    value: "manual_punch",
-    label: "Agregar picada manual",
-    description: "Corrige una picada omitida con hora registrada y trazabilidad.",
-    type: "outside_work_punch",
-    scope: "other",
+    category: "execution",
+    value: "missed_punch",
+    label: "Justificar marcación omitida",
+    description: "Reconoce el horario autorizado cuando la persona trabajó pero no pudo marcar.",
+    type: "missing_punch",
+    scope: "missing_punch",
     resolution: "approved_work_time",
-    effect: "manual_punch",
-    attendanceMode: "add_manual_punch",
-    payMode: "no_pay_change",
-  },
-  {
-    value: "unpaid_absence",
-    label: "Falta con descuento",
-    description: "Registra una ausencia que no debe reconocerse como tiempo laborable.",
-    type: "permission",
-    scope: "full_day",
-    resolution: "discount_day",
-    effect: "unpaid_absence",
-    attendanceMode: "ignore_attendance",
-    payMode: "discount",
+    effect: "external_work",
+    attendanceMode: "use_authorized_schedule",
+    payMode: "regular_only",
   },
 ];
-const OUTSIDE_WORK_PUNCH_TYPE = "outside_work_punch";
 const EXCEPTIONS_PAGE_SIZE = 10;
-const CUSTOM_SCHEDULE_KEY = "__custom_schedule__";
+const FLOW_GROUPS = [
+  { value: "planning", label: "Planificacion", description: "Permisos y autorizaciones conocidas antes o durante la jornada." },
+  { value: "execution", label: "Ejecucion", description: "Novedades inesperadas detectadas al revisar la asistencia real." },
+];
+const FLOW_OPTIONS = EXCEPTION_FLOWS.map((flow) => ({
+  value: flow.value,
+  label: flow.label,
+  searchText: FLOW_GROUPS.find((group) => group.value === flow.category)?.label || "",
+}));
+const FLOW_VALUES = new Set(EXCEPTION_FLOWS.map((flow) => flow.value));
+const WEEKDAY_OPTIONS = [
+  { value: 1, label: "Lun" },
+  { value: 2, label: "Mar" },
+  { value: 3, label: "Mie" },
+  { value: 4, label: "Jue" },
+  { value: 5, label: "Vie" },
+  { value: 6, label: "Sab" },
+  { value: 0, label: "Dom" },
+];
+const DEFAULT_APPLICABLE_WEEKDAYS = [1, 2, 3, 4, 5];
 
 const EMPTY_FORM = {
   id: "",
   employeeId: "",
-  flowType: "paid_absence",
+  flowType: "full_day_permission",
   type: "permission",
   scope: "full_day",
   dateKey: format(new Date(), "yyyy-MM-dd"),
@@ -109,6 +109,7 @@ const EMPTY_FORM = {
   plannedLunchStartTime: "",
   plannedLunchEndTime: "",
   plannedLunchDurationMinutes: 0,
+  applicableWeekdays: DEFAULT_APPLICABLE_WEEKDAYS,
   manualPunchTime: "",
   destination: "",
   effect: "paid_absence",
@@ -135,13 +136,11 @@ function inferFlowType(exception) {
   const resolution = String(exception?.resolution || "");
   const scope = String(exception?.scope || "");
 
-  if (effect === "manual_punch" || type === OUTSIDE_WORK_PUNCH_TYPE || scope === "missing_punch") return "manual_punch";
+  if (effect === "manual_punch" || type === "missing_punch" || type === "outside_work_punch" || scope === "missing_punch") return "missed_punch";
+  if (effect === "planning_change" || type === "schedule_change" || resolution === "reschedule") return "temporary_schedule_change";
   if (effect === "external_work" || type === "outside_work") return "external_work";
-  if (effect === "planning_change" || type === "schedule_change") return "schedule_change";
-  if (effect === "unpaid_absence" || resolution === "discount_day") return "unpaid_absence";
-  if (effect === "paid_partial_leave" || scope === "partial_day") return "partial_leave";
 
-  return "paid_absence";
+  return "full_day_permission";
 }
 
 function buildExceptionForm(exception) {
@@ -164,6 +163,9 @@ function buildExceptionForm(exception) {
     plannedLunchStartTime: exception.plannedLunchStartTime || "",
     plannedLunchEndTime: exception.plannedLunchEndTime || "",
     plannedLunchDurationMinutes: Number(exception.plannedLunchDurationMinutes) || 0,
+    applicableWeekdays: Array.isArray(exception.applicableWeekdays) && exception.applicableWeekdays.length
+      ? exception.applicableWeekdays
+      : DEFAULT_APPLICABLE_WEEKDAYS,
     manualPunchTime: exception.manualPunchTime || "",
     destination: exception.destination || "",
     effect: exception.effect || "other",
@@ -179,64 +181,12 @@ function buildExceptionForm(exception) {
   };
 }
 
-function formatClock(value) {
-  return String(value || "").replace(":", "H");
-}
-
-function formatScheduleOption(option) {
-  if (!option?.startTime || !option?.endTime) return "";
-  if (option.lunchStartTime && option.lunchEndTime) {
-    return `${formatClock(option.startTime)} A ${formatClock(option.lunchStartTime)} / ${formatClock(option.lunchEndTime)} A ${formatClock(option.endTime)}`;
-  }
-
-  return `${formatClock(option.startTime)} A ${formatClock(option.endTime)}`;
-}
-
-function buildScheduleKey(option) {
-  return [
-    option.startTime || "",
-    option.lunchStartTime || "",
-    option.lunchEndTime || "",
-    option.endTime || "",
-    Number(option.lunchDurationMinutes) || 0,
-  ].join("|");
-}
-
-function parseScheduleKey(key) {
-  const [startTime = "", lunchStartTime = "", lunchEndTime = "", endTime = "", lunchDurationMinutes = "0"] = String(key || "").split("|");
-
-  return {
-    startTime,
-    lunchStartTime,
-    lunchEndTime,
-    endTime,
-    lunchDurationMinutes: Number(lunchDurationMinutes) || 0,
-  };
-}
-
 function normalizeSearch(value) {
   return String(value || "")
     .normalize("NFD")
     .replace(/[\u0300-\u036f]/g, "")
     .toLowerCase()
     .trim();
-}
-
-function dateKeyToLocalDate(dateKey) {
-  const [year, month, day] = String(dateKey || "").split("-").map(Number);
-
-  if (!year || !month || !day) return new Date();
-
-  return new Date(year, month - 1, day);
-}
-
-function addMonthsRangeEnd(dateKey, months) {
-  const startDate = dateKeyToLocalDate(dateKey);
-  const endDate = addMonths(startDate, Math.max(1, Number(months) || 1));
-
-  endDate.setDate(endDate.getDate() - 1);
-
-  return format(endDate, "yyyy-MM-dd");
 }
 
 function deriveResolutionEffect(form) {
@@ -246,16 +196,6 @@ function deriveResolutionEffect(form) {
     return {
       type: flow.type,
       scope: flow.scope,
-      effect: flow.effect,
-      attendanceMode: flow.attendanceMode,
-      payMode: flow.payMode,
-    };
-  }
-
-  if (flow.value === "schedule_change") {
-    return {
-      type: flow.type,
-      scope: form.endDateKey ? "date_range" : flow.scope,
       effect: flow.effect,
       attendanceMode: flow.attendanceMode,
       payMode: flow.payMode,
@@ -272,20 +212,32 @@ function deriveResolutionEffect(form) {
     };
   }
 
-  if (flow.value === "partial_leave") {
+  if (flow.value === "temporary_schedule_change") {
     return {
       type: flow.type,
-      scope: flow.scope,
+      scope: form.endDateKey ? "date_range" : flow.scope,
       effect: flow.effect,
       attendanceMode: flow.attendanceMode,
       payMode: flow.payMode,
     };
   }
 
-  if (flow.value === "unpaid_absence") {
+  if (flow.value === "full_day_permission") {
+    const isHourlyPermission = form.scope === "partial_day";
+
     return {
       type: flow.type,
-      scope: form.endDateKey ? "date_range" : flow.scope,
+      scope: isHourlyPermission ? "partial_day" : flow.scope,
+      effect: isHourlyPermission ? "paid_partial_leave" : flow.effect,
+      attendanceMode: flow.attendanceMode,
+      payMode: flow.payMode,
+    };
+  }
+
+  if (flow.value === "missed_punch") {
+    return {
+      type: flow.type,
+      scope: flow.scope,
       effect: flow.effect,
       attendanceMode: flow.attendanceMode,
       payMode: flow.payMode,
@@ -314,17 +266,21 @@ export default function ExceptionManager({
   emptyFilteredTitle = "No hay justificaciones para ese filtro.",
   emptyDescription = "Registra permisos, salidas tempranas, citas medicas o faltas justificadas cuando ocurran.",
   emptyFilteredDescription = "Prueba con otro nombre, cedula, sucursal, area o rol.",
+  initialDraft = null,
+  compactPendingView = false,
+  compactListView = false,
 }) {
   const [monthDate, setMonthDate] = useState(() => new Date());
   const [employees, setEmployees] = useState([]);
   const [exceptions, setExceptions] = useState([]);
-  const [templates, setTemplates] = useState([]);
   const [canApproveExceptions, setCanApproveExceptions] = useState(false);
   const [form, setForm] = useState(EMPTY_FORM);
   const [employeeQuery, setEmployeeQuery] = useState("");
   const [exceptionSearch, setExceptionSearch] = useState("");
-  const [isCustomScheduleMode, setIsCustomScheduleMode] = useState(false);
+  const [exceptionEmployeeId, setExceptionEmployeeId] = useState("");
   const [isEditorOpen, setIsEditorOpen] = useState(false);
+  const [reviewException, setReviewException] = useState(null);
+  const [reviewNotes, setReviewNotes] = useState("");
   const [exceptionToDelete, setExceptionToDelete] = useState(null);
   const [isBulkDeleteOpen, setIsBulkDeleteOpen] = useState(false);
   const [currentPage, setCurrentPage] = useState(1);
@@ -333,10 +289,18 @@ export default function ExceptionManager({
   const [isPending, startTransition] = useTransition();
   const noticeExitTimeoutRef = useRef(null);
   const noticeRemoveTimeoutRef = useRef(null);
+  const initialDraftAppliedRef = useRef("");
   const monthKey = format(monthDate, "yyyy-MM");
   const monthLabel = format(monthDate, "MMMM yyyy", { locale: es });
   const isLimitedExceptionUser = currentUserAccessRole === PLANNING_EXCEPTIONS_ACCESS_ROLE;
   const canResolveExceptions = !isLimitedExceptionUser && canApproveExceptions;
+  const isCompactList = compactListView || compactPendingView;
+  const deleteActionLabel = exceptionToDelete?.resolution === "pending" || exceptionToDelete?.status === "open"
+    ? "Eliminar"
+    : "Anular";
+  const deleteActionMessage = exceptionToDelete?.resolution === "pending" || exceptionToDelete?.status === "open"
+    ? `Deseas eliminar la justificacion de ${exceptionToDelete?.employeeName || ""}? Como esta pendiente, se quitara del sistema.`
+    : `Deseas anular la justificacion de ${exceptionToDelete?.employeeName || ""}? Quedara archivada para auditoria y no contara para el control operativo.`;
 
   const activeEmployees = useMemo(
     () => employees.filter((employee) => employee.isActive !== false),
@@ -346,60 +310,6 @@ export default function ExceptionManager({
     () => activeEmployees.find((employee) => employee.id === form.employeeId),
     [activeEmployees, form.employeeId],
   );
-  const scheduleOptions = useMemo(() => {
-    if (!selectedEmployee) return [];
-
-    const roleCodes = new Set([
-      selectedEmployee.roleCode,
-      ...(Array.isArray(selectedEmployee.roleAssignments)
-        ? selectedEmployee.roleAssignments.map((assignment) => assignment.code)
-        : []),
-    ].filter(Boolean));
-    const optionsByKey = new Map();
-
-    templates.forEach((template) => {
-      if (template.roleCode && roleCodes.size && !roleCodes.has(template.roleCode)) return;
-
-      (template.weeklyRows || []).forEach((row) => {
-        if (row.dayType !== "workday" || !row.startTime || !row.endTime) return;
-
-        const option = {
-          startTime: row.startTime,
-          endTime: row.endTime,
-          lunchStartTime: row.lunchStartTime || "",
-          lunchEndTime: row.lunchEndTime || "",
-          lunchDurationMinutes: Number(row.lunchDurationMinutes) || 0,
-        };
-        const key = buildScheduleKey(option);
-
-        if (!optionsByKey.has(key)) {
-          optionsByKey.set(key, {
-            ...option,
-            key,
-            label: formatScheduleOption(option),
-          });
-        }
-      });
-    });
-
-    return [...optionsByKey.values()].sort((left, right) => left.label.localeCompare(right.label, "es"));
-  }, [selectedEmployee, templates]);
-  const selectedScheduleKey = form.plannedStartTime && form.plannedEndTime
-    ? buildScheduleKey({
-      startTime: form.plannedStartTime,
-      lunchStartTime: form.plannedLunchStartTime,
-      lunchEndTime: form.plannedLunchEndTime,
-      endTime: form.plannedEndTime,
-      lunchDurationMinutes: form.plannedLunchDurationMinutes,
-    })
-    : "";
-  const selectedScheduleExists = scheduleOptions.some((schedule) => schedule.key === selectedScheduleKey);
-  const selectedScheduleValue = selectedScheduleKey && selectedScheduleExists
-    ? selectedScheduleKey
-    : selectedScheduleKey || isCustomScheduleMode
-      ? CUSTOM_SCHEDULE_KEY
-      : "";
-  const usesCustomSchedule = isCustomScheduleMode || selectedScheduleValue === CUSTOM_SCHEDULE_KEY;
   const scopedExceptions = useMemo(
     () => (onlyPending ? exceptions.filter((exception) => exception.resolution === "pending") : exceptions),
     [exceptions, onlyPending],
@@ -408,6 +318,10 @@ export default function ExceptionManager({
   const discountCount = scopedExceptions.filter((exception) => exception.resolution === "discount_day").length;
   const pendingCount = scopedExceptions.filter((exception) => exception.resolution === "pending").length;
   const filteredExceptions = useMemo(() => {
+    if (exceptionEmployeeId) {
+      return scopedExceptions.filter((exception) => exception.employeeId === exceptionEmployeeId);
+    }
+
     const query = normalizeSearch(exceptionSearch);
 
     if (!query) return scopedExceptions;
@@ -421,7 +335,7 @@ export default function ExceptionManager({
         exception.roleName,
       ].filter(Boolean).join(" ")).includes(query),
     );
-  }, [exceptionSearch, scopedExceptions]);
+  }, [exceptionEmployeeId, exceptionSearch, scopedExceptions]);
   const orderedExceptions = useMemo(
     () =>
       [...filteredExceptions].sort((left, right) => {
@@ -448,19 +362,21 @@ export default function ExceptionManager({
   const paginationEnd = Math.min(safeCurrentPage * EXCEPTIONS_PAGE_SIZE, orderedExceptions.length);
   const hasDateRange = Boolean(form.endDateKey);
   const selectedFlow = getFlowDefinition(form.flowType);
-  const createsManualPunch = selectedFlow.value === "manual_punch";
-  const needsSchedule = selectedFlow.value === "schedule_change";
-  const needsTimeRange = selectedFlow.value === "partial_leave";
-  const canUseDateRange = !createsManualPunch && selectedFlow.value !== "partial_leave";
-  const showsSchedulePresets = selectedFlow.value === "schedule_change";
+  const isPermissionFlow = selectedFlow.value === "full_day_permission";
+  const isHourlyPermission = isPermissionFlow && form.scope === "partial_day";
+  const createsManualPunch = selectedFlow.effect === "manual_punch";
+  const needsTimeRange = isHourlyPermission;
+  const needsTemporarySchedule = selectedFlow.effect === "planning_change";
+  const canUseDateRange = selectedFlow.category === "planning" && !needsTimeRange;
+  const willApproveOnSave = Boolean(form.id && canResolveExceptions && form.resolution === "pending");
   const canSave = Boolean(
     form.employeeId
     && selectedFlow.value
     && form.dateKey
     && form.notes.trim()
     && (!createsManualPunch || form.manualPunchTime)
-    && (!needsSchedule || (form.plannedStartTime && form.plannedEndTime))
-    && (!needsTimeRange || (form.startTime && form.endTime)),
+    && (!needsTimeRange || (form.startTime && form.endTime))
+    && (!needsTemporarySchedule || (form.plannedStartTime && form.plannedEndTime && Array.isArray(form.applicableWeekdays) && form.applicableWeekdays.length)),
   );
 
   const clearNoticeTimers = useCallback(() => {
@@ -511,15 +427,13 @@ export default function ExceptionManager({
       setIsLoading(true);
 
       try {
-        const [employeesResponse, exceptionsResponse, templatesResponse] = await Promise.all([
+        const [employeesResponse, exceptionsResponse] = await Promise.all([
           fetch("/api/company/employees?scope=planning"),
           fetch(`/api/planner/planning/exceptions?month=${monthKey}`),
-          fetch("/api/planner/planning/base-schedules"),
         ]);
-        const [employeesPayload, exceptionsPayload, templatesPayload] = await Promise.all([
+        const [employeesPayload, exceptionsPayload] = await Promise.all([
           employeesResponse.json(),
           exceptionsResponse.json(),
-          templatesResponse.json(),
         ]);
 
         if (!employeesResponse.ok) {
@@ -530,14 +444,9 @@ export default function ExceptionManager({
           throw new Error(exceptionsPayload.error || "No se pudieron cargar las excepciones.");
         }
 
-        if (!templatesResponse.ok) {
-          throw new Error(templatesPayload.error || "No se pudieron cargar los horarios base.");
-        }
-
         if (!isCancelled) {
           setEmployees(employeesPayload.employees || []);
           setExceptions(exceptionsPayload.exceptions || []);
-          setTemplates(templatesPayload.templates || []);
           setCanApproveExceptions(Boolean(exceptionsPayload.options?.canApproveExceptions));
         }
       } catch (error) {
@@ -559,6 +468,45 @@ export default function ExceptionManager({
     };
   }, [clearNoticeTimers, monthKey, showNotice]);
 
+  useEffect(() => {
+    if (!initialDraft) return;
+    if (initialDraft.employeeId && !activeEmployees.length) return;
+
+    const draftKey = JSON.stringify(initialDraft);
+    if (initialDraftAppliedRef.current === draftKey) return;
+
+    const dateKey = /^\d{4}-\d{2}-\d{2}$/.test(initialDraft.dateKey || "")
+      ? initialDraft.dateKey
+      : EMPTY_FORM.dateKey;
+    const month = /^\d{4}-\d{2}$/.test(initialDraft.month || "")
+      ? initialDraft.month
+      : dateKey.slice(0, 7);
+    const flowType = FLOW_VALUES.has(initialDraft.flowType)
+      ? initialDraft.flowType
+      : "full_day_permission";
+    const initialScope = ["full_day", "partial_day"].includes(initialDraft.scope)
+      ? initialDraft.scope
+      : initialDraft.flowType === "hourly_permission"
+        ? "partial_day"
+        : EMPTY_FORM.scope;
+    const employee = activeEmployees.find((entry) => entry.id === initialDraft.employeeId);
+
+    setMonthDate(new Date(`${month}-01T12:00:00.000Z`));
+    setForm({
+      ...EMPTY_FORM,
+      employeeId: initialDraft.employeeId || "",
+      flowType: flowType === "hourly_permission" ? "full_day_permission" : flowType,
+      scope: flowType === "full_day_permission" || flowType === "hourly_permission" ? initialScope : EMPTY_FORM.scope,
+      dateKey,
+      notes: initialDraft.notes || "",
+      resolution: "pending",
+      authorizedBy: "",
+    });
+    setEmployeeQuery(employee?.fullName || "");
+    setIsEditorOpen(true);
+    initialDraftAppliedRef.current = draftKey;
+  }, [activeEmployees, initialDraft]);
+
   function updateForm(field, value) {
     setForm((current) => ({ ...current, [field]: value }));
   }
@@ -573,16 +521,21 @@ export default function ExceptionManager({
     setCurrentPage(1);
   }
 
+  function selectExceptionEmployee(employee) {
+    setExceptionEmployeeId(employee?.id || "");
+    setExceptionSearch(employee?.fullName || "");
+    setCurrentPage(1);
+  }
+
+  function clearExceptionEmployee() {
+    setExceptionEmployeeId("");
+    setCurrentPage(1);
+  }
+
   function updateEmployee(value) {
-    setIsCustomScheduleMode(false);
     setForm((current) => ({
       ...current,
       employeeId: value,
-      plannedStartTime: "",
-      plannedEndTime: "",
-      plannedLunchStartTime: "",
-      plannedLunchEndTime: "",
-      plannedLunchDurationMinutes: 0,
     }));
   }
 
@@ -608,36 +561,9 @@ export default function ExceptionManager({
     });
   }
 
-  function applyRangePreset(months) {
-    setForm((current) => ({
-      ...current,
-      endDateKey: addMonthsRangeEnd(current.dateKey, months),
-    }));
-  }
-
-  function applyMaternitySchedulePreset() {
-    setForm((current) => ({
-      ...current,
-      flowType: "schedule_change",
-      type: "schedule_change",
-      scope: "full_day",
-      resolution: current.id && canResolveExceptions ? "approved_work_time" : "pending",
-      effect: "planning_change",
-      attendanceMode: "use_punches",
-      payMode: "no_pay_change",
-      countsAsWorkedTime: false,
-      allowSupplementaryTime: false,
-      startTime: "",
-      endTime: "",
-      endDateKey: current.endDateKey || addMonthsRangeEnd(current.dateKey, 1),
-      notes: current.notes || "Permiso de maternidad: cambio de horario laboral, mantiene control por picadas.",
-    }));
-  }
-
   function updateFlowType(value) {
     const flow = getFlowDefinition(value);
 
-    setIsCustomScheduleMode(false);
     setForm((current) => ({
       ...current,
       flowType: flow.value,
@@ -647,59 +573,67 @@ export default function ExceptionManager({
       attendanceMode: flow.attendanceMode,
       payMode: flow.payMode,
       resolution: current.id && canResolveExceptions ? flow.resolution : "pending",
-      startTime: flow.value === "partial_leave" ? current.startTime : "",
-      endTime: flow.value === "partial_leave" ? current.endTime : "",
-      plannedStartTime: flow.value === "schedule_change" ? current.plannedStartTime : "",
-      plannedEndTime: flow.value === "schedule_change" ? current.plannedEndTime : "",
-      plannedLunchStartTime: flow.value === "schedule_change" ? current.plannedLunchStartTime : "",
-      plannedLunchEndTime: flow.value === "schedule_change" ? current.plannedLunchEndTime : "",
-      plannedLunchDurationMinutes: flow.value === "schedule_change" ? current.plannedLunchDurationMinutes : 0,
-      manualPunchTime: flow.value === "manual_punch" ? current.manualPunchTime : "",
-      endDateKey: ["manual_punch", "partial_leave"].includes(flow.value) ? "" : current.endDateKey,
+      startTime: "",
+      endTime: "",
+      plannedStartTime: flow.effect === "planning_change" ? current.plannedStartTime : "",
+      plannedEndTime: flow.effect === "planning_change" ? current.plannedEndTime : "",
+      plannedLunchStartTime: flow.effect === "planning_change" ? current.plannedLunchStartTime : "",
+      plannedLunchEndTime: flow.effect === "planning_change" ? current.plannedLunchEndTime : "",
+      plannedLunchDurationMinutes: flow.effect === "planning_change" ? current.plannedLunchDurationMinutes : 0,
+      applicableWeekdays: flow.effect === "planning_change"
+        ? current.applicableWeekdays || DEFAULT_APPLICABLE_WEEKDAYS
+        : DEFAULT_APPLICABLE_WEEKDAYS,
+      manualPunchTime: flow.effect === "manual_punch" ? current.manualPunchTime : "",
+      endDateKey: flow.category === "planning" ? current.endDateKey : "",
       countsAsWorkedTime: false,
       allowSupplementaryTime: false,
     }));
   }
 
-  function updateSchedule(key) {
-    if (key === CUSTOM_SCHEDULE_KEY) {
-      setIsCustomScheduleMode(true);
-      setForm((current) => ({
+  function updatePermissionScope(scope) {
+    setForm((current) => {
+      const isPartialScope = scope === "partial_day";
+
+      return {
         ...current,
-        plannedStartTime: current.plannedStartTime || "",
-        plannedEndTime: current.plannedEndTime || "",
-        plannedLunchStartTime: current.plannedLunchStartTime || "",
-        plannedLunchEndTime: current.plannedLunchEndTime || "",
-        plannedLunchDurationMinutes: Number(current.plannedLunchDurationMinutes) || 0,
-      }));
-      return;
-    }
-
-    setIsCustomScheduleMode(false);
-    const schedule = parseScheduleKey(key);
-
-    setForm((current) => ({
-      ...current,
-      plannedStartTime: schedule.startTime,
-      plannedEndTime: schedule.endTime,
-      plannedLunchStartTime: schedule.lunchStartTime,
-      plannedLunchEndTime: schedule.lunchEndTime,
-      plannedLunchDurationMinutes: schedule.lunchDurationMinutes,
-    }));
+        scope: isPartialScope ? "partial_day" : "full_day",
+        effect: isPartialScope ? "paid_partial_leave" : "paid_absence",
+        startTime: isPartialScope ? current.startTime : "",
+        endTime: isPartialScope ? current.endTime : "",
+        endDateKey: isPartialScope ? "" : current.endDateKey,
+      };
+    });
   }
 
   function describeExceptionTime(exception) {
     const range = exception.endDateKey ? `${exception.dateKey} hasta ${exception.endDateKey}` : exception.dateKey;
 
-    if (exception.type === OUTSIDE_WORK_PUNCH_TYPE && exception.manualPunchTime) {
+    if (exception.effect === "manual_punch" && exception.manualPunchTime) {
       return `${range} · picada ${exception.manualPunchTime}`;
     }
 
     return range;
   }
 
+  function getStatusPillClass(exception) {
+    if (exception.resolution === "pending") return styles.pendingPill;
+    if (exception.resolution === "no_action") return styles.rejectedPill;
+
+    return styles.resolvedPill;
+  }
+
+  function openReviewModal(exception) {
+    setReviewException(exception);
+    setReviewNotes(exception.resolutionNotes || "");
+  }
+
+  const closeReviewModal = useCallback(() => {
+    if (isPending) return;
+    setReviewException(null);
+    setReviewNotes("");
+  }, [isPending]);
+
   function openCreateEditor() {
-    setIsCustomScheduleMode(false);
     setForm({
       ...EMPTY_FORM,
       dateKey: `${monthKey}-01`,
@@ -718,15 +652,72 @@ export default function ExceptionManager({
     const employee = activeEmployees.find((entry) => entry.id === exception.employeeId);
 
     setForm(buildExceptionForm(exception));
-    setIsCustomScheduleMode(false);
     setEmployeeQuery(employee?.fullName || exception.employeeName || "");
     setIsEditorOpen(true);
+  }
+
+  function buildReviewPayload(exception, resolution) {
+    const flow = getFlowDefinition(inferFlowType(exception));
+    const isRejected = resolution === "no_action";
+
+    return {
+      id: exception.id,
+      employeeId: exception.employeeId,
+      type: isRejected ? exception.type : exception.type || flow.type,
+      scope: isRejected
+        ? exception.scope
+        : exception.scope || (exception.endDateKey && flow.category === "planning" ? "date_range" : flow.scope),
+      dateKey: exception.dateKey,
+      endDateKey: isRejected ? exception.endDateKey : exception.endDateKey || "",
+      startTime: isRejected ? exception.startTime : exception.startTime || "",
+      endTime: isRejected ? exception.endTime : exception.endTime || "",
+      manualPunchTime: isRejected ? exception.manualPunchTime : exception.manualPunchTime || "",
+      plannedStartTime: isRejected ? exception.plannedStartTime : exception.plannedStartTime || "",
+      plannedEndTime: isRejected ? exception.plannedEndTime : exception.plannedEndTime || "",
+      plannedLunchStartTime: isRejected ? exception.plannedLunchStartTime : exception.plannedLunchStartTime || "",
+      plannedLunchEndTime: isRejected ? exception.plannedLunchEndTime : exception.plannedLunchEndTime || "",
+      plannedLunchDurationMinutes: isRejected ? exception.plannedLunchDurationMinutes : Number(exception.plannedLunchDurationMinutes) || 0,
+      applicableWeekdays: Array.isArray(exception.applicableWeekdays) && exception.applicableWeekdays.length
+        ? exception.applicableWeekdays
+        : DEFAULT_APPLICABLE_WEEKDAYS,
+      effect: isRejected ? "alert_review" : exception.effect || flow.effect,
+      attendanceMode: isRejected ? "none" : exception.attendanceMode || flow.attendanceMode,
+      payMode: isRejected ? "no_pay_change" : exception.payMode || flow.payMode,
+      resolution,
+      resolutionNotes: reviewNotes.trim(),
+      notes: exception.notes || "",
+    };
+  }
+
+  function reviewCurrentException(resolution) {
+    if (!reviewException || !canResolveExceptions) return;
+
+    startTransition(async () => {
+      try {
+        const response = await fetch(`/api/planner/planning/exceptions/${reviewException.id}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(buildReviewPayload(reviewException, resolution)),
+        });
+        const payload = await response.json();
+
+        if (!response.ok) {
+          throw new Error(payload.error || "No se pudo actualizar la aprobacion.");
+        }
+
+        await loadExceptions();
+        setReviewException(null);
+        setReviewNotes("");
+        showNotice("success", resolution === "no_action" ? "Justificacion rechazada." : "Justificacion aprobada.");
+      } catch (error) {
+        showNotice("error", error.message);
+      }
+    });
   }
 
   const closeEditor = useCallback(() => {
     setForm(EMPTY_FORM);
     setEmployeeQuery("");
-    setIsCustomScheduleMode(false);
     setIsEditorOpen(false);
   }, []);
 
@@ -742,18 +733,24 @@ export default function ExceptionManager({
     const method = form.id ? "PATCH" : "POST";
     const resolutionEffect = deriveResolutionEffect(form);
     const canResolveCurrentException = Boolean(form.id && canResolveExceptions);
+    const resolution = canResolveCurrentException
+      ? form.resolution === "pending"
+        ? selectedFlow.resolution
+        : form.resolution
+      : "pending";
     const requestBody = {
       ...form,
       ...resolutionEffect,
-      resolution: canResolveCurrentException ? form.resolution : "pending",
+      resolution,
       authorizedBy: "",
       startTime: needsTimeRange ? form.startTime : "",
       endTime: needsTimeRange ? form.endTime : "",
-      plannedStartTime: needsSchedule ? form.plannedStartTime : "",
-      plannedEndTime: needsSchedule ? form.plannedEndTime : "",
-      plannedLunchStartTime: needsSchedule ? form.plannedLunchStartTime : "",
-      plannedLunchEndTime: needsSchedule ? form.plannedLunchEndTime : "",
-      plannedLunchDurationMinutes: needsSchedule ? form.plannedLunchDurationMinutes : 0,
+      plannedStartTime: needsTemporarySchedule ? form.plannedStartTime : "",
+      plannedEndTime: needsTemporarySchedule ? form.plannedEndTime : "",
+      plannedLunchStartTime: needsTemporarySchedule ? form.plannedLunchStartTime : "",
+      plannedLunchEndTime: needsTemporarySchedule ? form.plannedLunchEndTime : "",
+      plannedLunchDurationMinutes: needsTemporarySchedule ? form.plannedLunchDurationMinutes : 0,
+      applicableWeekdays: needsTemporarySchedule ? form.applicableWeekdays : undefined,
       manualPunchTime: createsManualPunch ? form.manualPunchTime : "",
       destination: "",
       countsAsWorkedTime: false,
@@ -783,6 +780,22 @@ export default function ExceptionManager({
     });
   }
 
+  function toggleApplicableWeekday(day) {
+    setForm((current) => {
+      const currentDays = Array.isArray(current.applicableWeekdays) && current.applicableWeekdays.length
+        ? current.applicableWeekdays
+        : DEFAULT_APPLICABLE_WEEKDAYS;
+      const nextDays = currentDays.includes(day)
+        ? currentDays.filter((entry) => entry !== day)
+        : [...currentDays, day];
+
+      return {
+        ...current,
+        applicableWeekdays: nextDays.sort((left, right) => left - right),
+      };
+    });
+  }
+
   function confirmDeleteException() {
     if (!exceptionToDelete) {
       return;
@@ -796,12 +809,12 @@ export default function ExceptionManager({
         const payload = await response.json();
 
         if (!response.ok) {
-          throw new Error(payload.error || "No se pudo anular la justificacion.");
+          throw new Error(payload.error || "No se pudo procesar la justificacion.");
         }
 
         setExceptionToDelete(null);
         await loadExceptions();
-        showNotice("success", "Justificacion anulada correctamente.");
+        showNotice("success", payload.message || "Justificacion procesada correctamente.");
       } catch (error) {
         showNotice("error", error.message);
       }
@@ -822,13 +835,13 @@ export default function ExceptionManager({
           const payload = await response.json();
 
           if (!response.ok) {
-            throw new Error(payload.error || "No se pudo anular una justificacion filtrada.");
+            throw new Error(payload.error || "No se pudo procesar una justificacion filtrada.");
           }
         }
 
         setIsBulkDeleteOpen(false);
         await loadExceptions();
-        showNotice("success", "Justificaciones filtradas anuladas correctamente.");
+        showNotice("success", "Justificaciones filtradas procesadas correctamente.");
       } catch (error) {
         showNotice("error", error.message);
       }
@@ -840,32 +853,188 @@ export default function ExceptionManager({
       <FloatingNotice notice={notice} onClose={dismissNotice} />
       <ConfirmDialog
         isOpen={Boolean(exceptionToDelete)}
-        title="Anular justificacion"
-        message={`Deseas anular la justificacion de ${exceptionToDelete?.employeeName || ""}? Quedara archivada y no contara para el control operativo.`}
-        confirmLabel={isPending ? "Anulando..." : "Anular"}
+        title={`${deleteActionLabel} justificacion`}
+        message={deleteActionMessage}
+        confirmLabel={isPending ? "Procesando..." : deleteActionLabel}
         isPending={isPending}
         onCancel={() => setExceptionToDelete(null)}
         onConfirm={confirmDeleteException}
       />
       <ConfirmDialog
         isOpen={isBulkDeleteOpen}
-        title="Anular justificaciones filtradas"
-        message={`Se anularan ${orderedExceptions.length} registros del filtro actual. No se tocaran horarios planificados ni picadas.`}
-        confirmLabel={isPending ? "Anulando..." : "Anular filtradas"}
+        title="Procesar justificaciones filtradas"
+        message={`Se procesaran ${orderedExceptions.length} registros del filtro actual. Las pendientes se eliminaran y las resueltas se anularan con auditoria.`}
+        confirmLabel={isPending ? "Procesando..." : "Procesar filtradas"}
         isPending={isPending}
         onCancel={() => setIsBulkDeleteOpen(false)}
         onConfirm={confirmBulkDeleteExceptions}
       />
+      <FloatingModal
+        isOpen={Boolean(reviewException)}
+        eyebrow="Revision"
+        title={reviewException?.employeeName || "Justificacion"}
+        isPending={isPending}
+        onClose={closeReviewModal}
+      >
+        {reviewException ? (
+          <div className={styles.reviewStack}>
+            <div className={styles.reviewHeader}>
+              <span className={getStatusPillClass(reviewException)}>{reviewException.resolutionLabel}</span>
+              <strong>{reviewException.typeLabel}</strong>
+              <small>{describeExceptionTime(reviewException)}</small>
+            </div>
 
-      <section className={styles.panel}>
-        <div className={styles.toolbar}>
-          <div>
-            <p className={styles.eyebrow}>{eyebrow}</p>
-            <h2 className={styles.title}>{title}</h2>
-            <p className={styles.description}>{description}</p>
+            <dl className={styles.reviewGrid}>
+              <div>
+                <dt>Sucursal</dt>
+                <dd>{reviewException.branchName || "Sin sucursal"}</dd>
+              </div>
+              <div>
+                <dt>Area</dt>
+                <dd>{reviewException.areaName || "Sin area"}</dd>
+              </div>
+              <div>
+                <dt>Rol</dt>
+                <dd>{reviewException.roleName || "Sin rol"}</dd>
+              </div>
+              <div>
+                <dt>Registrado por</dt>
+                <dd>{reviewException.registeredBy || "Sin registro"}</dd>
+              </div>
+              {reviewException.startTime || reviewException.endTime ? (
+                <div>
+                  <dt>Rango</dt>
+                  <dd>{[reviewException.startTime, reviewException.endTime].filter(Boolean).join(" - ")}</dd>
+                </div>
+              ) : null}
+              {reviewException.manualPunchTime ? (
+                <div>
+                  <dt>Picada</dt>
+                  <dd>{reviewException.manualPunchTime}</dd>
+                </div>
+              ) : null}
+              {reviewException.plannedStartTime || reviewException.plannedEndTime ? (
+                <div>
+                  <dt>Horario temporal</dt>
+                  <dd>{[reviewException.plannedStartTime, reviewException.plannedEndTime].filter(Boolean).join(" - ")}</dd>
+                </div>
+              ) : null}
+            </dl>
+
+            <div className={styles.reviewNotes}>
+              <span>Descripcion</span>
+              <p>{reviewException.notes || "Sin descripcion."}</p>
+            </div>
+
+            {canResolveExceptions && reviewException.resolution === "pending" ? (
+              <label className={styles.field}>
+                <span>Nota de revision</span>
+                <textarea
+                  value={reviewNotes}
+                  onChange={(event) => setReviewNotes(event.target.value)}
+                  rows={3}
+                  placeholder="Opcional"
+                  disabled={isPending}
+                />
+              </label>
+            ) : reviewException.resolutionNotes ? (
+              <div className={styles.reviewNotes}>
+                <span>Nota de revision</span>
+                <p>{reviewException.resolutionNotes}</p>
+              </div>
+            ) : null}
+
+            {canResolveExceptions && reviewException.resolution === "pending" ? (
+              <div className={styles.reviewActions}>
+                <button
+                  type="button"
+                  className={styles.dangerButton}
+                  onClick={() => reviewCurrentException("no_action")}
+                  disabled={isPending}
+                >
+                  Rechazar
+                </button>
+                <button
+                  type="button"
+                  className={styles.primaryButton}
+                  onClick={() => reviewCurrentException(getFlowDefinition(inferFlowType(reviewException)).resolution)}
+                  disabled={isPending}
+                >
+                  Aprobar
+                </button>
+              </div>
+            ) : null}
+          </div>
+        ) : null}
+      </FloatingModal>
+
+      {!isCompactList ? (
+        <section className={styles.panel}>
+          <div className={styles.toolbar}>
+            <div>
+              <p className={styles.eyebrow}>{eyebrow}</p>
+              <h2 className={styles.title}>{title}</h2>
+              {description ? <p className={styles.description}>{description}</p> : null}
+            </div>
+
+            <div className={styles.actionsGroup}>
+              <div className={styles.monthControls}>
+                <button type="button" onClick={() => moveMonth((current) => subMonths(current, 1))} aria-label="Mes anterior">
+                  <ChevronLeft size={16} />
+                </button>
+                <div className={styles.monthPill}>
+                  <CalendarDays size={16} />
+                  <span>{monthLabel}</span>
+                </div>
+                <button type="button" onClick={() => moveMonth((current) => addMonths(current, 1))} aria-label="Mes siguiente">
+                  <ChevronRight size={16} />
+                </button>
+              </div>
+
+              {showCreateButton ? (
+                <button type="button" className={styles.primaryButton} onClick={openCreateEditor}>
+                  <Plus size={16} />
+                  Nueva justificacion
+                </button>
+              ) : null}
+            </div>
           </div>
 
-          <div className={styles.actionsGroup}>
+          {isLoading ? (
+            <div className={styles.summaryGrid} aria-hidden="true">
+              {Array.from({ length: 4 }, (_, index) => (
+                <div key={index} className={styles.metricSkeleton}>
+                  <span className={styles.skeletonLineShort} />
+                  <span className={styles.skeletonNumber} />
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div className={styles.summaryGrid}>
+              <div className={styles.metric}>
+                <span>Registros</span>
+                <strong>{scopedExceptions.length}</strong>
+              </div>
+              <div className={styles.metric}>
+                <span>Pendientes</span>
+                <strong>{pendingCount}</strong>
+              </div>
+              <div className={styles.metric}>
+                <span>Sin descuento</span>
+                <strong>{approvedCount}</strong>
+              </div>
+              <div className={styles.metric}>
+                <span>Con descuento</span>
+                <strong>{discountCount}</strong>
+              </div>
+            </div>
+          )}
+        </section>
+      ) : null}
+
+      <section className={styles.panel}>
+        <div className={styles.listHeader}>
+          {isCompactList ? (
             <div className={styles.monthControls}>
               <button type="button" onClick={() => moveMonth((current) => subMonths(current, 1))} aria-label="Mes anterior">
                 <ChevronLeft size={16} />
@@ -878,71 +1047,38 @@ export default function ExceptionManager({
                 <ChevronRight size={16} />
               </button>
             </div>
-
-            {showCreateButton ? (
-              <button type="button" className={styles.primaryButton} onClick={openCreateEditor}>
-                <Plus size={16} />
-                Nueva justificacion
-              </button>
-            ) : null}
-          </div>
-        </div>
-
-        {isLoading ? (
-          <div className={styles.summaryGrid} aria-hidden="true">
-            {Array.from({ length: 4 }, (_, index) => (
-              <div key={index} className={styles.metricSkeleton}>
-                <span className={styles.skeletonLineShort} />
-                <span className={styles.skeletonNumber} />
-              </div>
-            ))}
-          </div>
-        ) : (
-          <div className={styles.summaryGrid}>
-            <div className={styles.metric}>
-              <span>Registros</span>
-              <strong>{scopedExceptions.length}</strong>
+          ) : (
+            <div>
+              <h3>{listTitle}</h3>
+              <p>
+                {isLoading
+                  ? "Cargando..."
+                  : exceptionEmployeeId || exceptionSearch.trim()
+                    ? `${orderedExceptions.length} de ${scopedExceptions.length} registros · Periodo ${monthLabel}`
+                    : `Periodo ${monthLabel} · mas recientes primero`}
+              </p>
             </div>
-            <div className={styles.metric}>
-              <span>Pendientes</span>
-              <strong>{pendingCount}</strong>
-            </div>
-            <div className={styles.metric}>
-              <span>Sin descuento</span>
-              <strong>{approvedCount}</strong>
-            </div>
-            <div className={styles.metric}>
-              <span>Con descuento</span>
-              <strong>{discountCount}</strong>
-            </div>
-          </div>
-        )}
-      </section>
-
-      <section className={styles.panel}>
-        <div className={styles.listHeader}>
-          <div>
-            <h3>{listTitle}</h3>
-            <p>
-              {isLoading
-                ? "Cargando..."
-                : exceptionSearch.trim()
-                  ? `${orderedExceptions.length} de ${scopedExceptions.length} registros · Periodo ${monthLabel}`
-                  : `Periodo ${monthLabel} · mas recientes primero`}
-            </p>
-          </div>
-          <label className={styles.searchField}>
-            <Search size={16} />
-            <input
-              type="search"
-              value={exceptionSearch}
-              onChange={(event) => updateExceptionSearch(event.target.value)}
+          )}
+          <div className={styles.employeeFilter}>
+            <EmployeeAutocomplete
+              employees={activeEmployees}
+              value={exceptionEmployeeId}
+              query={exceptionSearch}
+              onQueryChange={updateExceptionSearch}
+              onSelect={selectExceptionEmployee}
+              onClearSelection={clearExceptionEmployee}
+              label="Empleado"
               placeholder="Filtrar por empleado"
-              aria-label="Filtrar justificaciones por empleado"
               disabled={isLoading}
             />
-          </label>
-          {showBulkDeleteButton && canResolveExceptions && exceptionSearch.trim() && orderedExceptions.length ? (
+          </div>
+          {isCompactList && showCreateButton ? (
+            <button type="button" className={styles.primaryButton} onClick={openCreateEditor}>
+              <Plus size={16} />
+              Nueva justificacion
+            </button>
+          ) : null}
+          {showBulkDeleteButton && canResolveExceptions && (exceptionEmployeeId || exceptionSearch.trim()) && orderedExceptions.length ? (
             <button
               type="button"
               className={styles.dangerButton}
@@ -954,10 +1090,13 @@ export default function ExceptionManager({
           ) : null}
         </div>
 
-        {!isLoading && exceptionSearch.trim() && !orderedExceptions.length && scopedExceptions.length ? (
+        {!isLoading && (exceptionEmployeeId || exceptionSearch.trim()) && !orderedExceptions.length && scopedExceptions.length ? (
           <div className={styles.filterNotice}>
             <span>No hay registros para ese empleado en {monthLabel}.</span>
-            <button type="button" onClick={() => updateExceptionSearch("")}>Limpiar filtro</button>
+            <button type="button" onClick={() => {
+              updateExceptionSearch("");
+              clearExceptionEmployee();
+            }}>Limpiar filtro</button>
           </div>
         ) : null}
 
@@ -979,50 +1118,34 @@ export default function ExceptionManager({
               <thead>
                 <tr>
                   <th>Empleado</th>
-                  <th>Motivo / fecha</th>
-                  <th>Trazabilidad</th>
-                  <th>Tratamiento</th>
-                  <th aria-label="Acciones" />
+                  <th>Registrado por</th>
+                  <th>Fecha</th>
+                  <th className={styles.optionsColumn}>Opciones</th>
                 </tr>
               </thead>
               <tbody>
               {paginatedExceptions.map((exception) => (
                   <tr
                     key={exception.id}
-                    className={canResolveExceptions ? styles.clickableRow : ""}
-                    onClick={() => openEditEditor(exception)}
+                    className={styles.clickableRow}
+                    onClick={() => openReviewModal(exception)}
                   >
                     <td>
                       <strong>{exception.employeeName}</strong>
-                      <span>{[exception.branchName, exception.areaName, exception.roleName].filter(Boolean).join(" / ") || "Sin estructura"}</span>
                     </td>
                     <td>
-                      <strong>{exception.typeLabel}</strong>
+                      <span>{exception.registeredBy || "Sin registro"}</span>
+                    </td>
+                    <td>
                       <span>{describeExceptionTime(exception)}</span>
                     </td>
-                    <td>
-                      <strong>Registro: {exception.registeredBy}</strong>
-                      <span>Autorizo: {exception.authorizedBy || "Pendiente"}</span>
-                    </td>
-                    <td>
-                      <span className={exception.resolution === "pending" ? styles.pendingPill : styles.resolvedPill}>
-                        {exception.resolutionLabel}
-                      </span>
-                      {exception.resolutionNotes ? <small>{exception.resolutionNotes}</small> : null}
-                    </td>
-                    <td>
+                    <td className={styles.optionsColumn}>
                       {canResolveExceptions ? (
                         <div className={styles.rowActions}>
                           <button type="button" onClick={(event) => {
                             event.stopPropagation();
-                            openEditEditor(exception);
-                          }} aria-label="Editar justificacion">
-                            <Edit3 size={15} />
-                          </button>
-                          <button type="button" onClick={(event) => {
-                            event.stopPropagation();
                             setExceptionToDelete(exception);
-                          }} aria-label="Anular justificacion">
+                          }} aria-label="Eliminar o anular justificacion">
                             <XCircle size={15} />
                           </button>
                         </div>
@@ -1098,28 +1221,37 @@ export default function ExceptionManager({
             </div>
           ) : null}
 
-          <fieldset className={styles.flowFieldset}>
-            <legend>Tipo de resolucion</legend>
-            <div className={styles.flowGrid}>
-              {EXCEPTION_FLOWS.map((flow) => (
-                <button
-                  key={flow.value}
-                  type="button"
-                  className={styles.flowOption}
-                  data-active={form.flowType === flow.value}
-                  onClick={() => updateFlowType(flow.value)}
-                >
-                  <strong>{flow.label}</strong>
-                  <span>{flow.description}</span>
-                </button>
-              ))}
-            </div>
-          </fieldset>
+          <AutocompleteSelect
+            label="Tipo de ajuste"
+            options={FLOW_OPTIONS}
+            value={form.flowType}
+            placeholder="Seleccionar tipo"
+            searchPlaceholder="Buscar tipo"
+            emptyText="Sin tipos"
+            onChange={updateFlowType}
+          />
 
-          <div className={styles.flowSummary}>
-            <strong>{selectedFlow.label}</strong>
-            <span>{selectedFlow.description}</span>
-          </div>
+          {isPermissionFlow ? (
+            <div className={styles.presetPanel}>
+              <span>Alcance del permiso</span>
+              <div className={styles.presetActions}>
+                <button
+                  type="button"
+                  data-active={form.scope !== "partial_day"}
+                  onClick={() => updatePermissionScope("full_day")}
+                >
+                  Dia completo
+                </button>
+                <button
+                  type="button"
+                  data-active={form.scope === "partial_day"}
+                  onClick={() => updatePermissionScope("partial_day")}
+                >
+                  Por horas
+                </button>
+              </div>
+            </div>
+          ) : null}
 
           <div className={styles.twoColumnGrid}>
             <label className={styles.field}>
@@ -1148,75 +1280,15 @@ export default function ExceptionManager({
             </label>
           ) : null}
 
-          {showsSchedulePresets ? (
-            <div className={styles.presetPanel}>
-              <span>Atajos de cambio de horario</span>
-              <div className={styles.presetActions}>
-                <button type="button" onClick={applyMaternitySchedulePreset}>
-                  Maternidad / cambio de horario
-                </button>
-                <button type="button" onClick={() => applyRangePreset(1)}>
-                  Todo el mes
-                </button>
-                <button type="button" onClick={() => applyRangePreset(3)}>
-                  3 meses
-                </button>
-                <button type="button" onClick={() => applyRangePreset(12)}>
-                  12 meses
-                </button>
-              </div>
-            </div>
-          ) : null}
-
           {createsManualPunch ? (
             <label className={styles.field}>
-              <span>Hora de picada manual</span>
+              <span>Hora a registrar</span>
               <input
                 type="time"
                 value={form.manualPunchTime}
                 onChange={(event) => updateForm("manualPunchTime", event.target.value)}
               />
             </label>
-          ) : null}
-
-          {needsSchedule ? (
-            <label className={styles.field}>
-              <span>Nuevo horario planificado</span>
-              <select value={selectedScheduleValue} onChange={(event) => updateSchedule(event.target.value)}>
-                <option value="">Seleccionar horario</option>
-                {scheduleOptions.map((schedule) => (
-                  <option key={schedule.key} value={schedule.key}>
-                    {schedule.label}
-                  </option>
-                ))}
-                <option value={CUSTOM_SCHEDULE_KEY}>Horario personalizado</option>
-              </select>
-            </label>
-          ) : null}
-
-          {needsSchedule && usesCustomSchedule ? (
-            <>
-              <div className={styles.twoColumnGrid}>
-                <label className={styles.field}>
-                  <span>Inicio planificado</span>
-                  <input type="time" value={form.plannedStartTime} onChange={(event) => updateForm("plannedStartTime", event.target.value)} />
-                </label>
-                <label className={styles.field}>
-                  <span>Fin planificado</span>
-                  <input type="time" value={form.plannedEndTime} onChange={(event) => updateForm("plannedEndTime", event.target.value)} />
-                </label>
-              </div>
-              <div className={styles.twoColumnGrid}>
-                <label className={styles.field}>
-                  <span>Inicio almuerzo</span>
-                  <input type="time" value={form.plannedLunchStartTime} onChange={(event) => updateForm("plannedLunchStartTime", event.target.value)} />
-                </label>
-                <label className={styles.field}>
-                  <span>Fin almuerzo</span>
-                  <input type="time" value={form.plannedLunchEndTime} onChange={(event) => updateForm("plannedLunchEndTime", event.target.value)} />
-                </label>
-              </div>
-            </>
           ) : null}
 
           {needsTimeRange ? (
@@ -1232,12 +1304,55 @@ export default function ExceptionManager({
             </div>
           ) : null}
 
+          {needsTemporarySchedule ? (
+            <div className={styles.presetPanel}>
+              <span>Horario temporal</span>
+              <div className={styles.twoColumnGrid}>
+                <label className={styles.field}>
+                  <span>Entrada</span>
+                  <input type="time" value={form.plannedStartTime} onChange={(event) => updateForm("plannedStartTime", event.target.value)} />
+                </label>
+                <label className={styles.field}>
+                  <span>Salida</span>
+                  <input type="time" value={form.plannedEndTime} onChange={(event) => updateForm("plannedEndTime", event.target.value)} />
+                </label>
+              </div>
+              <div className={styles.twoColumnGrid}>
+                <label className={styles.field}>
+                  <span>Inicio almuerzo</span>
+                  <input type="time" value={form.plannedLunchStartTime} onChange={(event) => updateForm("plannedLunchStartTime", event.target.value)} />
+                </label>
+                <label className={styles.field}>
+                  <span>Fin almuerzo</span>
+                  <input type="time" value={form.plannedLunchEndTime} onChange={(event) => updateForm("plannedLunchEndTime", event.target.value)} />
+                </label>
+              </div>
+              <div className={styles.weekdayPicker}>
+                {WEEKDAY_OPTIONS.map((day) => {
+                  const isSelected = Array.isArray(form.applicableWeekdays) && form.applicableWeekdays.includes(day.value);
+
+                  return (
+                    <button
+                      key={day.value}
+                      type="button"
+                      className={isSelected ? styles.weekdayButtonActive : styles.weekdayButton}
+                      onClick={() => toggleApplicableWeekday(day.value)}
+                      aria-pressed={isSelected}
+                    >
+                      {day.label}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          ) : null}
+
           <label className={styles.field}>
             <span>Descripcion</span>
             <textarea
               value={form.notes}
               onChange={(event) => updateForm("notes", event.target.value)}
-              placeholder="Ej. falta por enfermedad, permiso de 10:00 a 12:00, trabajo externo autorizado, cambio de horario por maternidad."
+              placeholder="Ej. permiso de 10:00 a 12:00, trabajo externo autorizado, salida no marcada por cierre de tarea fuera del local."
               rows={4}
             />
           </label>
@@ -1250,7 +1365,7 @@ export default function ExceptionManager({
             </button>
             <button type="submit" className={styles.primaryButton} disabled={!canSave || isPending}>
               <Save size={16} />
-              {isPending ? "Guardando..." : "Guardar justificacion"}
+              {isPending ? "Guardando..." : willApproveOnSave ? "Aprobar justificacion" : "Guardar justificacion"}
             </button>
           </div>
         </form>

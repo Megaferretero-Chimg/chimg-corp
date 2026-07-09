@@ -40,7 +40,19 @@ function formatHours(hours) {
     return "0h";
   }
 
-  return `${hours}h`;
+  const totalMinutes = Math.round(hours * 60);
+  const fullHours = Math.floor(totalMinutes / 60);
+  const remainingMinutes = totalMinutes % 60;
+
+  if (!fullHours) {
+    return `${remainingMinutes}m`;
+  }
+
+  if (!remainingMinutes) {
+    return `${fullHours}h`;
+  }
+
+  return `${fullHours}h ${remainingMinutes}m`;
 }
 
 function formatDailyDiscount(absenceHours, lateMinutes) {
@@ -151,6 +163,12 @@ function resolveSupplementaryHours(day, employee) {
     return 0;
   }
 
+  const savedMinutes = Math.max(0, Number(day.savedSupplementaryMinutes) || 0);
+
+  if (savedMinutes > 0) {
+    return savedMinutes / 60;
+  }
+
   return Math.max(0, Number(day.savedSupplementaryHours) || 0);
 }
 
@@ -245,6 +263,7 @@ export default function calculatePayrollEstimate({
   supplementaryByDate = new Map(),
   lateByDate = new Map(),
   incompleteDayByDate = new Map(),
+  scheduleRules,
 }) {
   const monthStart = startOfMonth(monthDate);
   const monthEnd = endOfMonth(monthDate);
@@ -253,6 +272,7 @@ export default function calculatePayrollEstimate({
     end: monthEnd,
     punches,
     schedules,
+    scheduleRules,
   });
   const terminationDateKey = resolveTerminationDateKey(employee);
 
@@ -267,6 +287,7 @@ export default function calculatePayrollEstimate({
         ...day,
         savedSupplementaryDecision: saved?.decision || "",
         savedSupplementaryHours: saved?.candidateHours || 0,
+        savedSupplementaryMinutes: saved?.candidateMinutes || 0,
         savedLateConfirmation: savedLate?.confirmed || false,
         savedLateMinutes: savedLate?.lateMinutes || 0,
         savedIncompleteDayDecision: incompleteDayByDate.get(day.dateKey)?.decision || "",

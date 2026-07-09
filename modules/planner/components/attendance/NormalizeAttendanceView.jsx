@@ -39,6 +39,10 @@ function formatTime(value) {
   return formatEcuadorTime(value);
 }
 
+function formatAuditActor(upload) {
+  return upload?.uploadedBy || upload?.uploadedByUser || "Sistema";
+}
+
 function formatDayName(value) {
   const parsed = new Date(value);
 
@@ -211,6 +215,10 @@ export default function NormalizeAttendanceView({ uploadId }) {
   const selectedEmployee = useMemo(
     () => (response?.employees || []).find((employee) => getEmployeeKey(employee) === selectedEmployeeKey) || null,
     [response?.employees, selectedEmployeeKey],
+  );
+  const selectedEmployeeWeeks = useMemo(
+    () => groupPunchesByWeek(selectedEmployee?.punches || []),
+    [selectedEmployee?.punches],
   );
   const reconciliationNeedsAttention = Boolean(
     (response?.summary?.inactiveEmployees || 0) > 0 ||
@@ -393,7 +401,7 @@ export default function NormalizeAttendanceView({ uploadId }) {
               <div className={styles.blockingCard}>
                 <div className={styles.loadingSpinner} />
                 <h2 className={styles.blockingTitle}>
-                  {isSaving ? "Guardando y cargando picadas" : "Cargando picadas al sistema"}
+                  {isSaving ? "Guardando y publicando" : "Publicando picadas"}
                 </h2>
                 <p className={styles.blockingMessage}>
                   No cierres esta página ni navegues a otra sección hasta que termine el proceso.
@@ -451,18 +459,18 @@ export default function NormalizeAttendanceView({ uploadId }) {
               <div className={styles.badgeStack}>
                 <div className={styles.sourceBadge}>
                   {response.source === "saved"
-                    ? `Normalización guardada${
+                    ? `Guardado${
                         response.upload?.normalizedAt
                           ? ` · ${formatDateTime(response.upload.normalizedAt)}`
                           : ""
                       }`
-                    : "Normalización temporal en memoria"}
+                    : "Pendiente de guardar"}
                 </div>
 
                 <div className={styles.sourceBadgeSecondary}>
                   {response.upload?.punchesPublishedAt
-                    ? `Picadas publicadas · ${formatDateTime(response.upload.punchesPublishedAt)}`
-                    : "Picadas aún no publicadas en el SISTEMA"}
+                    ? `Publicado · ${formatDateTime(response.upload.punchesPublishedAt)}`
+                    : "Sin publicar"}
                 </div>
               </div>
 
@@ -475,7 +483,7 @@ export default function NormalizeAttendanceView({ uploadId }) {
                     className={styles.saveButton}
                   >
                     <Save size={16} />
-                    {isSaving ? "Procesando..." : "Guardar y cargar picadas válidas"}
+                    {isSaving ? "Procesando..." : "Guardar y publicar"}
                   </button>
                 ) : null}
 
@@ -484,7 +492,7 @@ export default function NormalizeAttendanceView({ uploadId }) {
                       <div className={styles.publishedTag}>
                         <CheckCircle2 size={16} />
                         <span>
-                          Picadas cargadas · {formatDateTime(response.upload.punchesPublishedAt)}
+                          Publicado · {formatDateTime(response.upload.punchesPublishedAt)}
                         </span>
                       </div>
                     ) : (
@@ -496,8 +504,8 @@ export default function NormalizeAttendanceView({ uploadId }) {
                       >
                         <Database size={16} />
                         {isPublishingPunches
-                          ? "Cargando picadas..."
-                          : "Cargar picadas al Sistema"}
+                          ? "Publicando..."
+                          : "Publicar picadas"}
                       </button>
                     )
                   : null}
@@ -508,6 +516,8 @@ export default function NormalizeAttendanceView({ uploadId }) {
               {[
                 { label: "Archivo", value: response.upload?.fileName || "N/D" },
                 { label: "Sucursal", value: response.upload?.branchName || response.upload?.branchCode || "N/D" },
+                { label: "Subido por", value: formatAuditActor(response.upload) },
+                { label: "Hora de subida", value: formatDateTime(response.upload?.uploadedAt || response.upload?.createdAt) },
                 { label: "Empleados", value: response.summary?.totalEmployees || 0 },
                 { label: "Picadas", value: response.summary?.totalPunches || 0 },
                 { label: "Registros", value: totalRows },
@@ -534,10 +544,7 @@ export default function NormalizeAttendanceView({ uploadId }) {
                     )}
                   </div>
                   <div>
-                    <h2 className={styles.reconciliationTitle}>Conciliación por sucursal</h2>
-                    <p className={styles.reconciliationText}>
-                      Solo se publican picadas con empleado activo en esta sucursal.
-                    </p>
+                    <h2 className={styles.reconciliationTitle}>Conciliación</h2>
                   </div>
                 </div>
                 <div className={styles.reconciliationStats}>
@@ -613,7 +620,7 @@ export default function NormalizeAttendanceView({ uploadId }) {
             </section>
 
             <label className={styles.searchField}>
-              <span className={styles.searchLabel}>Filtrar empleado encontrado</span>
+              <span className={styles.searchLabel}>Empleado</span>
               <div className={styles.searchInputWrap}>
                 <Search size={16} />
                 <input
@@ -648,7 +655,7 @@ export default function NormalizeAttendanceView({ uploadId }) {
 
                   <div className={styles.punchList}>
                     {selectedEmployee.punches.length ? (
-                      groupPunchesByWeek(selectedEmployee.punches).map((week) => (
+                      selectedEmployeeWeeks.map((week) => (
                         <section key={`${selectedEmployee.biometricCode}-${week.weekKey}`} className={styles.weekGroup}>
                           <div className={styles.weekHeader}>
                             <span className={styles.weekTitle}>{week.label}</span>
@@ -715,16 +722,6 @@ export default function NormalizeAttendanceView({ uploadId }) {
               )}
             </div>
 
-            {response.parserLogs?.length ? (
-              <div className={styles.logs}>
-                <h3 className={styles.logsTitle}>Trazas del parser</h3>
-                <ul className={styles.logsList}>
-                  {response.parserLogs.slice(0, 16).map((log, index) => (
-                    <li key={`${log}-${index}`}>{log}</li>
-                  ))}
-                </ul>
-              </div>
-            ) : null}
           </>
         ) : null}
       </section>

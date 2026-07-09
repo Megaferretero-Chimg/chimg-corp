@@ -11,7 +11,7 @@ export default async function OperationsMonthlySummaryDetailPage({ params }) {
   return (
     <ModuleShell
       title={`Cierre ${month}`}
-      description="Detalle del mes con totales consolidados, resumen por area, formatos de descarga y guardado de copia historica."
+      description="Detalle del mes con totales consolidados, resumen por area y formatos de descarga."
     >
       <MonthlyClosureView view="summary" fixedMonth={month} />
     </ModuleShell>

@@ -16,16 +16,6 @@ export default function AreaForm({
   return (
     <form onSubmit={onSubmit} className={`catalog-form-grid ${styles.formGrid}`}>
       <label className="catalog-field">
-        <span className="catalog-label">Código</span>
-        <input
-          value={form.code}
-          onChange={(event) => onFieldChange("code", event.target.value.toUpperCase())}
-          className="catalog-input"
-          placeholder="Se genera automáticamente si lo dejas vacío"
-        />
-      </label>
-
-      <label className="catalog-field">
         <span className="catalog-label">Nombre</span>
         <input
           value={form.name}

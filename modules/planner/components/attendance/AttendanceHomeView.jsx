@@ -219,7 +219,7 @@ export default function AttendanceHomeView() {
       href: planningModulePath("/attendance/review"),
     },
     {
-      title: "Cruce horario vs picadas",
+      title: "Horario vs picadas",
       description: "Entrar al detalle por empleado.",
       href: planningModulePath("/attendance/comparison"),
     },

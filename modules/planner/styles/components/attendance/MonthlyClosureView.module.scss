@@ -95,68 +95,6 @@
   align-items: end;
 }
 
-.toolbar .switchControl {
-  min-height: 2.55rem;
-  display: inline-flex;
-  align-items: center;
-  gap: 0.5rem;
-  border: 1px solid rgba(16, 33, 62, 0.1);
-  border-radius: 999px;
-  background: #ffffff;
-  color: #10213e;
-  padding: 0 0.85rem 0 0.55rem;
-  cursor: pointer;
-  user-select: none;
-}
-
-.toolbar .switchControl input {
-  position: absolute;
-  opacity: 0;
-  pointer-events: none;
-}
-
-.toolbar .switchControl > span {
-  position: relative;
-  width: 2.3rem;
-  height: 1.28rem;
-  flex: 0 0 auto;
-  border-radius: 999px;
-  background: #d9e2ee;
-  transition: background 160ms ease;
-}
-
-.toolbar .switchControl > span::after {
-  content: "";
-  position: absolute;
-  top: 0.18rem;
-  left: 0.18rem;
-  width: 0.92rem;
-  height: 0.92rem;
-  border-radius: 50%;
-  background: #ffffff;
-  box-shadow: 0 3px 8px rgba(16, 33, 62, 0.2);
-  transition: transform 160ms ease;
-}
-
-.toolbar .switchControl input:checked + span {
-  background: #1f5c9a;
-}
-
-.toolbar .switchControl input:checked + span::after {
-  transform: translateX(1.02rem);
-}
-
-.toolbar .switchControl strong {
-  font-size: var(--font-size-sm);
-  font-weight: 900;
-  white-space: nowrap;
-}
-
-.toolbar .switchControl:has(input:disabled) {
-  cursor: not-allowed;
-  opacity: 0.58;
-}
-
 .secondaryButton {
   border: 1px solid rgba(16, 33, 62, 0.12);
   background: white;
@@ -513,68 +451,6 @@
   font-variant-numeric: tabular-nums;
 }
 
-.rowSwitch {
-  display: inline-grid;
-  grid-template-columns: auto 1fr;
-  gap: 0.16rem 0.5rem;
-  align-items: center;
-  cursor: pointer;
-}
-
-.rowSwitch input {
-  position: absolute;
-  opacity: 0;
-  pointer-events: none;
-}
-
-.rowSwitch > span {
-  position: relative;
-  grid-row: span 2;
-  width: 2.15rem;
-  height: 1.2rem;
-  border-radius: 999px;
-  background: #d9e2ee;
-  transition: background 160ms ease;
-}
-
-.rowSwitch > span::after {
-  content: "";
-  position: absolute;
-  top: 0.17rem;
-  left: 0.17rem;
-  width: 0.86rem;
-  height: 0.86rem;
-  border-radius: 50%;
-  background: #ffffff;
-  box-shadow: 0 3px 8px rgba(16, 33, 62, 0.2);
-  transition: transform 160ms ease;
-}
-
-.rowSwitch input:checked + span {
-  background: #1f5c9a;
-}
-
-.rowSwitch input:checked + span::after {
-  transform: translateX(0.95rem);
-}
-
-.rowSwitch strong {
-  color: #10213e;
-  font-size: 0.82rem;
-  font-weight: 900;
-}
-
-.rowSwitch small {
-  color: var(--text-muted);
-  font-size: 0.72rem;
-  font-weight: 760;
-}
-
-.rowSwitch:has(input:disabled) {
-  cursor: not-allowed;
-  opacity: 0.58;
-}
-
 .notAvailable {
   color: var(--text-muted);
   font-size: var(--font-size-sm);
@@ -616,6 +492,17 @@
   color: var(--text-muted);
   font-weight: 800;
   text-align: center !important;
+}
+
+.emptyState {
+  display: grid;
+  min-height: 5.2rem;
+  place-items: center;
+  color: var(--text-muted);
+  font-size: var(--font-size-md);
+  font-weight: 760;
+  text-align: center;
+  padding: 1.2rem;
 }
 
 .errorBox {
@@ -674,7 +561,6 @@
   .secondaryButton,
   .exportButton,
   .saveButton,
-  .switchControl,
   .viewModeButton {
     width: 100%;
     flex-basis: auto;

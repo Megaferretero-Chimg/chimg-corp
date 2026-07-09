@@ -18,7 +18,7 @@ export async function PATCH(request, { params }) {
   }
 
   if (!hasAccessPermission(user, "company.accessRoles.manage")) {
-    return NextResponse.json({ error: "No tienes permiso para administrar roles de acceso." }, { status: 403 });
+    return NextResponse.json({ error: "No tienes permiso para administrar perfiles de acceso." }, { status: 403 });
   }
 
   try {
@@ -29,24 +29,27 @@ export async function PATCH(request, { params }) {
     const existingType = await UserType.findById(id).lean();
 
     if (!existingType) {
-      return NextResponse.json({ error: "Rol de acceso no encontrado." }, { status: 404 });
+      return NextResponse.json({ error: "Perfil de acceso no encontrado." }, { status: 404 });
     }
 
     if (isProtectedUserTypeCode(existingType.code)) {
       return NextResponse.json(
-        { error: "El rol de acceso Administrador está protegido y no se puede editar." },
+        { error: "El perfil Administrador está protegido y no se puede editar." },
         { status: 403 },
       );
     }
 
-    const payload = normalizeUserTypePayload(body);
+    const payload = normalizeUserTypePayload({
+      ...body,
+      code: existingType.code,
+    });
     const userType = await UserType.findByIdAndUpdate(id, payload, {
       new: true,
       runValidators: true,
     });
 
     if (!userType) {
-      return NextResponse.json({ error: "Rol de acceso no encontrado." }, { status: 404 });
+      return NextResponse.json({ error: "Perfil de acceso no encontrado." }, { status: 404 });
     }
 
     return NextResponse.json({
@@ -56,14 +59,14 @@ export async function PATCH(request, { params }) {
     if (error?.code === 11000) {
       const field = Object.keys(error.keyPattern || {})[0];
       const message = field === "name"
-        ? "Ya existe un tipo de usuario con ese nombre."
-        : "Ya existe un tipo de usuario con ese código.";
+        ? "Ya existe un perfil de acceso con ese nombre."
+        : "Ya existe un perfil de acceso con ese código.";
 
       return NextResponse.json({ error: message }, { status: 409 });
     }
 
     return NextResponse.json(
-      { error: error.message || "No se pudo actualizar el tipo de usuario." },
+      { error: error.message || "No se pudo actualizar el perfil de acceso." },
       { status: 400 },
     );
   }
@@ -77,7 +80,7 @@ export async function DELETE(_request, { params }) {
   }
 
   if (!hasAccessPermission(user, "company.accessRoles.manage")) {
-    return NextResponse.json({ error: "No tienes permiso para administrar roles de acceso." }, { status: 403 });
+    return NextResponse.json({ error: "No tienes permiso para administrar perfiles de acceso." }, { status: 403 });
   }
 
   await connectToDatabase();
@@ -86,12 +89,12 @@ export async function DELETE(_request, { params }) {
   const userType = await UserType.findById(id).lean();
 
   if (!userType) {
-    return NextResponse.json({ error: "Rol de acceso no encontrado." }, { status: 404 });
+    return NextResponse.json({ error: "Perfil de acceso no encontrado." }, { status: 404 });
   }
 
   if (isProtectedUserTypeCode(userType.code)) {
     return NextResponse.json(
-      { error: "El rol de acceso Administrador está protegido y no se puede eliminar." },
+      { error: "El perfil Administrador está protegido y no se puede eliminar." },
       { status: 403 },
     );
   }

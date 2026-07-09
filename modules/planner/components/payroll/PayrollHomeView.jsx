@@ -200,12 +200,13 @@ export default function PayrollHomeView({ initialFilters = {} }) {
   const planned = payload.planned;
   const executed = payload.executed;
   const closure = payload.closure;
+  const hasFinalClosure = Boolean(closure?.closure && closure.closure.completeBaseHours !== false);
   const plannedTotal = Number(planned?.summary?.totalCost) || 0;
   const executedTotal = Number(executed?.summary?.totalCost) || 0;
   const variance = executedTotal - plannedTotal;
   const variancePercent = plannedTotal ? (variance / plannedTotal) * 100 : 0;
-  const hasExecuted = Boolean(executed?.summary);
-  const hasClosure = Boolean(closure?.closure);
+  const hasExecuted = Boolean(executed?.summary) && hasFinalClosure;
+  const hasClosure = hasFinalClosure;
   const options = useMemo(() => mergeOptions(planned?.options, executed?.options), [planned, executed]);
   const groupedRows = useMemo(() => groupRows(planned?.rows || [], executed?.rows || []), [planned, executed]);
   const employees = useMemo(() => employeeRows(planned?.rows || [], executed?.rows || []).slice(0, 12), [planned, executed]);
@@ -285,6 +286,22 @@ export default function PayrollHomeView({ initialFilters = {} }) {
         </label>
       </div>
 
+      {!hasFinalClosure && !isPending ? (
+        <div className={styles.lockedState}>
+          <AlertTriangle size={20} />
+          <div>
+            <strong>Primero guarda el cruce de horas para este mes.</strong>
+            <span>Nómina y costos usa la versión final guardada del cruce, con horas planificadas, horas ejecutadas, adicionales, atrasos y valores consolidados.</span>
+          </div>
+          <Link href={planningModulePath(`/operations?month=${encodeURIComponent(filters.month)}`)}>
+            Ir a cruce de horas
+            <ArrowRight size={16} />
+          </Link>
+        </div>
+      ) : null}
+
+      {hasFinalClosure ? (
+        <>
       <div className={styles.metricGrid}>
         <article>
           <span>Ejecutado</span>
@@ -429,6 +446,8 @@ export default function PayrollHomeView({ initialFilters = {} }) {
           {!employees.length ? <p>No hay empleados con variación para mostrar.</p> : null}
         </div>
       </section>
+        </>
+      ) : null}
     </section>
   );
 }

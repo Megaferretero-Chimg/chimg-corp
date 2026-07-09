@@ -69,7 +69,7 @@ export async function GET() {
   }
 
   if (!hasAccessPermission(user, "company.accessRoles.view") && !hasAccessPermission(user, "company.users.manage")) {
-    return NextResponse.json({ error: "No tienes permiso para ver roles de acceso." }, { status: 403 });
+    return NextResponse.json({ error: "No tienes permiso para ver perfiles de acceso." }, { status: 403 });
   }
 
   await connectToDatabase();
@@ -92,7 +92,7 @@ export async function POST(request) {
   }
 
   if (!hasAccessPermission(user, "company.accessRoles.manage")) {
-    return NextResponse.json({ error: "No tienes permiso para administrar roles de acceso." }, { status: 403 });
+    return NextResponse.json({ error: "No tienes permiso para administrar perfiles de acceso." }, { status: 403 });
   }
 
   try {
@@ -112,14 +112,14 @@ export async function POST(request) {
     if (error?.code === 11000) {
       const field = Object.keys(error.keyPattern || {})[0];
       const message = field === "name"
-        ? "Ya existe un tipo de usuario con ese nombre."
-        : "Ya existe un tipo de usuario con ese código.";
+        ? "Ya existe un perfil de acceso con ese nombre."
+        : "Ya existe un perfil de acceso con ese código.";
 
       return NextResponse.json({ error: message }, { status: 409 });
     }
 
     return NextResponse.json(
-      { error: error.message || "No se pudo crear el tipo de usuario." },
+      { error: error.message || "No se pudo crear el perfil de acceso." },
       { status: 400 },
     );
   }

@@ -17,6 +17,7 @@ import {
   startOfEcuadorDay,
 } from "@/lib/datetime/ecuador";
 import { DAY_TYPES, formatWeekStartKey, getWeekStartDate } from "@/modules/planner/lib/schedules";
+import { DEFAULT_LATE_DEPARTURE_TOLERANCE_MINUTES } from "@/modules/planner/lib/payroll/laborConstants";
 
 const DAY_TYPE_LABELS = new Map(DAY_TYPES.map((item) => [item.value, item.label]));
 const SUPPLEMENTARY_ROUNDING_THRESHOLD_MINUTES = 5;
@@ -207,11 +208,16 @@ function buildExpectedLunchWindow(schedule, date) {
   return { expectedLunchOut, expectedLunchIn };
 }
 
-function compareDay({ date, punches, schedule }) {
-  const sortedPunches = dedupePunchesByMinute(punches).sort((left, right) => left.punchedAt - right.punchedAt);
+function compareDay({ date, punches, schedule, scheduleRules }) {
+  const sortedPunches = dedupePunchesByMinute(punches.filter((punch) => punch.isIgnored !== true))
+    .sort((left, right) => left.punchedAt - right.punchedAt);
   const scheduleStart = schedule ? combineDateAndTime(date, schedule.startTime) : null;
   const scheduleEnd = schedule ? combineDateAndTime(date, schedule.endTime) : null;
   const scheduledWorkedMinutes = resolveScheduledWorkedMinutes(schedule, date);
+  const lateDepartureToleranceMinutes = Math.max(
+    0,
+    Number(scheduleRules?.lateDepartureToleranceMinutes ?? DEFAULT_LATE_DEPARTURE_TOLERANCE_MINUTES) || 0,
+  );
   const notes = [];
 
   if (!schedule) {
@@ -262,6 +268,8 @@ function compareDay({ date, punches, schedule }) {
       hasOvertimeCandidate: false,
       overtimeCandidateMinutes: 0,
       overtimeCandidateHours: 0,
+      lateDepartureToleranceMinutes,
+      rawOvertimeCandidateMinutes: 0,
       baseWorkedMinutes: null,
       extraWorkedMinutes: 0,
       lateArrivalMinutes: 0,
@@ -341,13 +349,15 @@ function compareDay({ date, punches, schedule }) {
       ? differenceInMinutes(checkOutPunch.punchedAt, scheduleEnd)
       : 0;
   const overtimeCandidateMinutes = schedule?.dayType === "workday"
-    ? Math.max(scheduleOvertimeMinutes, extraWorkedMinutes)
+    ? scheduleOvertimeMinutes > lateDepartureToleranceMinutes
+      ? scheduleOvertimeMinutes
+      : 0
     : 0;
   const overtimeCandidateHours = resolveSupplementaryHours(overtimeCandidateMinutes);
 
   if (schedule?.dayType === "workday" && scheduleEnd && checkOutPunch) {
-    if (overtimeCandidateHours > 0) {
-      notes.push("La jornada supera la base normal. Revisar si corresponde a hora suplementaria.");
+    if (overtimeCandidateMinutes > 0) {
+      notes.push("La salida supera la tolerancia posterior al horario. Revisar si corresponde a tiempo suplementario.");
     }
 
     if (isBefore(checkOutPunch.punchedAt, scheduleEnd)) {
@@ -410,9 +420,11 @@ function compareDay({ date, punches, schedule }) {
     alertTags: notes,
     extraPunches: extraPunches.map(formatPunchChip),
     hasMissingPunches,
-    hasOvertimeCandidate: effectiveOvertimeCandidateHours > 0,
+    hasOvertimeCandidate: effectiveOvertimeCandidateMinutes > 0,
     overtimeCandidateMinutes: effectiveOvertimeCandidateMinutes,
     overtimeCandidateHours: effectiveOvertimeCandidateHours,
+    lateDepartureToleranceMinutes,
+    rawOvertimeCandidateMinutes: needsManualDayReview ? 0 : scheduleOvertimeMinutes,
     baseWorkedMinutes: needsManualDayReview ? null : baseWorkedMinutes,
     extraWorkedMinutes: needsManualDayReview ? 0 : extraWorkedMinutes,
     lateArrivalMinutes: effectiveLateArrivalMinutes,
@@ -425,7 +437,7 @@ function compareDay({ date, punches, schedule }) {
   };
 }
 
-export default function comparePayrollPunches({ start, end, punches, schedules }) {
+export default function comparePayrollPunches({ start, end, punches, schedules, scheduleRules }) {
   const allDates = eachDayOfInterval({
     start: startOfEcuadorDay(start),
     end: startOfEcuadorDay(end),
@@ -463,6 +475,7 @@ export default function comparePayrollPunches({ start, end, punches, schedules }
       date,
       punches: punchesByDate.get(formatEcuadorDateKey(date)) || [],
       schedule,
+      scheduleRules,
     });
   });
 

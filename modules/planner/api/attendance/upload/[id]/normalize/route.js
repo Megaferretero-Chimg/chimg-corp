@@ -6,6 +6,7 @@ import {
   buildPublishMessage,
   publishAttendancePunches,
 } from "@/modules/planner/lib/attendance/publishAttendancePunches";
+import { applyAttendancePunchTimeAdjustments } from "@/modules/planner/lib/attendance/punchTimeAdjustments";
 import { buildPunchMinuteKey } from "@/modules/planner/lib/attendance/punchIdentity";
 import connectToDatabase from "@/lib/db/mongodb";
 import { formatEcuadorDateKey } from "@/lib/datetime/ecuador";
@@ -141,7 +142,8 @@ function enrichNormalizedSnapshotDiagnostics(normalizedSnapshot = {}) {
 }
 
 function buildNormalizedPayload(upload, normalizedSnapshot, source) {
-  const enrichedSnapshot = enrichNormalizedSnapshotDiagnostics(normalizedSnapshot);
+  const adjustedSnapshot = applyAttendancePunchTimeAdjustments(normalizedSnapshot, upload);
+  const enrichedSnapshot = enrichNormalizedSnapshotDiagnostics(adjustedSnapshot);
   const publishSummary = upload.punchesPublishedAt
     ? {
         publishedAt: upload.punchesPublishedAt,
@@ -162,6 +164,9 @@ function buildNormalizedPayload(upload, normalizedSnapshot, source) {
       month: upload.month || null,
       year: upload.year || null,
       createdAt: upload.createdAt,
+      uploadedBy: upload.uploadedBy || "",
+      uploadedByUser: upload.uploadedByUser || "",
+      uploadedAt: upload.uploadedAt || upload.createdAt,
       status: upload.status,
       normalizedAt: upload.normalizedAt,
       punchesPublishedAt: upload.punchesPublishedAt || null,
@@ -278,7 +283,7 @@ async function buildNormalizedSnapshot(parsedFile) {
   });
   const reconciliationSummary = buildReconciliationSummary(normalizedEmployees);
 
-  return {
+  const snapshot = {
     summary: {
       totalEmployees: parsedFile.employees.length,
       totalPunches: parsedFile.totalPunches,
@@ -289,6 +294,11 @@ async function buildNormalizedSnapshot(parsedFile) {
     employees: normalizedEmployees,
     parserLogs: parsedFile.logs,
   };
+
+  return applyAttendancePunchTimeAdjustments(snapshot, {
+    branchCode: parsedFile.branchCode,
+    branchName: parsedFile.branchName,
+  });
 }
 
 export async function GET(_request, context) {

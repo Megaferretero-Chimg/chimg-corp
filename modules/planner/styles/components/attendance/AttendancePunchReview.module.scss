@@ -31,10 +31,7 @@
 .toolbar select,
 .tableScroller input,
 .tableScroller select,
-.textarea,
-.drawerForm input,
-.drawerForm select,
-.drawerForm textarea {
+.textarea {
   width: 100%;
   min-height: 2.55rem;
   border: 1px solid var(--border);
@@ -45,7 +42,6 @@
   padding: 0 0.75rem;
 }
 
-.primaryButton,
 .secondaryButton,
 .dangerButton {
   min-height: 2.55rem;
@@ -61,11 +57,6 @@
   white-space: nowrap;
 }
 
-.primaryButton {
-  color: white;
-  background: var(--primary);
-}
-
 .secondaryButton {
   color: #1550a0;
   background: #edf4ff;
@@ -76,7 +67,6 @@
   background: #c83a23;
 }
 
-.primaryButton:disabled,
 .secondaryButton:disabled,
 .dangerButton:disabled {
   cursor: not-allowed;
@@ -284,7 +274,8 @@
 }
 
 .uploadTag,
-.manualTag {
+.manualTag,
+.ignoredTag {
   width: fit-content;
   padding: 0.35rem 0.6rem;
   border-radius: 999px;
@@ -300,6 +291,12 @@
 .manualTag {
   color: #854d0e;
   background: #fef3c7;
+}
+
+.ignoredTag {
+  color: #667085;
+  background: #f2f4f7;
+  text-decoration: line-through;
 }
 
 .muted {
@@ -322,6 +319,11 @@
   background: white;
   color: #1550a0;
   cursor: pointer;
+}
+
+.rowActions button:disabled {
+  cursor: not-allowed;
+  opacity: 0.38;
 }
 
 .toast {
@@ -401,35 +403,6 @@
   gap: 0.7rem;
 }
 
-.drawerForm {
-  display: grid;
-  gap: 1rem;
-}
-
-.drawerForm label {
-  display: grid;
-  gap: 0.45rem;
-}
-
-.drawerForm label span {
-  color: var(--text-muted);
-  font-size: var(--font-size-sm);
-  font-weight: 800;
-}
-
-.drawerForm textarea {
-  min-height: 7rem;
-  padding-top: 0.75rem;
-  resize: vertical;
-}
-
-.drawerActions {
-  display: flex;
-  justify-content: flex-end;
-  gap: 0.75rem;
-  padding-top: 0.5rem;
-}
-
 @media (max-width: 980px) {
   .toolbar {
     grid-template-columns: 1fr;
@@ -440,8 +413,7 @@
     flex-direction: column;
   }
 
-  .tableHeaderActions,
-  .tableHeaderActions .primaryButton {
+  .tableHeaderActions {
     width: 100%;
   }
 

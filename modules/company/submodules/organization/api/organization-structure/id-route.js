@@ -245,7 +245,10 @@ export async function PATCH(request, { params }) {
 
     const refs = await resolveReferences(body, id);
     await assertNoCircularParent(id, refs.parent?._id?.toString() || "");
-    const payload = normalizeOrganizationNodePayload(body, refs);
+    const payload = normalizeOrganizationNodePayload({
+      ...body,
+      code: existingNode.code,
+    }, refs);
     payload.level = inferOrganizationNodeLevel(refs.parent);
     await OrganizationNode.findByIdAndUpdate(id, payload, {
       new: true,
