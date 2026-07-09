@@ -5,8 +5,7 @@ import ModuleShell from "@/components/shell/ModuleShell";
 import connectToDatabase from "@/lib/db/mongodb";
 import { formatEcuadorMonthKey } from "@/lib/datetime/ecuador";
 import AuditLog from "@/models/AuditLog";
-import HistoryFilters from "@/modules/planner/pages/dashboard/history/HistoryFilters";
-import styles from "@/modules/planner/styles/pages/dashboard/history/page.module.scss";
+import styles from "@/modules/planner/styles/pages/dashboard/home/page.module.scss";
 
 export const dynamic = "force-dynamic";
 
@@ -438,7 +437,27 @@ export default async function OperationalHistoryPage({ searchParams }) {
       description="Rastreo de acciones para confirmar que el flujo operativo se cumplió."
     >
       <section className={styles.panel}>
-        <HistoryFilters month={month} actor={actor} flow={flow} actors={history.actors} />
+        <form className={styles.historyFilterBar}>
+          <div>
+            <span className={styles.eyebrow}>Auditoría</span>
+            <strong>Acciones registradas</strong>
+          </div>
+          <label>
+            <span>Mes</span>
+            <input type="month" name="month" defaultValue={month} />
+          </label>
+          <label>
+            <span>Usuario</span>
+            <select name="actor" defaultValue={actor}>
+              <option value="">Todos</option>
+              {history.actors.map((nextActor) => (
+                <option key={nextActor} value={nextActor}>{nextActor}</option>
+              ))}
+            </select>
+          </label>
+          {flow ? <input type="hidden" name="flow" value={flow} /> : null}
+          <button type="submit">Filtrar</button>
+        </form>
 
         <div className={styles.flowGrid}>
           {history.flowCounts.map((item) => (
