@@ -1,0 +1,22 @@
+.stack { display: grid; gap: 1rem; }
+.panel { border: 1px solid rgba(16, 33, 62, 0.08); border-radius: 1.35rem; background: rgba(255, 255, 255, 0.95); box-shadow: var(--shadow-soft); padding: 1.2rem; }
+.panelHeader { display: flex; justify-content: space-between; gap: 1rem; align-items: flex-start; flex-wrap: wrap; margin-bottom: 1rem; }
+.eyebrow { margin: 0; font-size: var(--font-size-micro); letter-spacing: 0.18em; text-transform: uppercase; color: var(--primary); }
+.title { margin: 0.38rem 0 0; color: #10213e; font-size: var(--font-size-title-md); }
+.description { margin: 0.55rem 0 0; color: var(--text-muted); line-height: 1.6; }
+.grid { display: grid; gap: 0.9rem; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); }
+.toggleGrid { display: grid; gap: 0.9rem; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); }
+.toggleField { display: grid; gap: 0.45rem; justify-items: start; }
+.toggleLabel { color: #1c315d; font-size: var(--font-size-base); font-weight: 600; }
+.field { display: grid; gap: 0.42rem; color: #1c315d; font-weight: 600; font-size: var(--font-size-base); }
+.field input, .field select, .field textarea { width: 100%; border: 1px solid rgba(16, 33, 62, 0.12); border-radius: 0.95rem; background: white; color: var(--text); padding: 0.78rem 0.9rem; outline: none; font-weight: 400; }
+.field textarea { resize: vertical; }
+.roleGrid { display: grid; gap: 0.8rem; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); }
+.roleButton { display: grid; gap: 0.3rem; text-align: left; border: 1px solid rgba(16, 33, 62, 0.1); border-radius: 1rem; background: #ffffff; color: #425b80; padding: 0.9rem; cursor: pointer; }
+.roleButton strong { color: #10213e; }
+.roleButton span { font-size: var(--font-size-sm); line-height: 1.4; }
+.roleButtonActive { border-color: rgba(31, 111, 255, 0.28); background: #eef5ff; }
+.actions { display: flex; justify-content: flex-end; }
+.primaryButton { display: inline-flex; align-items: center; justify-content: center; gap: 0.45rem; border: 0; border-radius: 999px; background: linear-gradient(135deg, var(--primary), var(--primary-strong)); color: white; padding: 0.84rem 1.15rem; font-weight: 800; cursor: pointer; }
+.primaryButton:disabled { opacity: 0.6; cursor: not-allowed; }
+.loading { border-radius: 1rem; background: white; color: #425b80; padding: 0.9rem 1rem; font-weight: 700; }
