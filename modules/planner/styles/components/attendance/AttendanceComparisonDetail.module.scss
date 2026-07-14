@@ -7,6 +7,7 @@
 .identityPanel,
 .metricGrid article,
 .errorBox,
+.successBox,
 .loadingScene {
   border: 1px solid rgba(16, 33, 62, 0.08);
   border-radius: var(--radius-panel);
@@ -1223,6 +1224,11 @@
   color: #067647;
 }
 
+.additionalValueList .approvedAdditionalValue {
+  background: #eff6ff;
+  color: #1d4ed8;
+}
+
 .tableScroller .additionalValueList span,
 .tableScroller .additionalValueList strong,
 .tableScroller .additionalValueList small {
@@ -1548,6 +1554,173 @@
   font-weight: 800;
 }
 
+.decisionHistory {
+  display: grid;
+  gap: 0.7rem;
+  padding: 0.9rem;
+  border: 1px solid #e4eaf2;
+  border-radius: 0.9rem;
+  background: #f8fafc;
+}
+
+.decisionHistoryHeader {
+  display: grid;
+  gap: 0.22rem;
+}
+
+.decisionHistoryHeader > div {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  color: #26364d;
+}
+
+.decisionHistoryHeader > small {
+  color: #667085;
+  font-size: 0.72rem;
+}
+
+.decisionHistoryList {
+  display: grid;
+  gap: 0.55rem;
+}
+
+.decisionHistoryItem {
+  display: grid;
+  gap: 0.42rem;
+  padding: 0.75rem;
+  border: 1px solid #e1e7ef;
+  border-radius: 0.75rem;
+  background: #ffffff;
+}
+
+.decisionHistoryItemHeader,
+.decisionHistoryItemHeader > div {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.decisionHistoryItemHeader {
+  justify-content: space-between;
+}
+
+.decisionHistoryItemHeader > div {
+  min-width: 0;
+  flex-wrap: wrap;
+}
+
+.decisionHistoryItemHeader strong {
+  color: #26364d;
+  font-size: 0.84rem;
+}
+
+.decisionHistoryStatus {
+  border-radius: 999px;
+  padding: 0.18rem 0.45rem;
+  font-size: 0.64rem;
+  font-weight: 900;
+}
+
+.decisionHistoryStatusActive {
+  background: #dcfae6;
+  color: #067647;
+}
+
+.decisionHistoryStatusDeleted {
+  background: #fee4e2;
+  color: #b42318;
+}
+
+.decisionHistoryStatusReplaced {
+  background: #f2f4f7;
+  color: #475467;
+}
+
+.decisionHistoryItem p,
+.decisionHistoryItem blockquote {
+  margin: 0;
+  color: #475467;
+  font-size: 0.76rem;
+  line-height: 1.45;
+}
+
+.decisionHistoryItem blockquote {
+  padding-left: 0.6rem;
+  border-left: 2px solid #ccd5e2;
+  color: #667085;
+  font-style: italic;
+}
+
+.decisionHistoryItem > small {
+  color: #7b8798;
+  font-size: 0.67rem;
+  font-weight: 700;
+}
+
+.decisionHistoryDeactivate {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.9rem;
+  min-height: 1.9rem;
+  border: 1px solid #fdbd84;
+  border-radius: 0.55rem;
+  background: #fffaeb;
+  color: #b54708;
+  font: inherit;
+  font-size: 0.7rem;
+  font-weight: 850;
+  padding: 0;
+  cursor: pointer;
+}
+
+.decisionHistoryActions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.35rem;
+}
+
+.decisionHistoryPurge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.9rem;
+  min-height: 1.9rem;
+  border: 1px solid #b42318;
+  border-radius: 0.55rem;
+  background: #b42318;
+  color: #ffffff;
+  font: inherit;
+  font-size: 0.7rem;
+  font-weight: 850;
+  padding: 0;
+  cursor: pointer;
+}
+
+.decisionHistoryDeactivate:hover:not(:disabled) {
+  background: #fef0c7;
+}
+
+.decisionHistoryPurge:hover:not(:disabled) {
+  background: #912018;
+}
+
+.decisionHistoryDeactivate:disabled,
+.decisionHistoryPurge:disabled {
+  cursor: wait;
+  opacity: 0.55;
+}
+
+.decisionHistoryEmpty {
+  padding: 0.7rem;
+  border: 1px dashed #ccd5e2;
+  border-radius: 0.65rem;
+  color: #667085;
+  font-size: 0.76rem;
+  text-align: center;
+}
+
 .punchMutationForm {
   display: grid;
   gap: 0.75rem;
@@ -1655,6 +1828,15 @@
   gap: 0.55rem;
   padding: 0.9rem 1rem;
   color: #b42318;
+  font-weight: 800;
+}
+
+.successBox {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  padding: 0.9rem 1rem;
+  color: #067647;
   font-weight: 800;
 }
 

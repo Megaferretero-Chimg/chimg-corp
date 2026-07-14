@@ -139,6 +139,8 @@ function normalizePayload(body) {
     adjustedLateMinutes,
     detectedEarlyLeaveMinutes,
     adjustedEarlyLeaveMinutes,
+    additionalResolved: body?.additionalResolved === true,
+    lateResolved: body?.lateResolved === true,
     note: String(body?.note || "").trim().slice(0, 240),
   };
 }
@@ -167,6 +169,8 @@ export async function POST(request) {
       dateKey: payload.dateKey,
     }).lean();
     const actor = user.employeeName || user.username || user.id;
+    const additionalResolved = Boolean(previousDecision?.additionalResolved || payload.additionalResolved);
+    const lateResolved = Boolean(previousDecision?.lateResolved || payload.lateResolved);
 
     await AttendanceDayDecision.updateOne(
       {
@@ -185,6 +189,8 @@ export async function POST(request) {
           adjustedLateMinutes: payload.adjustedLateMinutes,
           detectedEarlyLeaveMinutes: payload.detectedEarlyLeaveMinutes,
           adjustedEarlyLeaveMinutes: payload.adjustedEarlyLeaveMinutes,
+          additionalResolved,
+          lateResolved,
           note: payload.note,
           decidedBy: actor,
         },
@@ -221,6 +227,8 @@ export async function POST(request) {
           adjustedLateMinutes: previousDecision.adjustedLateMinutes || 0,
           detectedEarlyLeaveMinutes: previousDecision.detectedEarlyLeaveMinutes || 0,
           adjustedEarlyLeaveMinutes: previousDecision.adjustedEarlyLeaveMinutes || 0,
+          additionalResolved: Boolean(previousDecision.additionalResolved),
+          lateResolved: Boolean(previousDecision.lateResolved),
           note: previousDecision.note || "",
           decidedBy: previousDecision.decidedBy || "",
           updatedAt: previousDecision.updatedAt || null,
@@ -235,6 +243,8 @@ export async function POST(request) {
           adjustedLateMinutes: payload.adjustedLateMinutes,
           detectedEarlyLeaveMinutes: payload.detectedEarlyLeaveMinutes,
           adjustedEarlyLeaveMinutes: payload.adjustedEarlyLeaveMinutes,
+          additionalResolved,
+          lateResolved,
           note: payload.note,
           decidedBy: actor,
         },

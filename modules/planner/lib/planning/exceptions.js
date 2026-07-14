@@ -302,6 +302,10 @@ export function normalizeExceptionPayload(body, employee) {
   const destination = String(body?.destination || "").trim().toUpperCase();
   const countsAsWorkedTime = Boolean(body?.countsAsWorkedTime);
   const allowSupplementaryTime = Boolean(body?.allowSupplementaryTime);
+  const planningSourceInput = String(body?.planningSource || "").trim();
+  const planningSource = ["schedule_planner", "attendance_comparison"].includes(planningSourceInput)
+    ? planningSourceInput
+    : "";
   const status = resolution === "pending" ? "open" : "resolved";
   const effectInput = {
     ...body,
@@ -415,6 +419,7 @@ export function normalizeExceptionPayload(body, employee) {
     destination,
     countsAsWorkedTime,
     allowSupplementaryTime,
+    planningSource,
     registeredBy,
     authorizedBy,
     resolution,
@@ -467,6 +472,7 @@ export function serializeOperationalException(exception) {
     destination: exception.destination || "",
     countsAsWorkedTime: Boolean(exception.countsAsWorkedTime),
     allowSupplementaryTime: Boolean(exception.allowSupplementaryTime),
+    planningSource: exception.planningSource || "",
     registeredBy: exception.registeredBy || "",
     authorizedBy: exception.authorizedBy || "",
     resolution,

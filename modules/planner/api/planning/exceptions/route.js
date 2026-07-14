@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 
 import { getAuthenticatedUser } from "@/lib/auth";
+import { createAuditLog } from "@/lib/audit";
 import connectToDatabase from "@/lib/db/mongodb";
 import {
   applyPlannerScopeToEmployeeReferenceQuery,
@@ -87,10 +88,38 @@ export async function POST(request) {
     const user = await getAuthenticatedUser();
     const canApproveExceptions = await canUserApproveExceptions(user);
     const registeredBy = user?.employeeName || user?.username || user?.id || "SISTEMA";
-    const shouldResolveFromPlanner = body?.planningSource === "schedule_planner" && canApproveExceptions && body?.autoResolve !== false;
-    const normalizedBody = shouldResolveFromPlanner
-      ? applyExceptionApprovalActor(body, user)
-      : forcePendingExceptionPayload(body);
+    const planningSource = String(body?.planningSource || "").trim();
+    const isAttendanceExecution = planningSource === "attendance_comparison";
+    const shouldAutoResolve = isAttendanceExecution || (
+      planningSource === "schedule_planner" &&
+      canApproveExceptions &&
+      body?.autoResolve !== false
+    );
+    const requestedResolution = String(body?.resolution || "").trim();
+    const executionResolution = requestedResolution && requestedResolution !== "pending"
+      ? requestedResolution
+      : body?.effect === "planning_change" || body?.type === "schedule_change"
+        ? "reschedule"
+        : body?.effect === "unpaid_absence"
+          ? "discount_day"
+          : "approved_work_time";
+    const sourceBody = isAttendanceExecution
+      ? { ...body, autoResolve: true, resolution: executionResolution }
+      : body;
+
+    console.info("[planning/exceptions] create requested", {
+      planningSource,
+      employeeId,
+      dateKey: body?.dateKey || "",
+      type: body?.type || "",
+      autoResolveRequested: body?.autoResolve !== false,
+      canApproveExceptions,
+      shouldAutoResolve,
+    });
+
+    const normalizedBody = shouldAutoResolve
+      ? applyExceptionApprovalActor(sourceBody, user)
+      : forcePendingExceptionPayload(sourceBody);
     const payload = normalizeExceptionPayload({ ...normalizedBody, registeredBy }, employee);
     const exception = await OperationalException.create(payload);
 
@@ -103,6 +132,30 @@ export async function POST(request) {
 
     const savedException = await OperationalException.findById(exception._id).lean();
 
+    await createAuditLog({
+      actor: registeredBy,
+      action: "operationalException.create",
+      entityType: "operationalException",
+      entityId: exception._id.toString(),
+      entityLabel: `${employee.fullName || employeeId} ${savedException?.dateKey || ""}`,
+      route: "/api/planner/planning/exceptions",
+      details: {
+        employeeId,
+        employeeName: employee.fullName || "",
+        dateKey: savedException?.dateKey || "",
+        planningSource: savedException?.planningSource || "",
+        before: null,
+        after: serializeOperationalException(savedException),
+      },
+    });
+
+    console.info("[planning/exceptions] create completed", {
+      exceptionId: exception._id.toString(),
+      employeeId,
+      dateKey: savedException?.dateKey || "",
+      resolution: savedException?.resolution || "pending",
+    });
+
     return NextResponse.json(
       {
         message: "Excepcion registrada correctamente.",
@@ -111,6 +164,10 @@ export async function POST(request) {
       { status: 201 },
     );
   } catch (error) {
+    console.error("[planning/exceptions] create failed", {
+      message: error.message || String(error),
+    });
+
     return NextResponse.json(
       { error: error.message || "No se pudo registrar la excepcion." },
       { status: 400 },

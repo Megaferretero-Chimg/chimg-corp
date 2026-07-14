@@ -326,7 +326,7 @@ export default function EmployeeForm({
         <input
           type="date"
           value={form.employmentStartDate}
-          onChange={(event) => onFieldChange("employmentStartDate", event.target.value)}
+          onInput={(event) => onFieldChange("employmentStartDate", event.currentTarget.value)}
           className="catalog-input"
         />
       </label>

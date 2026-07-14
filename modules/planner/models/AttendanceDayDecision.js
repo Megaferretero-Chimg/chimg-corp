@@ -31,6 +31,7 @@ const attendanceDayDecisionSchema = new Schema(
         "justify_no_punches",
         "justify_incomplete_punches",
         "justify_late",
+        "resolve_late",
       ],
       required: true,
       default: "full",
@@ -74,6 +75,14 @@ const attendanceDayDecisionSchema = new Schema(
       type: Number,
       min: 0,
       default: 0,
+    },
+    additionalResolved: {
+      type: Boolean,
+      default: false,
+    },
+    lateResolved: {
+      type: Boolean,
+      default: false,
     },
     note: {
       type: String,

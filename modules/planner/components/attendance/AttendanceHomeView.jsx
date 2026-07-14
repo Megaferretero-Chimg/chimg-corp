@@ -199,8 +199,10 @@ export default function AttendanceHomeView() {
       detectedSupplementaryMinutes: minutes(summary.detectedSupplementaryMinutes),
       plannedExtraordinaryMinutes: minutes(summary.plannedExtraordinaryMinutes),
       detectedExtraordinaryMinutes: minutes(summary.detectedExtraordinaryMinutes),
-      lateDays: Number(summary.lateDays) || 0,
-      operationalAlertDays: Number(summary.operationalAlertDays) || 0,
+      lateDays: Number(summary.pendingLateDays ?? summary.lateDays) || 0,
+      operationalAlertDays: Number(
+        summary.pendingOperationalAlertDays ?? summary.operationalAlertDays,
+      ) || 0,
       salaryPlanned: rowTotals.salaryPlanned,
       salaryReal: rowTotals.salaryReal,
       latestPunchDate: rowTotals.latestPunchDate,
@@ -256,7 +258,9 @@ export default function AttendanceHomeView() {
         if (nextFilters.branchCode) params.set("branchCode", nextFilters.branchCode);
         if (nextFilters.areaCode) params.set("areaCode", nextFilters.areaCode);
 
-        const response = await fetch(`/api/planner/attendance/comparison?${params.toString()}`);
+        const response = await fetch(`/api/planner/attendance/comparison?${params.toString()}`, {
+          cache: "no-store",
+        });
         const payload = await response.json();
 
         if (!response.ok) {

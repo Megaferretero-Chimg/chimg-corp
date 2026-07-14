@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 
 import { getAuthenticatedUser } from "@/lib/auth";
+import { createAuditLog } from "@/lib/audit";
 import connectToDatabase from "@/lib/db/mongodb";
 import {
   assertEmployeesInPlannerScope,
@@ -86,6 +87,24 @@ export async function PATCH(request, context) {
     }
 
     const savedException = await OperationalException.findById(exception._id).lean();
+    const actor = user?.employeeName || user?.username || user?.id || "SISTEMA";
+
+    await createAuditLog({
+      actor,
+      action: "operationalException.update",
+      entityType: "operationalException",
+      entityId: exceptionId,
+      entityLabel: `${employee.fullName || employeeId} ${savedException?.dateKey || ""}`,
+      route: `/api/planner/planning/exceptions/${exceptionId}`,
+      details: {
+        employeeId,
+        employeeName: employee.fullName || "",
+        dateKey: savedException?.dateKey || "",
+        planningSource: savedException?.planningSource || "",
+        before: serializeOperationalException(currentException),
+        after: serializeOperationalException(savedException),
+      },
+    });
 
     return NextResponse.json({
       message: "Excepcion actualizada correctamente.",
@@ -115,20 +134,21 @@ export async function DELETE(_request, context) {
       return NextResponse.json({ error: "Sesion invalida o expirada." }, { status: 401 });
     }
 
-    const user = await getAuthenticatedUser();
-    const canApproveExceptions = await canUserApproveExceptions(user);
-
-    if (!canApproveExceptions) {
-      return NextResponse.json(
-        { error: "No tienes permiso para anular excepciones." },
-        { status: 403 },
-      );
-    }
-
     const currentException = await OperationalException.findById(exceptionId).lean();
 
     if (!currentException) {
       return NextResponse.json({ error: "Excepcion no encontrada." }, { status: 404 });
+    }
+
+    const user = await getAuthenticatedUser();
+    const canApproveExceptions = await canUserApproveExceptions(user);
+    const canResetAttendanceExecution = currentException.planningSource === "attendance_comparison";
+
+    if (!canApproveExceptions && !canResetAttendanceExecution) {
+      return NextResponse.json(
+        { error: "No tienes permiso para anular excepciones." },
+        { status: 403 },
+      );
     }
 
     assertEmployeesInPlannerScope([
@@ -136,9 +156,29 @@ export async function DELETE(_request, context) {
     ], plannerScope);
 
     await deleteExceptionManualPunch(currentException);
+    const actor = user?.employeeName || user?.username || user?.id || "SISTEMA";
+    const employeeId = currentException.employee?.toString?.() || String(currentException.employee || "");
+    const before = serializeOperationalException(currentException);
 
     if (currentException.resolution === "pending" || currentException.status === "open") {
       await OperationalException.findByIdAndDelete(exceptionId);
+
+      await createAuditLog({
+        actor,
+        action: "operationalException.delete",
+        entityType: "operationalException",
+        entityId: exceptionId,
+        entityLabel: `${currentException.employeeName || employeeId} ${currentException.dateKey || ""}`,
+        route: `/api/planner/planning/exceptions/${exceptionId}`,
+        details: {
+          employeeId,
+          employeeName: currentException.employeeName || "",
+          dateKey: currentException.dateKey || "",
+          planningSource: currentException.planningSource || "",
+          before,
+          after: null,
+        },
+      });
 
       return NextResponse.json({
         success: true,
@@ -147,7 +187,7 @@ export async function DELETE(_request, context) {
       });
     }
 
-    await OperationalException.findByIdAndUpdate(
+    const voidedException = await OperationalException.findByIdAndUpdate(
       exceptionId,
       {
         $set: {
@@ -160,6 +200,23 @@ export async function DELETE(_request, context) {
       },
       { new: true },
     );
+
+    await createAuditLog({
+      actor,
+      action: "operationalException.void",
+      entityType: "operationalException",
+      entityId: exceptionId,
+      entityLabel: `${currentException.employeeName || employeeId} ${currentException.dateKey || ""}`,
+      route: `/api/planner/planning/exceptions/${exceptionId}`,
+      details: {
+        employeeId,
+        employeeName: currentException.employeeName || "",
+        dateKey: currentException.dateKey || "",
+        planningSource: currentException.planningSource || "",
+        before,
+        after: serializeOperationalException(voidedException),
+      },
+    });
 
     return NextResponse.json({
       success: true,

@@ -156,6 +156,11 @@ const operationalExceptionSchema = new Schema(
       type: Boolean,
       default: false,
     },
+    planningSource: {
+      type: String,
+      enum: ["", "schedule_planner", "attendance_comparison"],
+      default: "",
+    },
     registeredBy: {
       type: String,
       trim: true,

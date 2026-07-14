@@ -91,12 +91,16 @@ function normalizeSearch(value) {
 }
 
 function operationalAlertCount(summary = {}) {
-  if (summary.issueDays !== undefined) {
-    return Number(summary.issueDays) || 0;
+  if (summary.pendingOperationalAlertDays !== undefined) {
+    return Number(summary.pendingOperationalAlertDays) || 0;
   }
 
   if (summary.operationalAlertDays !== undefined) {
     return Number(summary.operationalAlertDays) || 0;
+  }
+
+  if (summary.issueDays !== undefined) {
+    return Number(summary.issueDays) || 0;
   }
 
   return (
@@ -123,8 +127,14 @@ function hasControlBlockingAlert(day = {}) {
   ].includes(tag));
 }
 
+function hasFinalControlDecision(day = {}) {
+  return day.authorization?.isSaved === true &&
+    day.authorization?.source !== "operational_exception";
+}
+
 function hasControlLateIssue(day = {}) {
   if (hasControlBlockingAlert(day)) return false;
+  if (hasFinalControlDecision(day)) return false;
   if (day.authorization?.decision === "reviewed") return false;
 
   return (Number(day.lateMinutes) || 0) > 0 ||
@@ -135,14 +145,47 @@ function hasControlLateIssue(day = {}) {
 
 function hasControlAdditionalIssue(day = {}) {
   if (hasControlBlockingAlert(day) || hasControlLateIssue(day)) return false;
+  if (hasFinalControlDecision(day)) return false;
 
-  return (day.tags || []).includes("Tiempo adicional") ||
-    (Number(day.additionalSupplementaryMinutes) || 0) > 0 ||
-    (Number(day.detectedSupplementaryMinutes) || 0) > (Number(day.supplementaryMinutes) || 0) ||
-    (Number(day.detectedExtraordinaryMinutes) || 0) > (Number(day.extraordinaryMinutes) || 0);
+  if ((day.tags || []).includes("Tiempo adicional")) return true;
+
+  const hasPlannedTime =
+    (Number(day.plannedRegularMinutes) || 0) > 0 ||
+    (Number(day.plannedSupplementaryMinutes) || 0) > 0 ||
+    (Number(day.plannedExtraordinaryMinutes) || 0) > 0 ||
+    (Number(day.scheduledWorkedMinutes) || 0) > 0;
+  const toleranceMinutes = hasPlannedTime
+    ? Math.max(0, Number(day.lateDepartureToleranceMinutes ?? 20) || 0)
+    : 0;
+  const pendingSupplementaryMinutes = Math.max(
+    Number(day.additionalSupplementaryMinutes) || 0,
+    (Number(day.detectedSupplementaryMinutes) || 0) - (Number(day.supplementaryMinutes) || 0),
+  );
+  const pendingExtraordinaryMinutes = Math.max(
+    0,
+    (Number(day.detectedExtraordinaryMinutes) || 0) - (Number(day.extraordinaryMinutes) || 0),
+  );
+
+  return Math.max(pendingSupplementaryMinutes, pendingExtraordinaryMinutes) > toleranceMinutes;
+}
+
+function lateTimeCount(row = {}) {
+  if (row.summary?.pendingLateDays !== undefined) {
+    return Number(row.summary.pendingLateDays) || 0;
+  }
+
+  if (Array.isArray(row.days)) {
+    return row.days.filter(hasControlLateIssue).length;
+  }
+
+  return Number(row.summary?.lateDays) || 0;
 }
 
 function additionalTimeCount(row = {}) {
+  if (row.summary?.pendingAdditionalDays !== undefined) {
+    return Number(row.summary.pendingAdditionalDays) || 0;
+  }
+
   if (Array.isArray(row.days)) {
     return row.days.filter(hasControlAdditionalIssue).length;
   }
@@ -289,16 +332,16 @@ export default function AttendanceComparisonView() {
       const supplementaryMultiplier = Number(row.summary?.supplementaryMultiplier) || 1.5;
       const extraordinaryMultiplier = Number(row.summary?.extraordinaryMultiplier) || 2;
       const plannedSalary = Number(row.summary?.salaryPlanned) || 0;
-      const realSalary = Number(row.summary?.salaryReal) || 0;
+      const approvedSalary = Number(row.summary?.salaryApproved ?? row.summary?.salaryProjected) || 0;
 
       accumulator.supplementaryMinutes += supplementaryMinutes;
       accumulator.extraordinaryMinutes += extraordinaryMinutes;
       accumulator.supplementaryValue += (supplementaryMinutes / 60) * calculatePayrollAdditionalRate(hourlyRate, supplementaryMultiplier);
       accumulator.extraordinaryValue += (extraordinaryMinutes / 60) * calculatePayrollAdditionalRate(hourlyRate, extraordinaryMultiplier);
-      accumulator.excessValue += Math.max(0, realSalary - plannedSalary);
+      accumulator.excessValue += Math.max(0, approvedSalary - plannedSalary);
       accumulator.salaryPlanned += plannedSalary;
-      accumulator.salaryReal += realSalary;
-      accumulator.salaryTotal += Number(row.summary?.salaryProjected) || 0;
+      accumulator.salaryApproved += approvedSalary;
+      accumulator.salaryTotal += approvedSalary;
       return accumulator;
     }, {
       supplementaryMinutes: 0,
@@ -307,7 +350,7 @@ export default function AttendanceComparisonView() {
       extraordinaryValue: 0,
       excessValue: 0,
       salaryPlanned: 0,
-      salaryReal: 0,
+      salaryApproved: 0,
       salaryTotal: 0,
     });
 
@@ -319,7 +362,7 @@ export default function AttendanceComparisonView() {
       extraordinaryValueLabel: moneyLabel(totals.extraordinaryValue),
       excessValueLabel: moneyLabel(totals.excessValue),
       salaryPlannedLabel: moneyLabel(totals.salaryPlanned),
-      salaryRealLabel: moneyLabel(totals.salaryReal),
+      salaryApprovedLabel: moneyLabel(totals.salaryApproved),
       salaryTotalLabel: moneyLabel(totals.salaryTotal),
     };
   }, [visibleRows]);
@@ -389,7 +432,9 @@ export default function AttendanceComparisonView() {
       if (targetFilters.areaCode) params.set("areaCode", targetFilters.areaCode);
       if (targetFilters.roleCode) params.set("roleCode", targetFilters.roleCode);
 
-      const response = await fetch(`/api/planner/attendance/comparison?${params.toString()}`);
+      const response = await fetch(`/api/planner/attendance/comparison?${params.toString()}`, {
+        cache: "no-store",
+      });
       const payload = await response.json();
 
       if (!response.ok) {
@@ -487,7 +532,7 @@ export default function AttendanceComparisonView() {
           <td>
             <div className={styles.controlCounters}>
               <ControlCounter label="Alertas" value={operationalAlertCount(row.summary)} tone="danger" />
-              <ControlCounter label="Atrasos" value={row.summary.lateDays || 0} tone="warning" />
+              <ControlCounter label="Atrasos" value={lateTimeCount(row)} tone="warning" />
               <ControlCounter label="Adicional" value={additionalTimeCount(row)} tone="additional" />
             </div>
           </td>
@@ -512,7 +557,7 @@ export default function AttendanceComparisonView() {
           <td>
             <div className={styles.flatMetrics}>
               <FlatMetric label="Planificado" value={row.summary.salaryPlannedLabel} />
-              <FlatMetric label="Registrado" value={row.summary.salaryRealLabel} />
+              <FlatMetric label="Aprobado" value={row.summary.salaryApprovedLabel || row.summary.salaryProjectedLabel} />
             </div>
           </td>
         </tr>
@@ -663,15 +708,15 @@ export default function AttendanceComparisonView() {
         <article>
           <span>Excedente</span>
           <strong>{summaryCounters.excessValueLabel}</strong>
-          <small>Registrado vs plan</small>
+          <small>Aprobado vs plan</small>
         </article>
         <article className={styles.salarySummaryCard}>
           <span>Total sueldos</span>
           <div className={styles.salarySummaryValues}>
             <span className={styles.salarySummarySecondary}>{summaryCounters.salaryPlannedLabel}</span>
             <small>Planificado</small>
-            <strong>{summaryCounters.salaryRealLabel}</strong>
-            <small>Registrado</small>
+            <strong>{summaryCounters.salaryApprovedLabel}</strong>
+            <small>Aprobado</small>
           </div>
         </article>
       </div>

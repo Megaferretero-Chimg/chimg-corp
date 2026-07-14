@@ -143,9 +143,10 @@ async function loadComparisonSnapshot(monthKey) {
 
     const payload = await response.json();
     const rows = Array.isArray(payload.rows) ? payload.rows : [];
-    const additionalDays = rows.reduce((total, row) =>
-      total + (row.days || []).filter((day) => (Number(day.additionalSupplementaryMinutes) || 0) > 0).length,
-    0);
+    const additionalDays = payload.summary?.pendingAdditionalDays ?? rows.reduce(
+      (total, row) => total + (Number(row.summary?.pendingAdditionalDays) || 0),
+      0,
+    );
     const salaryPlanned = rows.reduce((total, row) => total + (Number(row.summary?.salaryPlanned) || 0), 0);
     const salaryReal = rows.reduce((total, row) => total + (Number(row.summary?.salaryReal) || 0), 0);
 
@@ -328,8 +329,10 @@ async function loadHomeSummary() {
   const employeesWithoutGroup = Math.max(employees.length - groupEmployeeIds.size, 0);
   const closureSaved = Boolean(latestClosure?.completeBaseHours);
   const comparisonSummary = comparisonSnapshot?.summary || {};
-  const unresolvedAlerts = Number(comparisonSummary.operationalAlertDays) || 0;
-  const unresolvedLates = Number(comparisonSummary.lateDays) || 0;
+  const unresolvedAlerts = Number(
+    comparisonSummary.pendingOperationalAlertDays ?? comparisonSummary.operationalAlertDays,
+  ) || 0;
+  const unresolvedLates = Number(comparisonSummary.pendingLateDays ?? comparisonSummary.lateDays) || 0;
   const unresolvedAdditional = Number(comparisonSnapshot?.additionalDays) || 0;
   const plannedSalary = numberOrNull(comparisonSnapshot?.salaryPlanned) ?? baseSalary;
   const hasRegisteredData = (Number(uploadSummary.published) || 0) > 0;
