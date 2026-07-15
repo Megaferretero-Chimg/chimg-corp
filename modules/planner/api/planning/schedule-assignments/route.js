@@ -3,10 +3,12 @@ import { NextResponse } from "next/server";
 import { getAuthenticatedUser } from "@/lib/auth";
 import connectToDatabase from "@/lib/db/mongodb";
 import { buildEmployeeActiveInMonthQuery, isEmployeeActiveOnDate } from "@/modules/company/submodules/people/lib/employees";
+import { hasAccessPermission } from "@/modules/company/submodules/access/lib/permissions";
 import {
   applyPlannerScopeToAssignmentQuery,
   applyPlannerScopeToEmployeeQuery,
   assertEmployeesInPlannerScope,
+  assertWorkGroupInPlannerScope,
   resolvePlannerEmployeeScope,
 } from "@/modules/planner/lib/planning/accessScope";
 import { parseMonthKey } from "@/modules/planner/lib/planning/holidays";
@@ -69,10 +71,12 @@ function hasScheduledTemplateRow(row) {
 
 function resolveTemplateOverrideDay(templateDay, template, dateKey) {
   const dayOfWeek = getDayOfWeek(dateKey);
+  const isHoliday = templateDay?.dayType === "holiday";
 
-  if (templateDay?.dayType === "holiday") return templateDay;
   if (hasScheduledTemplateRow(templateDay)) {
-    const dayType = [0, 6].includes(dayOfWeek) ? "weekend_overtime" : templateDay.dayType;
+    const dayType = isHoliday || [0, 6].includes(dayOfWeek)
+      ? "weekend_overtime"
+      : templateDay.dayType;
     const netMinutes = calculateNetScheduleMinutes(templateDay);
 
     return {
@@ -88,7 +92,9 @@ function resolveTemplateOverrideDay(templateDay, template, dateKey) {
 
   if (!fallbackRow) return templateDay;
 
-  const dayType = [0, 6].includes(dayOfWeek) ? "weekend_overtime" : fallbackRow.dayType;
+  const dayType = isHoliday || [0, 6].includes(dayOfWeek)
+    ? "weekend_overtime"
+    : fallbackRow.dayType;
   const netMinutes = calculateNetScheduleMinutes(fallbackRow);
 
   return {
@@ -234,6 +240,28 @@ function normalizeOperationalDay(day, holidayNamesByDate, isVacationDate = false
   const isVacation = requestedType === "vacation";
   const operationalNote = String(day?.operationalNote || "").trim().toUpperCase();
   const operationalJustification = Boolean(day?.operationalJustification && operationalNote);
+
+  if (holidayName && isWorkday && day?.startTime && day?.endTime) {
+    return {
+      dateKey,
+      dayOfWeek,
+      label: DAY_LABELS.get(dayOfWeek) || "",
+      dayType: "weekend_overtime",
+      startTime: String(day.startTime).trim(),
+      lunchDurationMinutes: Math.max(0, Number(day.lunchDurationMinutes) || 0),
+      lunchStartTime: String(day.lunchStartTime || "").trim(),
+      lunchEndTime: String(day.lunchEndTime || "").trim(),
+      endTime: String(day.endTime).trim(),
+      authorizedExtraMinutes: calculateNetScheduleMinutes(day),
+      areaCode: String(day?.areaCode || "").trim(),
+      areaName: String(day?.areaName || "").trim().toUpperCase(),
+      roleCode: String(day?.roleCode || "").trim(),
+      roleName: String(day?.roleName || "").trim().toUpperCase(),
+      operationalNote,
+      operationalJustification,
+      source: "operational",
+    };
+  }
 
   if (holidayName) {
     return {
@@ -632,6 +660,7 @@ function buildFixedRoleAssignments({ employees = [], rolesByCode = new Map(), te
         monthKey: assignmentMonthKey,
         holidays: holidaysByMonth.get(assignmentMonthKey) || [],
         notes: "Horario fijo generado desde configuracion por cargo.",
+        weekdaysOnly: true,
       }));
     });
   });
@@ -686,6 +715,7 @@ export async function GET(request) {
     }
 
     if (groupId) {
+      assertWorkGroupInPlannerScope(groupId, plannerScope);
       const workGroup = await PlanningWorkGroup.findById(groupId).lean();
       assertEmployeesBelongToGroup(employeeId ? [employeeId] : employeeIds, workGroup);
     }
@@ -738,19 +768,22 @@ export async function GET(request) {
       Holiday.find({ dateKey: { $regex: `^(${targetMonthKeys.join("|")})` } }).lean(),
     ]);
     const templatesById = new Map(fixedTemplates.map((template) => [template._id.toString(), template]));
-    const manualAssignmentKeys = new Set(
-      assignments.map((assignment) => `${assignment.employee?.toString?.() || ""}|${assignment.monthKey}`),
-    );
     const fixedAssignments = buildFixedRoleAssignments({
       employees: fixedEmployees,
       rolesByCode,
       templatesById,
       monthKeys: targetMonthKeys,
       holidays: fixedHolidays,
-    }).filter((assignment) => !manualAssignmentKeys.has(`${assignment.employee?.toString?.() || ""}|${assignment.monthKey}`));
+    });
+    const fixedEmployeeIds = new Set(
+      fixedAssignments.map((assignment) => assignment.employee?.toString?.() || "").filter(Boolean),
+    );
+    const variableAssignments = assignments.filter((assignment) =>
+      !fixedEmployeeIds.has(assignment.employee?.toString?.() || ""),
+    );
 
     return NextResponse.json({
-      assignments: mergeAssignmentsByEmployee([...fixedAssignments, ...assignments], monthKey)
+      assignments: mergeAssignmentsByEmployee([...fixedAssignments, ...variableAssignments], monthKey)
         .map((assignment) => serializeScheduleAssignmentForWeek(assignment, weekStartKey, groupId)),
     });
   } catch (error) {
@@ -795,7 +828,6 @@ export async function POST(request) {
         Holiday.find({ dateKey: { $regex: `^${monthKey}-` } }).lean(),
         VacationRequest.exists({
           employee: employeeId,
-          status: "scheduled",
           startDateKey: { $lte: dateKey },
           endDateKey: { $gte: dateKey },
         }),
@@ -834,7 +866,7 @@ export async function POST(request) {
         areaName: employee.areaName || template.areaName || "",
         roleCode: template.roleCode || employee.roleCode || "",
         roleName: template.roleName || employee.roleName || "",
-        source: templateDay.source === "holiday" ? "holiday" : "manual_override",
+        source: "manual_override",
       };
       const existingDaysByDate = new Map(
         (currentAssignment?.generatedDays || []).map((day) => [day.dateKey, day]),
@@ -889,6 +921,8 @@ export async function POST(request) {
         throw new Error("Debes seleccionar un grupo de trabajo para guardar la planificacion.");
       }
 
+      assertWorkGroupInPlannerScope(groupId, plannerScope);
+
       assertEmployeesInPlannerScope(employeeIds, plannerScope);
       const user = await getAuthenticatedUser();
       const savedBy = String(user?.employeeName || user?.username || user?.id || "SISTEMA").trim();
@@ -920,7 +954,6 @@ export async function POST(request) {
         Holiday.find({ dateKey: { $in: submittedDateKeys } }).lean(),
         VacationRequest.find({
           employee: { $in: employeeIds },
-          status: "scheduled",
           startDateKey: { $lte: submittedDateKeys.at(-1) || "" },
           endDateKey: { $gte: submittedDateKeys[0] || "" },
         }).lean(),
@@ -1184,6 +1217,16 @@ export async function POST(request) {
         throw new Error("Debes seleccionar un grupo de trabajo para aprobar la planificacion.");
       }
 
+      assertWorkGroupInPlannerScope(groupId, plannerScope);
+      const approvalUser = await getAuthenticatedUser();
+
+      if (!hasAccessPermission(approvalUser, "planner.updates.manage")) {
+        return NextResponse.json(
+          { error: "Solo el Administrador o el Encargado de nómina puede aprobar la planificación." },
+          { status: 403 },
+        );
+      }
+
       if (!weekStartKey || !/^\d{4}-\d{2}-\d{2}$/.test(weekStartKey)) {
         throw new Error("Debes indicar la semana a aprobar.");
       }
@@ -1198,11 +1241,11 @@ export async function POST(request) {
 
       applyPlannerScopeToEmployeeQuery(employeeQuery, plannerScope);
 
-      const [employees, user, workGroup] = await Promise.all([
+      const [employees, workGroup] = await Promise.all([
         Employee.find(employeeQuery).lean(),
-        getAuthenticatedUser(),
         PlanningWorkGroup.findById(groupId).lean(),
       ]);
+      const user = approvalUser;
       assertEmployeesBelongToGroup(employeeIds, workGroup);
       const groupName = String(workGroup?.name || "").trim().toUpperCase();
       const approvedBy = String(user?.employeeName || user?.username || user?.id || "SISTEMA").trim();

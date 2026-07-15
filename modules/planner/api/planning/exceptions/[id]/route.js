@@ -16,6 +16,10 @@ import {
   serializeOperationalException,
 } from "@/modules/planner/lib/planning/exceptions";
 import { deleteExceptionManualPunch, syncExceptionManualPunch } from "@/modules/planner/lib/planning/exceptionPunches";
+import {
+  findLaterAttendanceDecisionForException,
+  findLaterExceptionForException,
+} from "@/modules/planner/lib/attendance/decisionDependencies";
 import { Employee } from "@/modules/company/models";
 import { OperationalException } from "@/modules/planner/models";
 
@@ -154,6 +158,17 @@ export async function DELETE(_request, context) {
     assertEmployeesInPlannerScope([
       currentException.employee?.toString?.() || currentException.employee,
     ], plannerScope);
+
+    const [laterAttendanceDecision, laterException] = await Promise.all([
+      findLaterAttendanceDecisionForException(currentException),
+      findLaterExceptionForException(currentException),
+    ]);
+
+    if (laterAttendanceDecision || laterException) {
+      return NextResponse.json({
+        error: "Esta excepción tiene una resolución posterior. Desactiva primero la decisión más reciente para no romper el flujo del día.",
+      }, { status: 409 });
+    }
 
     await deleteExceptionManualPunch(currentException);
     const actor = user?.employeeName || user?.username || user?.id || "SISTEMA";

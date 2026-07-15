@@ -16,44 +16,26 @@ export const DEFAULT_USER_TYPES = [
     isActive: true,
   },
   {
-    code: "supervisor",
-    name: "Supervisor",
-    description: "Acceso operativo para supervisión y seguimiento.",
-    permissions: getDefaultPermissionsForRole("supervisor"),
-    scopeType: "branch",
-    landingPath: "/modules/planning/home",
-    isActive: true,
-  },
-  {
-    code: "operator",
-    name: "Operador",
-    description: "Acceso de operación diaria con funciones limitadas.",
-    permissions: getDefaultPermissionsForRole("operator"),
-    scopeType: "branch",
-    landingPath: "/modules/planning/attendance",
-    isActive: true,
-  },
-  {
-    code: "planning_exceptions",
-    name: "Ajustes y excepciones",
-    description: "Acceso limitado al módulo de planificación, solo para revisar y registrar ajustes y excepciones.",
-    permissions: getDefaultPermissionsForRole("planning_exceptions"),
+    code: "branch_manager",
+    name: "Jefe de sucursal",
+    description: "Planifica horarios y registra sus propios ajustes y excepciones, únicamente para el grupo de trabajo que dirige.",
+    permissions: getDefaultPermissionsForRole("branch_manager"),
     scopeType: "team",
-    landingPath: "/modules/planning/planning/exceptions",
+    landingPath: "/modules/planning/schedules",
     isActive: true,
   },
   {
-    code: "viewer",
-    name: "Consulta",
-    description: "Acceso de lectura y revisión básica.",
-    permissions: getDefaultPermissionsForRole("viewer"),
-    scopeType: "self",
-    landingPath: "/modules",
+    code: "payroll_manager",
+    name: "Encargado de nómina",
+    description: "Acceso completo al módulo de planificación para revisar, aprobar y dejar lista la nómina; sin acceso al módulo Empresa y configuración.",
+    permissions: getDefaultPermissionsForRole("payroll_manager"),
+    scopeType: "company",
+    landingPath: "/modules/planning/home",
     isActive: true,
   },
 ];
 
-export const PROTECTED_USER_TYPE_CODES = new Set(["admin"]);
+export const PROTECTED_USER_TYPE_CODES = new Set(DEFAULT_USER_TYPES.map((type) => type.code));
 
 function slugifyTypeText(value) {
   return String(value || "")
@@ -89,7 +71,7 @@ export function normalizeUserTypePayload(body) {
   }
 
   if (isProtectedUserTypeCode(code)) {
-    throw new Error("El perfil Administrador está protegido y no se puede modificar.");
+    throw new Error("Los tres perfiles del sistema están protegidos y no se pueden modificar.");
   }
 
   return {

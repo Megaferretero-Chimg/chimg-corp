@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 
 import { getAuthenticatedUser } from "@/lib/auth";
+import { BRANCH_MANAGER_ACCESS_ROLE } from "@/lib/access-roles";
 import { createAuditLog } from "@/lib/audit";
 import connectToDatabase from "@/lib/db/mongodb";
 import {
@@ -42,6 +43,10 @@ export async function GET(request) {
     const canApproveExceptions = await canUserApproveExceptions(user);
 
     applyPlannerScopeToEmployeeReferenceQuery(query, plannerScope);
+
+    if (user?.accessRole === BRANCH_MANAGER_ACCESS_ROLE) {
+      query.createdByUser = user.id;
+    }
 
     const exceptions = await OperationalException.find(query)
       .sort({ date: -1, employeeName: 1 })
@@ -120,7 +125,10 @@ export async function POST(request) {
     const normalizedBody = shouldAutoResolve
       ? applyExceptionApprovalActor(sourceBody, user)
       : forcePendingExceptionPayload(sourceBody);
-    const payload = normalizeExceptionPayload({ ...normalizedBody, registeredBy }, employee);
+    const payload = {
+      ...normalizeExceptionPayload({ ...normalizedBody, registeredBy }, employee),
+      createdByUser: String(user?.id || user?.username || "").trim(),
+    };
     const exception = await OperationalException.create(payload);
 
     try {

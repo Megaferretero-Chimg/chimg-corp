@@ -291,11 +291,11 @@ export function normalizeExceptionPayload(body, employee) {
   const authorizedBy = String(body?.authorizedBy || "").trim().toUpperCase();
   const startTime = String(body?.startTime || "").trim();
   const endTime = String(body?.endTime || "").trim();
-  const plannedStartTime = String(body?.plannedStartTime || "").trim();
-  const plannedEndTime = String(body?.plannedEndTime || "").trim();
-  const plannedLunchStartTime = String(body?.plannedLunchStartTime || "").trim();
-  const plannedLunchEndTime = String(body?.plannedLunchEndTime || "").trim();
-  const plannedLunchDurationMinutes = plannedLunchStartTime && plannedLunchEndTime
+  let plannedStartTime = String(body?.plannedStartTime || "").trim();
+  let plannedEndTime = String(body?.plannedEndTime || "").trim();
+  let plannedLunchStartTime = String(body?.plannedLunchStartTime || "").trim();
+  let plannedLunchEndTime = String(body?.plannedLunchEndTime || "").trim();
+  let plannedLunchDurationMinutes = plannedLunchStartTime && plannedLunchEndTime
     ? minutesBetweenTimes(plannedLunchStartTime, plannedLunchEndTime)
     : 0;
   const manualPunchTime = String(body?.manualPunchTime || "").trim();
@@ -319,6 +319,18 @@ export function normalizeExceptionPayload(body, employee) {
     allowSupplementaryTime,
   };
   const effect = normalizeResolutionEffect(body?.effect, effectInput);
+  const plannedDayType = effect === "planning_change" && body?.plannedDayType === "off_day"
+    ? "off_day"
+    : "workday";
+
+  if (plannedDayType === "off_day") {
+    plannedStartTime = "";
+    plannedEndTime = "";
+    plannedLunchStartTime = "";
+    plannedLunchEndTime = "";
+    plannedLunchDurationMinutes = 0;
+  }
+
   const attendanceMode = normalizeAttendanceMode(body?.attendanceMode, effect, effectInput);
   const payMode = normalizePayMode(body?.payMode, effect, effectInput);
   const applicableWeekdays = normalizeApplicableWeekdays(body?.applicableWeekdays, effect);
@@ -375,7 +387,7 @@ export function normalizeExceptionPayload(body, employee) {
     throw new Error("La hora de fin de almuerzo no es valida.");
   }
 
-  if (effect === "planning_change" && (!plannedStartTime || !plannedEndTime)) {
+  if (effect === "planning_change" && plannedDayType !== "off_day" && (!plannedStartTime || !plannedEndTime)) {
     throw new Error("Debes indicar el horario temporal autorizado.");
   }
 
@@ -411,6 +423,7 @@ export function normalizeExceptionPayload(body, employee) {
     endTime,
     plannedStartTime,
     plannedEndTime,
+    plannedDayType,
     plannedLunchStartTime,
     plannedLunchEndTime,
     plannedLunchDurationMinutes,
@@ -461,6 +474,7 @@ export function serializeOperationalException(exception) {
     endTime: exception.endTime || "",
     plannedStartTime: exception.plannedStartTime || "",
     plannedEndTime: exception.plannedEndTime || "",
+    plannedDayType: exception.plannedDayType === "off_day" ? "off_day" : "workday",
     plannedLunchStartTime: exception.plannedLunchStartTime || "",
     plannedLunchEndTime: exception.plannedLunchEndTime || "",
     plannedLunchDurationMinutes: Number(exception.plannedLunchDurationMinutes) || 0,

@@ -106,6 +106,7 @@ const EMPTY_FORM = {
   endTime: "",
   plannedStartTime: "",
   plannedEndTime: "",
+  plannedDayType: "workday",
   plannedLunchStartTime: "",
   plannedLunchEndTime: "",
   plannedLunchDurationMinutes: 0,
@@ -160,6 +161,7 @@ function buildExceptionForm(exception) {
     endTime: exception.endTime || "",
     plannedStartTime: exception.plannedStartTime || "",
     plannedEndTime: exception.plannedEndTime || "",
+    plannedDayType: exception.plannedDayType === "off_day" ? "off_day" : "workday",
     plannedLunchStartTime: exception.plannedLunchStartTime || "",
     plannedLunchEndTime: exception.plannedLunchEndTime || "",
     plannedLunchDurationMinutes: Number(exception.plannedLunchDurationMinutes) || 0,
@@ -376,7 +378,11 @@ export default function ExceptionManager({
     && form.notes.trim()
     && (!createsManualPunch || form.manualPunchTime)
     && (!needsTimeRange || (form.startTime && form.endTime))
-    && (!needsTemporarySchedule || (form.plannedStartTime && form.plannedEndTime && Array.isArray(form.applicableWeekdays) && form.applicableWeekdays.length)),
+    && (!needsTemporarySchedule || (
+      (form.plannedDayType === "off_day" || (form.plannedStartTime && form.plannedEndTime))
+      && Array.isArray(form.applicableWeekdays)
+      && form.applicableWeekdays.length
+    )),
   );
 
   const clearNoticeTimers = useCallback(() => {
@@ -577,6 +583,7 @@ export default function ExceptionManager({
       endTime: "",
       plannedStartTime: flow.effect === "planning_change" ? current.plannedStartTime : "",
       plannedEndTime: flow.effect === "planning_change" ? current.plannedEndTime : "",
+      plannedDayType: flow.effect === "planning_change" ? current.plannedDayType || "workday" : "workday",
       plannedLunchStartTime: flow.effect === "planning_change" ? current.plannedLunchStartTime : "",
       plannedLunchEndTime: flow.effect === "planning_change" ? current.plannedLunchEndTime : "",
       plannedLunchDurationMinutes: flow.effect === "planning_change" ? current.plannedLunchDurationMinutes : 0,
@@ -674,6 +681,7 @@ export default function ExceptionManager({
       manualPunchTime: isRejected ? exception.manualPunchTime : exception.manualPunchTime || "",
       plannedStartTime: isRejected ? exception.plannedStartTime : exception.plannedStartTime || "",
       plannedEndTime: isRejected ? exception.plannedEndTime : exception.plannedEndTime || "",
+      plannedDayType: exception.plannedDayType === "off_day" ? "off_day" : "workday",
       plannedLunchStartTime: isRejected ? exception.plannedLunchStartTime : exception.plannedLunchStartTime || "",
       plannedLunchEndTime: isRejected ? exception.plannedLunchEndTime : exception.plannedLunchEndTime || "",
       plannedLunchDurationMinutes: isRejected ? exception.plannedLunchDurationMinutes : Number(exception.plannedLunchDurationMinutes) || 0,
@@ -745,11 +753,12 @@ export default function ExceptionManager({
       authorizedBy: "",
       startTime: needsTimeRange ? form.startTime : "",
       endTime: needsTimeRange ? form.endTime : "",
-      plannedStartTime: needsTemporarySchedule ? form.plannedStartTime : "",
-      plannedEndTime: needsTemporarySchedule ? form.plannedEndTime : "",
-      plannedLunchStartTime: needsTemporarySchedule ? form.plannedLunchStartTime : "",
-      plannedLunchEndTime: needsTemporarySchedule ? form.plannedLunchEndTime : "",
-      plannedLunchDurationMinutes: needsTemporarySchedule ? form.plannedLunchDurationMinutes : 0,
+      plannedDayType: needsTemporarySchedule && form.plannedDayType === "off_day" ? "off_day" : "workday",
+      plannedStartTime: needsTemporarySchedule && form.plannedDayType !== "off_day" ? form.plannedStartTime : "",
+      plannedEndTime: needsTemporarySchedule && form.plannedDayType !== "off_day" ? form.plannedEndTime : "",
+      plannedLunchStartTime: needsTemporarySchedule && form.plannedDayType !== "off_day" ? form.plannedLunchStartTime : "",
+      plannedLunchEndTime: needsTemporarySchedule && form.plannedDayType !== "off_day" ? form.plannedLunchEndTime : "",
+      plannedLunchDurationMinutes: needsTemporarySchedule && form.plannedDayType !== "off_day" ? form.plannedLunchDurationMinutes : 0,
       applicableWeekdays: needsTemporarySchedule ? form.applicableWeekdays : undefined,
       manualPunchTime: createsManualPunch ? form.manualPunchTime : "",
       destination: "",
@@ -913,7 +922,12 @@ export default function ExceptionManager({
                   <dd>{reviewException.manualPunchTime}</dd>
                 </div>
               ) : null}
-              {reviewException.plannedStartTime || reviewException.plannedEndTime ? (
+              {reviewException.plannedDayType === "off_day" ? (
+                <div>
+                  <dt>Planificación temporal</dt>
+                  <dd>Descanso</dd>
+                </div>
+              ) : reviewException.plannedStartTime || reviewException.plannedEndTime ? (
                 <div>
                   <dt>Horario temporal</dt>
                   <dd>{[reviewException.plannedStartTime, reviewException.plannedEndTime].filter(Boolean).join(" - ")}</dd>
@@ -1306,27 +1320,38 @@ export default function ExceptionManager({
 
           {needsTemporarySchedule ? (
             <div className={styles.presetPanel}>
-              <span>Horario temporal</span>
-              <div className={styles.twoColumnGrid}>
-                <label className={styles.field}>
-                  <span>Entrada</span>
-                  <input type="time" value={form.plannedStartTime} onChange={(event) => updateForm("plannedStartTime", event.target.value)} />
-                </label>
-                <label className={styles.field}>
-                  <span>Salida</span>
-                  <input type="time" value={form.plannedEndTime} onChange={(event) => updateForm("plannedEndTime", event.target.value)} />
-                </label>
-              </div>
-              <div className={styles.twoColumnGrid}>
-                <label className={styles.field}>
-                  <span>Inicio almuerzo</span>
-                  <input type="time" value={form.plannedLunchStartTime} onChange={(event) => updateForm("plannedLunchStartTime", event.target.value)} />
-                </label>
-                <label className={styles.field}>
-                  <span>Fin almuerzo</span>
-                  <input type="time" value={form.plannedLunchEndTime} onChange={(event) => updateForm("plannedLunchEndTime", event.target.value)} />
-                </label>
-              </div>
+              <span>Planificación temporal</span>
+              <label className={styles.field}>
+                <span>Tipo de día</span>
+                <select value={form.plannedDayType || "workday"} onChange={(event) => updateForm("plannedDayType", event.target.value)}>
+                  <option value="workday">Horario laboral</option>
+                  <option value="off_day">Descanso</option>
+                </select>
+              </label>
+              {form.plannedDayType !== "off_day" ? (
+                <>
+                  <div className={styles.twoColumnGrid}>
+                    <label className={styles.field}>
+                      <span>Entrada</span>
+                      <input type="time" value={form.plannedStartTime} onChange={(event) => updateForm("plannedStartTime", event.target.value)} />
+                    </label>
+                    <label className={styles.field}>
+                      <span>Salida</span>
+                      <input type="time" value={form.plannedEndTime} onChange={(event) => updateForm("plannedEndTime", event.target.value)} />
+                    </label>
+                  </div>
+                  <div className={styles.twoColumnGrid}>
+                    <label className={styles.field}>
+                      <span>Inicio almuerzo</span>
+                      <input type="time" value={form.plannedLunchStartTime} onChange={(event) => updateForm("plannedLunchStartTime", event.target.value)} />
+                    </label>
+                    <label className={styles.field}>
+                      <span>Fin almuerzo</span>
+                      <input type="time" value={form.plannedLunchEndTime} onChange={(event) => updateForm("plannedLunchEndTime", event.target.value)} />
+                    </label>
+                  </div>
+                </>
+              ) : null}
               <div className={styles.weekdayPicker}>
                 {WEEKDAY_OPTIONS.map((day) => {
                   const isSelected = Array.isArray(form.applicableWeekdays) && form.applicableWeekdays.includes(day.value);

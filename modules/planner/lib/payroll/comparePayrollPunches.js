@@ -250,6 +250,7 @@ function compareDay({ date, punches, schedule, scheduleRules }) {
             endTime: schedule.endTime || "",
             hasLunch: Boolean(schedule.hasLunch),
             lunchDurationMinutes: schedule.lunchDurationMinutes || 0,
+            authorizedExtraMinutes: Math.max(0, Number(schedule.authorizedExtraMinutes) || 0),
             summary: buildScheduleSummary(schedule),
           }
         : null,
@@ -307,24 +308,39 @@ function compareDay({ date, punches, schedule, scheduleRules }) {
   let workedMinutes = null;
 
   if (checkInPunch && checkOutPunch && isAfter(checkOutPunch.punchedAt, checkInPunch.punchedAt)) {
-    workedMinutes = differenceInMinutes(checkOutPunch.punchedAt, checkInPunch.punchedAt);
-    const lunchDiscountMinutes =
-      schedule?.hasLunch && schedule?.lunchDurationMinutes > 0
-        ? schedule.lunchDurationMinutes
-        : 0;
+    const countedStart = scheduleStart && isBefore(checkInPunch.punchedAt, scheduleStart)
+      ? scheduleStart
+      : checkInPunch.punchedAt;
+    const actualLunchMinutes = lunchOut && lunchIn && isAfter(lunchIn.punchedAt, lunchOut.punchedAt)
+      ? differenceInMinutes(lunchIn.punchedAt, lunchOut.punchedAt)
+      : 0;
+    const scheduledLunchMinutes = schedule?.hasLunch && schedule?.lunchDurationMinutes > 0
+      ? schedule.lunchDurationMinutes
+      : 0;
+    const lunchDiscountMinutes = Math.max(actualLunchMinutes, scheduledLunchMinutes);
 
-    workedMinutes = Math.max(workedMinutes - lunchDiscountMinutes, 0);
+    workedMinutes = Math.max(
+      differenceInMinutes(checkOutPunch.punchedAt, countedStart) - lunchDiscountMinutes,
+      0,
+    );
   }
 
+  const plannedRegularMinutes = Math.max(
+    0,
+    Math.min(
+      scheduledWorkedMinutes - Math.max(0, Number(schedule?.authorizedExtraMinutes) || 0),
+      REGULAR_DAILY_LIMIT_MINUTES,
+    ),
+  );
   const baseWorkedMinutes =
     schedule?.dayType === "workday" && Number.isFinite(workedMinutes)
-      ? Math.min(workedMinutes, REGULAR_DAILY_LIMIT_MINUTES)
+      ? Math.min(workedMinutes, plannedRegularMinutes || REGULAR_DAILY_LIMIT_MINUTES)
       : schedule?.dayType === "weekend_overtime"
         ? 0
         : workedMinutes;
   const extraWorkedMinutes =
-    schedule?.dayType === "workday" && Number.isFinite(workedMinutes) && workedMinutes > REGULAR_DAILY_LIMIT_MINUTES
-      ? workedMinutes - REGULAR_DAILY_LIMIT_MINUTES
+    schedule?.dayType === "workday" && Number.isFinite(workedMinutes) && workedMinutes > (plannedRegularMinutes || REGULAR_DAILY_LIMIT_MINUTES)
+      ? workedMinutes - (plannedRegularMinutes || REGULAR_DAILY_LIMIT_MINUTES)
       : schedule?.dayType === "weekend_overtime" && Number.isFinite(workedMinutes)
         ? workedMinutes
         : 0;
@@ -402,11 +418,12 @@ function compareDay({ date, punches, schedule, scheduleRules }) {
           dayType: schedule.dayType,
           dayTypeLabel: DAY_TYPE_LABELS.get(schedule.dayType) || schedule.dayType,
           startTime: schedule.startTime || "",
-          endTime: schedule.endTime || "",
-          hasLunch: Boolean(schedule.hasLunch),
-          lunchDurationMinutes: schedule.lunchDurationMinutes || 0,
-          summary: buildScheduleSummary(schedule),
-        }
+            endTime: schedule.endTime || "",
+            hasLunch: Boolean(schedule.hasLunch),
+            lunchDurationMinutes: schedule.lunchDurationMinutes || 0,
+            authorizedExtraMinutes: Math.max(0, Number(schedule.authorizedExtraMinutes) || 0),
+            summary: buildScheduleSummary(schedule),
+          }
       : null,
     punches: sortedPunches.map(formatPunchChip),
     matched: {

@@ -1004,6 +1004,7 @@ function estimateWeeklyPlanningCost({
   weekDateKeys,
   draftDays,
   shiftOptionsByKey,
+  holidayDateKeys = new Set(),
   dailyBaseHours = ECUADOR_DAILY_BASE_HOURS,
   regularWorkdayLimit = 5,
 }) {
@@ -1026,10 +1027,25 @@ function estimateWeeklyPlanningCost({
       return;
     }
 
-    workedDays += 1;
-
     const netMinutes = workedNetMinutes(shift);
     const baseMinutes = Math.max((Number(dailyBaseHours) || ECUADOR_DAILY_BASE_HOURS) * 60, 0);
+
+    if (holidayDateKeys.has(dateKey)) {
+      const minutes = netMinutes;
+      const amount = (minutes / 60) * hourlyRate * EXTRAORDINARY_SURCHARGE_MULTIPLIER;
+
+      extraordinaryMinutes += minutes;
+      extraordinaryAmount += amount;
+      rows.push({
+        dateKey,
+        type: "extraordinary",
+        minutes,
+        amount,
+      });
+      return;
+    }
+
+    workedDays += 1;
 
     if (workedDays > regularWorkdayLimit) {
       const minutes = netMinutes;
@@ -1356,7 +1372,7 @@ function ShiftPicker({ value, options, onChange, disabled = false }) {
   );
 }
 
-export default function SchedulePlanner({ initialFilters = {}, basePath = "/schedules" }) {
+export default function SchedulePlanner({ initialFilters = {}, basePath = "/schedules", canApprovePlanning = false }) {
   const router = useRouter();
   const [monthKey, setMonthKey] = useState(initialFilters.month || currentMonthKey());
   const [groupId, setGroupId] = useState(initialFilters.groupId || "");
@@ -1365,6 +1381,7 @@ export default function SchedulePlanner({ initialFilters = {}, basePath = "/sche
   const [roles, setRoles] = useState([]);
   const [templates, setTemplates] = useState([]);
   const [workGroups, setWorkGroups] = useState([]);
+  const [isWorkGroupLocked, setIsWorkGroupLocked] = useState(false);
   const [assignments, setAssignments] = useState([]);
   const [exceptions, setExceptions] = useState([]);
   const [vacations, setVacations] = useState([]);
@@ -1609,6 +1626,10 @@ export default function SchedulePlanner({ initialFilters = {}, basePath = "/sche
     () => new Map(holidays.map((holiday) => [holiday.dateKey, holiday])),
     [holidays],
   );
+  const holidayDateKeys = useMemo(
+    () => new Set(holidaysByDate.keys()),
+    [holidaysByDate],
+  );
 
   const effectiveDraftDays = useMemo(() =>
     applyPlanningOverlaysToDraftDays({
@@ -1672,11 +1693,12 @@ export default function SchedulePlanner({ initialFilters = {}, basePath = "/sche
         weekDateKeys,
         draftDays: effectiveDraftDays,
         shiftOptionsByKey,
+        holidayDateKeys,
         dailyBaseHours,
         regularWorkdayLimit: 5,
       }),
     ])),
-  [dailyBaseHours, effectiveDraftDays, filteredEmployees, shiftOptionsByKey, weekDateKeys]);
+  [dailyBaseHours, effectiveDraftDays, filteredEmployees, holidayDateKeys, shiftOptionsByKey, weekDateKeys]);
 
   const summary = useMemo(() => {
     let extraDayIndicators = 0;
@@ -1913,7 +1935,18 @@ export default function SchedulePlanner({ initialFilters = {}, basePath = "/sche
           setEmployees(employeesPayload.employees || []);
           setRoles(rolesPayload.roles || []);
           setTemplates(templatesPayload.templates || []);
-          setWorkGroups(workGroupsPayload.groups || []);
+          const nextWorkGroups = workGroupsPayload.groups || [];
+          const nextIsWorkGroupLocked = Boolean(workGroupsPayload.isWorkGroupLocked);
+
+          setWorkGroups(nextWorkGroups);
+          setIsWorkGroupLocked(nextIsWorkGroupLocked);
+
+          if (nextIsWorkGroupLocked && nextWorkGroups.length) {
+            const assignedGroup = nextWorkGroups[0];
+            setGroupId(assignedGroup.id);
+            setBranchCode(assignedGroup.branchCode || "");
+            replaceFilters({ groupId: assignedGroup.id });
+          }
         }
       } catch (error) {
         if (!isCancelled) showNotice("error", error.message);
@@ -1928,7 +1961,7 @@ export default function SchedulePlanner({ initialFilters = {}, basePath = "/sche
       isCancelled = true;
       clearNoticeTimers();
     };
-  }, [clearNoticeTimers, showNotice]);
+  }, [clearNoticeTimers, replaceFilters, showNotice]);
 
   useEffect(() => {
     if (isLoading) return;
@@ -3027,7 +3060,7 @@ export default function SchedulePlanner({ initialFilters = {}, basePath = "/sche
           controlClassName={styles.toolbarSelectControl}
           selectClassName={styles.toolbarSelectButton}
           value={groupId}
-          disabled={isPending}
+          disabled={isPending || isWorkGroupLocked}
           onChange={(event) => {
             const nextGroupId = event.target.value;
             const nextGroup = workGroups.find((group) => group.id === nextGroupId);
@@ -3039,7 +3072,7 @@ export default function SchedulePlanner({ initialFilters = {}, basePath = "/sche
             });
           }}
         >
-          <option value="">Seleccionar grupo</option>
+          {!isWorkGroupLocked ? <option value="">Seleccionar grupo</option> : null}
           {workGroupOptions.map((group) => (
             <option key={group.id} value={group.id}>
               {group.name} ({group.memberCount})
@@ -3405,15 +3438,17 @@ export default function SchedulePlanner({ initialFilters = {}, basePath = "/sche
           {isPending ? <RefreshCw size={16} /> : <Save size={16} />}
           {isPending ? "Guardando..." : "Guardar"}
         </button>
-        <button
-          type="button"
-          onClick={approveWeek}
-          disabled={isPending || hasDraftChanges || !filteredEmployees.length || !weeklyApprovalState.latestHistory || weeklyApprovalState.latestHistory.isApproved}
-          title={hasDraftChanges ? "Guarda los cambios antes de aprobar" : "Aprobar planificacion semanal"}
-        >
-          {isPending ? <RefreshCw size={16} /> : <Check size={16} />}
-          Aprobar
-        </button>
+        {canApprovePlanning ? (
+          <button
+            type="button"
+            onClick={approveWeek}
+            disabled={isPending || hasDraftChanges || !filteredEmployees.length || !weeklyApprovalState.latestHistory || weeklyApprovalState.latestHistory.isApproved}
+            title={hasDraftChanges ? "Guarda los cambios antes de aprobar" : "Aprobar planificacion semanal"}
+          >
+            {isPending ? <RefreshCw size={16} /> : <Check size={16} />}
+            Aprobar
+          </button>
+        ) : null}
       </section>
 
       {weeklyApprovalState.historyEntries.length ? (

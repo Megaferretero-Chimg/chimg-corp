@@ -4,6 +4,7 @@ import { getAuthenticatedUser } from "@/lib/auth";
 import connectToDatabase from "@/lib/db/mongodb";
 import { hasAccessPermission } from "@/modules/company/submodules/access/lib/permissions";
 import { seedOperationalSetup } from "@/modules/planner/lib/planning/operationalSetup";
+import { resolvePlannerEmployeeScope } from "@/modules/planner/lib/planning/accessScope";
 import { PlanningWorkGroup } from "@/modules/planner/models";
 
 function serializeWorkGroup(group = {}) {
@@ -49,12 +50,21 @@ export async function GET(request) {
 
   try {
     await connectToDatabase();
+    const plannerScope = await resolvePlannerEmployeeScope();
+    const groupQuery = { isActive: { $ne: false } };
 
-    const groups = await PlanningWorkGroup.find({ isActive: { $ne: false } })
+    if (!plannerScope.isCompanyWide) {
+      groupQuery._id = { $in: plannerScope.workGroupIds || [] };
+    }
+
+    const groups = await PlanningWorkGroup.find(groupQuery)
       .sort({ branchName: 1, name: 1 })
       .lean();
 
-    return NextResponse.json({ groups: groups.map(serializeWorkGroup) });
+    return NextResponse.json({
+      groups: groups.map(serializeWorkGroup),
+      isWorkGroupLocked: Boolean(plannerScope.isWorkGroupLocked),
+    });
   } catch (error) {
     return NextResponse.json(
       { error: error.message || "No se pudieron cargar los grupos de trabajo." },

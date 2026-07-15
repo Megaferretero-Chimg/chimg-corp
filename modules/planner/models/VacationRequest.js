@@ -59,15 +59,6 @@ const vacationRequestSchema = new Schema(
       min: 1,
       default: 1,
     },
-    requestedAt: {
-      type: Date,
-      default: Date.now,
-    },
-    status: {
-      type: String,
-      enum: ["scheduled", "cancelled"],
-      default: "scheduled",
-    },
     notes: {
       type: String,
       trim: true,
@@ -81,7 +72,7 @@ const vacationRequestSchema = new Schema(
 
 vacationRequestSchema.index({ employee: 1, startDate: 1, endDate: 1 });
 vacationRequestSchema.index({ startDate: 1, endDate: 1 });
-vacationRequestSchema.index({ employee: 1, status: 1, startDateKey: 1, endDateKey: 1 });
+vacationRequestSchema.index({ employee: 1, startDateKey: 1, endDateKey: 1 });
 
 if (process.env.NODE_ENV !== "production" && mongoose.models.VacationRequest) {
   delete mongoose.models.VacationRequest;

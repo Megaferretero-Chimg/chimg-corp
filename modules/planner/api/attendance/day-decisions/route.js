@@ -6,6 +6,8 @@ import connectToDatabase from "@/lib/db/mongodb";
 import { buildEmployeeActiveInMonthQuery } from "@/modules/company/submodules/people/lib/employees";
 import { AttendanceDayDecision } from "@/modules/planner/models";
 import { Employee } from "@/modules/company/models";
+import { findLaterExceptionForDay } from "@/modules/planner/lib/attendance/decisionDependencies";
+import { removeCurrentAttendanceDecisionRevision } from "@/modules/planner/lib/attendance/dayDecisionRevisions";
 
 const DECISIONS = new Set([
   "full",
@@ -349,40 +351,36 @@ export async function DELETE(request) {
     const previousDecision = await AttendanceDayDecision.findOne({ employee: employeeId, dateKey }).lean();
     const actor = user.employeeName || user.username || user.id;
 
-    await AttendanceDayDecision.deleteOne({ employee: employeeId, dateKey });
+    if (!previousDecision) {
+      return NextResponse.json({ error: "No existe una decisión vigente para quitar." }, { status: 404 });
+    }
 
-    await createAuditLog({
+    const laterException = await findLaterExceptionForDay({
+      employeeId,
+      dateKey,
+      happenedAt: previousDecision.updatedAt || previousDecision.createdAt,
+    });
+
+    if (laterException) {
+      return NextResponse.json({
+        error: "Esta decisión tiene una resolución posterior. Debes desactivar primero la decisión más reciente del día.",
+      }, { status: 409 });
+    }
+
+    const result = await removeCurrentAttendanceDecisionRevision({
+      decision: previousDecision,
+      employeeId,
+      employeeName: employee.fullName || "",
+      dateKey,
       actor,
-      action: "attendanceDayDecision.delete",
-      entityType: "attendanceDayDecision",
-      entityId: previousDecision?._id?.toString?.() || "",
-      entityLabel: `${employee.fullName || employeeId} ${dateKey}`,
-      route: "/api/planner/attendance/day-decisions",
-      details: {
-        employeeId,
-        employeeName: employee.fullName || "",
-        dateKey,
-        before: previousDecision ? {
-          decision: previousDecision.decision,
-          authorizedSupplementaryMinutes: previousDecision.authorizedSupplementaryMinutes,
-          authorizedExtraordinaryMinutes: previousDecision.authorizedExtraordinaryMinutes,
-          detectedSupplementaryMinutes: previousDecision.detectedSupplementaryMinutes,
-          detectedExtraordinaryMinutes: previousDecision.detectedExtraordinaryMinutes,
-          detectedLateMinutes: previousDecision.detectedLateMinutes || 0,
-          adjustedLateMinutes: previousDecision.adjustedLateMinutes || 0,
-          detectedEarlyLeaveMinutes: previousDecision.detectedEarlyLeaveMinutes || 0,
-          adjustedEarlyLeaveMinutes: previousDecision.adjustedEarlyLeaveMinutes || 0,
-          note: previousDecision.note || "",
-          decidedBy: previousDecision.decidedBy || "",
-          updatedAt: previousDecision.updatedAt || null,
-        } : null,
-        after: null,
-      },
     });
 
     return NextResponse.json({
       success: true,
-      message: "Revisión quitada correctamente.",
+      restoredPreviousRevision: result.restoredPreviousRevision,
+      message: result.restoredPreviousRevision
+        ? "Decisión quitada y resolución anterior restaurada correctamente."
+        : "Revisión quitada correctamente.",
     });
   } catch (error) {
     return NextResponse.json(

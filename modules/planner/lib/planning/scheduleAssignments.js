@@ -201,7 +201,13 @@ function resolveTemplateRowForDate(rowsByDay, dayOfWeek) {
   return weekdayFallback || cloneTemplateRow();
 }
 
-export function buildGeneratedDays(monthKey, template, holidays = [], rotationTemplates = []) {
+export function buildGeneratedDays(
+  monthKey,
+  template,
+  holidays = [],
+  rotationTemplates = [],
+  { weekdaysOnly = false } = {},
+) {
   const rowsByWeek = buildRotationRowsByWeek(monthKey, template, rotationTemplates);
   const fallbackRows = rowsByWeek.get(0) || new Map();
   const holidayNamesByDate = new Map(holidays.map((holiday) => [holiday.dateKey, holiday.name]));
@@ -224,6 +230,22 @@ export function buildGeneratedDays(monthKey, template, holidays = [], rotationTe
         endTime: "",
         authorizedExtraMinutes: 0,
         source: "holiday",
+      };
+    }
+
+    if (weekdaysOnly && ![1, 2, 3, 4, 5].includes(dayOfWeek)) {
+      return {
+        dateKey,
+        dayOfWeek,
+        label: DAY_LABELS.get(dayOfWeek) || "",
+        dayType: "off_day",
+        startTime: "",
+        lunchDurationMinutes: 0,
+        lunchStartTime: "",
+        lunchEndTime: "",
+        endTime: "",
+        authorizedExtraMinutes: 0,
+        source: "fixed_role_weekend",
       };
     }
 
@@ -338,6 +360,7 @@ export function buildAssignmentPayload({
   notes = "",
   rotationTemplates = [],
   weeklyPlan = [],
+  weekdaysOnly = false,
 }) {
   const normalizedWeeklyPlan = weeklyPlan
     .map((entry, index) =>
@@ -346,7 +369,7 @@ export function buildAssignmentPayload({
     .filter((entry) => entry.weekStartKey && entry.template);
   const generatedDays = normalizedWeeklyPlan.length
     ? buildGeneratedDaysFromWeeklyPlan(monthKey, normalizedWeeklyPlan, holidays)
-    : buildGeneratedDays(monthKey, template, holidays, rotationTemplates);
+    : buildGeneratedDays(monthKey, template, holidays, rotationTemplates, { weekdaysOnly });
   const primaryTemplate = template || normalizedWeeklyPlan[0]?.templateDoc || {};
 
   return {

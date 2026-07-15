@@ -14,7 +14,7 @@ export default async function CompanyPermissionsPage() {
     <ModuleShell
       moduleConfig={getCompanyModuleForUser(user)}
       title="Roles de acceso"
-      description="Perfiles dinámicos con permisos por módulo, página y acción."
+      description="Tres perfiles operativos protegidos y un inventario completo de páginas con su control de acceso."
     >
       <UserTypeManagement />
     </ModuleShell>

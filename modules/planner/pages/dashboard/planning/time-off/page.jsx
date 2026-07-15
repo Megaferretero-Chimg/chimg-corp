@@ -9,7 +9,7 @@ export default function PlanningTimeOffPage() {
   return (
     <ModuleShell
       title="Vacaciones programadas"
-      description="Registro de vacaciones solicitadas con anticipacion para descontarlas antes de generar la planificacion mensual."
+      description="Registro de vacaciones informadas para considerarlas antes de generar la planificacion mensual."
     >
       <VacationPlanner />
     </ModuleShell>

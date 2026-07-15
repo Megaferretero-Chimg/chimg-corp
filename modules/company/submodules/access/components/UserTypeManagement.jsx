@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState, useTransition } from "react";
-import { Edit3, Plus, Search, Trash2 } from "lucide-react";
+import { Edit3, Search, Trash2 } from "lucide-react";
 
 import CatalogDrawer from "@/components/catalog/CatalogDrawer";
 import CatalogPageLoader from "@/components/catalog/CatalogPageLoader";
@@ -36,6 +36,7 @@ function mapTypeToForm(userType) {
 export default function UserTypeManagement() {
   const [userTypes, setUserTypes] = useState([]);
   const [permissionCatalog, setPermissionCatalog] = useState([]);
+  const [pageCatalog, setPageCatalog] = useState([]);
   const [form, setForm] = useState(INITIAL_FORM);
   const [search, setSearch] = useState("");
   const [editingTypeId, setEditingTypeId] = useState("");
@@ -95,6 +96,7 @@ export default function UserTypeManagement() {
 
         setUserTypes(payload.userTypes || []);
         setPermissionCatalog(payload.permissionCatalog || []);
+        setPageCatalog(payload.pageCatalog || []);
       } catch (requestError) {
         setNotice({ type: "error", message: requestError.message, isLeaving: false });
       } finally {
@@ -133,6 +135,7 @@ export default function UserTypeManagement() {
 
     setUserTypes(payload.userTypes || []);
     setPermissionCatalog(payload.permissionCatalog || []);
+    setPageCatalog(payload.pageCatalog || []);
     setIsLoadingTypes(false);
   }
 
@@ -180,12 +183,6 @@ export default function UserTypeManagement() {
         permissions: [...permissions].sort(),
       };
     });
-  }
-
-  function openCreateDrawer() {
-    setEditingTypeId("");
-    setForm(INITIAL_FORM);
-    setIsDrawerOpen(true);
   }
 
   const closeDrawer = useCallback(() => {
@@ -289,18 +286,6 @@ export default function UserTypeManagement() {
                     />
                   </label>
 
-                  <button
-                    type="button"
-                    className="catalog-button-primary"
-                    onClick={openCreateDrawer}
-                    aria-haspopup="dialog"
-                    aria-expanded={isDrawerOpen}
-                    aria-label="Crear perfil de acceso"
-                    title="Crear perfil de acceso"
-                  >
-                    <Plus size={16} />
-                    Crear
-                  </button>
                 </div>
 
                 {filteredTypes.length ? (
@@ -378,6 +363,32 @@ export default function UserTypeManagement() {
                     No encontramos perfiles de acceso con ese criterio.
                   </div>
                 )}
+              </section>
+
+              <section className={`catalog-panel page-entrance page-entrance-delay-md ${styles.tablePanel}`}>
+                <div className="catalog-toolbar">
+                  <div>
+                    <strong>Inventario verificado de páginas</strong>
+                    <p className="catalog-count">{pageCatalog.reduce((total, module) => total + module.pages.length, 0)} páginas con control de acceso</p>
+                  </div>
+                </div>
+                <div className={`catalog-table-shell ${styles.tableShell}`}>
+                  <div className="catalog-table-scroll">
+                    <table className={`catalog-table ${styles.table}`}>
+                      <thead><tr><th>Módulo</th><th>Página</th><th>Ruta</th><th>Permiso</th></tr></thead>
+                      <tbody>
+                        {pageCatalog.flatMap((module) => module.pages.map((page) => (
+                          <tr key={page.path}>
+                            <td>{module.moduleLabel}</td>
+                            <td><strong>{page.label}</strong></td>
+                            <td><code>{page.path}</code></td>
+                            <td><code>{page.permission}</code></td>
+                          </tr>
+                        )))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
               </section>
             </div>
           </div>

@@ -21,6 +21,57 @@ export async function GET(request) {
   }
 
   await connectToDatabase();
+  const { searchParams } = new URL(request.url);
+  const view = String(searchParams.get("view") || "").trim().toLowerCase();
+
+  if (view === "attendance-comparison") {
+    const [employees, roles] = await Promise.all([
+      Employee.find({})
+        .select({
+          fullName: 1,
+          dni: 1,
+          branchCode: 1,
+          branchName: 1,
+          areaCode: 1,
+          areaName: 1,
+          roleCode: 1,
+          roleName: 1,
+          employmentStartDate: 1,
+          terminationDate: 1,
+          isActive: 1,
+        })
+        .sort({ fullName: 1 })
+        .lean(),
+      Role.find({}).select({ code: 1, punchesAffectHours: 1 }).lean(),
+    ]);
+    const rolesByCode = new Map(
+      roles.map((role) => [String(role.code || "").trim().toUpperCase(), role]),
+    );
+
+    return NextResponse.json({
+      employees: employees.map((employee) => ({
+        id: employee._id.toString(),
+        dni: employee.dni || "",
+        fullName: employee.fullName || "",
+        branchCode: employee.branchCode || "",
+        branchName: employee.branchName || employee.branchCode || "",
+        areaCode: employee.areaCode || "",
+        areaName: employee.areaName || "",
+        roleCode: employee.roleCode || "",
+        roleName: employee.roleName || "",
+        punchesAffectHours:
+          rolesByCode.get(String(employee.roleCode || "").trim().toUpperCase())?.punchesAffectHours !== false,
+        employmentStartDate: employee.employmentStartDate
+          ? employee.employmentStartDate.toISOString().slice(0, 10)
+          : "",
+        terminationDate: employee.terminationDate
+          ? employee.terminationDate.toISOString().slice(0, 10)
+          : "",
+        isActive: employee.isActive !== false,
+      })),
+      scope: null,
+    });
+  }
 
   const [employees, roles] = await Promise.all([
     Employee.find({})
@@ -29,7 +80,6 @@ export async function GET(request) {
     Role.find({}).lean(),
   ]);
   const serializationContext = buildEmployeeSerializationContext({ employees, roles });
-  const { searchParams } = new URL(request.url);
   const scopeType = String(searchParams.get("scope") || "").trim().toLowerCase();
   const plannerScope = scopeType === "planning"
     ? await resolvePlannerEmployeeScope({ employees, roles })

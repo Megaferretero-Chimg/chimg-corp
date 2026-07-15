@@ -544,6 +544,9 @@ export default function MonthlyClosureView({ view = "summary", fixedMonth = "" }
                           </td>
                           <td>
                             <strong className={styles.salaryValue}>{row.salaryTotalLabel || "$0.00"}</strong>
+                            {(Number(row.regularShortfallDiscount) || 0) > 0 ? (
+                              <span>Faltantes -{moneyLabel(row.regularShortfallDiscount)}</span>
+                            ) : null}
                           </td>
                         </tr>
                         );
@@ -602,6 +605,9 @@ export default function MonthlyClosureView({ view = "summary", fixedMonth = "" }
                           </td>
                           <td>
                             <strong className={styles.salaryValue}>{row.salaryTotalLabel || "$0.00"}</strong>
+                            {(Number(row.regularShortfallDiscount) || 0) > 0 ? (
+                              <span>Faltantes -{moneyLabel(row.regularShortfallDiscount)}</span>
+                            ) : null}
                           </td>
                         </tr>
                         );

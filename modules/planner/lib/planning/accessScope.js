@@ -1,5 +1,7 @@
 import { getAuthenticatedUser } from "@/lib/auth";
+import { BRANCH_MANAGER_ACCESS_ROLE, PAYROLL_MANAGER_ACCESS_ROLE } from "@/lib/access-roles";
 import { Employee, Role } from "@/modules/company/models";
+import { PlanningWorkGroup } from "@/modules/planner/models";
 import { isAdminAccessUser } from "@/modules/company/submodules/access/lib/permissions";
 import {
   buildEmployeeSerializationContext,
@@ -11,7 +13,9 @@ function normalizeId(value) {
 }
 
 function isCompanyWidePlannerUser(user) {
-  return isAdminAccessUser(user);
+  return isAdminAccessUser(user)
+    || user?.accessRole === PAYROLL_MANAGER_ACCESS_ROLE
+    || user?.scopeType === "company";
 }
 
 function roleEntriesForEmployee(employee = {}) {
@@ -148,6 +152,32 @@ export async function resolvePlannerEmployeeScope({ employees = null, roles = nu
     };
   }
 
+
+  if (user.accessRole === BRANCH_MANAGER_ACCESS_ROLE || user.scopeType === "team") {
+    const workGroups = await PlanningWorkGroup.find({
+      ownerEmployee: currentEmployeeId,
+      isActive: { $ne: false },
+    }).lean();
+    const employeeIdSet = new Set([currentEmployeeId]);
+
+    workGroups.forEach((group) => {
+      (group.members || []).forEach((member) => {
+        const employeeId = normalizeId(member.employee?.toString?.() || member.employeeId);
+        if (employeeId) employeeIdSet.add(employeeId);
+      });
+    });
+
+    return {
+      isAuthenticated: true,
+      isCompanyWide: false,
+      employeeIds: [...employeeIdSet],
+      employeeIdSet,
+      workGroupIds: workGroups.map((group) => group._id.toString()),
+      isWorkGroupLocked: true,
+      user,
+    };
+  }
+
   const [scopeEmployees, scopeRoles] = await Promise.all([
     employees || Employee.find({}).lean(),
     roles || Role.find({}).lean(),
@@ -215,5 +245,17 @@ export function assertEmployeesInPlannerScope(employeeIds = [], scope) {
 
   if (outOfScopeIds.length) {
     throw new Error("No tienes permiso para modificar horarios fuera de tu equipo.");
+  }
+}
+
+export function assertWorkGroupInPlannerScope(workGroupId, scope) {
+  if (!scope?.isAuthenticated) {
+    throw new Error("Sesion invalida o expirada.");
+  }
+
+  if (scope.isCompanyWide) return;
+
+  if (!new Set(scope.workGroupIds || []).has(normalizeId(workGroupId))) {
+    throw new Error("No tienes permiso para planificar este grupo de trabajo.");
   }
 }

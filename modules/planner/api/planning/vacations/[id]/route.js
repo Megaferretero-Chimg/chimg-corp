@@ -4,7 +4,7 @@ import { isAuthenticated } from "@/lib/auth";
 import connectToDatabase from "@/lib/db/mongodb";
 import {
   normalizeVacationPayload,
-  serializeVacationRequest,
+  serializeVacationRecord,
 } from "@/modules/planner/lib/planning/vacations";
 import { Employee } from "@/modules/company/models";
 import { VacationRequest } from "@/modules/planner/models";
@@ -12,7 +12,6 @@ import { VacationRequest } from "@/modules/planner/models";
 async function hasOverlappingVacation({ employeeId, startDate, endDate, excludeId = "" }) {
   const query = {
     employee: employeeId,
-    status: "scheduled",
     startDate: { $lte: endDate },
     endDate: { $gte: startDate },
   };
@@ -70,7 +69,7 @@ export async function PATCH(request, context) {
 
     return NextResponse.json({
       message: "Vacaciones actualizadas correctamente.",
-      vacation: serializeVacationRequest(vacation),
+      vacation: serializeVacationRecord(vacation),
     });
   } catch (error) {
     return NextResponse.json(
@@ -96,11 +95,7 @@ export async function DELETE(_request, context) {
 
   await connectToDatabase();
 
-  const vacation = await VacationRequest.findByIdAndUpdate(
-    vacationId,
-    { $set: { status: "cancelled" } },
-    { new: true },
-  );
+  const vacation = await VacationRequest.findByIdAndDelete(vacationId);
 
   if (!vacation) {
     return NextResponse.json({ error: "Vacacion no encontrada." }, { status: 404 });

@@ -137,6 +137,10 @@ function serializeClosure(closure) {
       holidayExtraordinaryMinutes: Number(row.holidayExtraordinaryMinutes) || 0,
       lateMinutes: payrollLateMinutes(row),
       salaryTotal: Number(row.salaryTotal) || 0,
+      salaryBaseAfterAttendance: Number(row.salaryBaseAfterAttendance) || 0,
+      regularShortfallMinutes: Number(row.regularShortfallMinutes) || 0,
+      regularShortfallDiscount: Number(row.regularShortfallDiscount) || 0,
+      regularShortfallAffectsSalary: row.regularShortfallAffectsSalary !== false,
       baseCompletionMinutes: Number(row.baseCompletionMinutes) || 0,
       baseCompletionFromSupplementaryMinutes: Number(row.baseCompletionFromSupplementaryMinutes) || 0,
       baseCompletionFromExtraordinaryMinutes: Number(row.baseCompletionFromExtraordinaryMinutes) || 0,
@@ -152,6 +156,9 @@ function serializeClosure(closure) {
       extraordinaryAmountLabel: moneyLabel(extraordinaryAmount(row)),
       lateLabel: minutesLabel(payrollLateMinutes(row)),
       salaryTotalLabel: moneyLabel(row.salaryTotal),
+      salaryBaseAfterAttendanceLabel: moneyLabel(row.salaryBaseAfterAttendance),
+      regularShortfallLabel: minutesLabel(row.regularShortfallMinutes),
+      regularShortfallDiscountLabel: moneyLabel(row.regularShortfallDiscount),
       baseCompletionLabel: minutesLabel(row.baseCompletionMinutes),
     })),
   };
@@ -174,6 +181,9 @@ function serializePreview(snapshot) {
       extraordinaryAmountLabel: moneyLabel(extraordinaryAmount(row)),
       lateLabel: minutesLabel(row.lateMinutes),
       salaryTotalLabel: moneyLabel(row.salaryTotal),
+      salaryBaseAfterAttendanceLabel: moneyLabel(row.salaryBaseAfterAttendance),
+      regularShortfallLabel: minutesLabel(row.regularShortfallMinutes),
+      regularShortfallDiscountLabel: moneyLabel(row.regularShortfallDiscount),
       baseCompletionLabel: minutesLabel(row.baseCompletionMinutes),
     })),
     totals: {
@@ -190,6 +200,8 @@ function serializePreview(snapshot) {
       extraordinaryAmountLabel: moneyLabel(snapshot.totals.extraordinaryAmount),
       lateLabel: minutesLabel(snapshot.totals.lateMinutes),
       salaryTotalLabel: moneyLabel(snapshot.totals.salaryTotal),
+      regularShortfallLabel: minutesLabel(snapshot.totals.regularShortfallMinutes),
+      regularShortfallDiscountLabel: moneyLabel(snapshot.totals.regularShortfallDiscount),
       baseCompletionLabel: minutesLabel(snapshot.totals.baseCompletionMinutes),
     },
   };
@@ -268,6 +280,10 @@ function snapshotRows(comparisonRows) {
       lateMinutes: row.summary.lateMinutes,
       salaryTotal: Number(row.summary.salaryProjected) || 0,
       salaryBase: Number(row.summary.salaryExpectedRaw ?? row.summary.salaryExpectedValue ?? row.summary.salaryExpected) || Number(row.employee.salary) || 0,
+      salaryBaseAfterAttendance: Number(row.summary.salaryBaseAfterAttendanceRaw ?? row.summary.salaryBaseAfterAttendance) || 0,
+      regularShortfallMinutes: Number(row.summary.regularShortfallMinutes) || 0,
+      regularShortfallDiscount: Number(row.summary.regularShortfallDiscountRaw ?? row.summary.regularShortfallDiscount) || 0,
+      regularShortfallAffectsSalary: row.summary.regularShortfallAffectsSalary !== false,
       hourlyRate: Number(row.summary.hourlyRateRaw) || 0,
       baseCompletionMinutes: 0,
       baseCompletionFromSupplementaryMinutes: 0,
@@ -299,7 +315,12 @@ function completeBaseHoursFromAdditional(rows = [], employeeIds = null) {
     );
     const salaryBase = Number(row.salaryBase) || 0;
     const hourlyRate = Number(row.hourlyRate) || 0;
-    const salaryTotal = salaryBase +
+    const remainingRegularShortfallMinutes = Math.max(0, missingRegularMinutes - fromExtraordinaryMinutes);
+    const regularShortfallDiscount = row.regularShortfallAffectsSalary === false
+      ? 0
+      : Math.min(salaryBase, (remainingRegularShortfallMinutes / 60) * hourlyRate);
+    const salaryBaseAfterAttendance = Math.max(0, salaryBase - regularShortfallDiscount);
+    const salaryTotal = salaryBaseAfterAttendance +
       (nextSupplementaryMinutes / 60) * calculatePayrollAdditionalRate(hourlyRate, SUPPLEMENTARY_SURCHARGE_MULTIPLIER) +
       (nextExtraordinaryMinutes / 60) * calculatePayrollAdditionalRate(hourlyRate, EXTRAORDINARY_SURCHARGE_MULTIPLIER);
 
@@ -310,6 +331,9 @@ function completeBaseHoursFromAdditional(rows = [], employeeIds = null) {
       extraordinaryMinutes: nextExtraordinaryMinutes,
       holidayExtraordinaryMinutes: nextHolidayExtraordinaryMinutes,
       salaryTotal,
+      salaryBaseAfterAttendance,
+      regularShortfallMinutes: remainingRegularShortfallMinutes,
+      regularShortfallDiscount,
       baseCompletionMinutes,
       baseCompletionFromSupplementaryMinutes: fromSupplementaryMinutes,
       baseCompletionFromExtraordinaryMinutes: fromExtraordinaryMinutes,
@@ -339,6 +363,8 @@ function sumTotals(rows) {
       totals.holidayExtraordinaryMinutes += row.holidayExtraordinaryMinutes;
       totals.lateMinutes += row.lateMinutes;
       totals.salaryTotal += row.salaryTotal;
+      totals.regularShortfallMinutes += Number(row.regularShortfallMinutes) || 0;
+      totals.regularShortfallDiscount += Number(row.regularShortfallDiscount) || 0;
       totals.baseCompletionMinutes += row.baseCompletionMinutes || 0;
       totals.baseCompletionFromSupplementaryMinutes += row.baseCompletionFromSupplementaryMinutes || 0;
       totals.baseCompletionFromExtraordinaryMinutes += row.baseCompletionFromExtraordinaryMinutes || 0;
@@ -364,6 +390,8 @@ function sumTotals(rows) {
       holidayExtraordinaryMinutes: 0,
       lateMinutes: 0,
       salaryTotal: 0,
+      regularShortfallMinutes: 0,
+      regularShortfallDiscount: 0,
       baseCompletionMinutes: 0,
       baseCompletionFromSupplementaryMinutes: 0,
       baseCompletionFromExtraordinaryMinutes: 0,

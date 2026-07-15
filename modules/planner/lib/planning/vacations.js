@@ -2,8 +2,6 @@ import { differenceInCalendarDays, endOfMonth, format, isValid, parse, startOfMo
 
 import { makeEcuadorDate } from "@/lib/datetime/ecuador";
 
-export const VACATION_NOTICE_DAYS = 30;
-
 export function parseMonthKey(value) {
   const monthKey = String(value || "").trim();
 
@@ -60,7 +58,6 @@ export function normalizeVacationPayload(body, employee) {
     startDateKey,
     endDateKey,
     totalCalendarDays,
-    status: "scheduled",
     notes: String(body?.notes || "").trim(),
   };
 }
@@ -69,34 +66,19 @@ export function buildMonthVacationQuery(monthKey) {
   const monthDate = parseMonthKey(monthKey);
 
   if (!monthDate) {
-    return { status: "scheduled" };
+    return {};
   }
 
   const monthStart = startOfMonth(monthDate);
   const monthEnd = endOfMonth(monthDate);
 
   return {
-    status: "scheduled",
     startDate: { $lte: monthEnd },
     endDate: { $gte: monthStart },
   };
 }
 
-export function buildVacationWarnings(vacation) {
-  const today = new Date();
-  const noticeDays = differenceInCalendarDays(vacation.startDate, today);
-  const warnings = [];
-
-  if (noticeDays < VACATION_NOTICE_DAYS) {
-    warnings.push(`La solicitud no cumple ${VACATION_NOTICE_DAYS} dias de anticipacion.`);
-  }
-
-  return warnings;
-}
-
-export function serializeVacationRequest(vacation) {
-  const warnings = buildVacationWarnings(vacation);
-
+export function serializeVacationRecord(vacation) {
   return {
     id: vacation._id.toString(),
     employeeId: vacation.employee?.toString?.() || String(vacation.employee || ""),
@@ -108,10 +90,7 @@ export function serializeVacationRequest(vacation) {
     startDateKey: vacation.startDateKey || "",
     endDateKey: vacation.endDateKey || "",
     totalCalendarDays: vacation.totalCalendarDays || 0,
-    requestedAt: vacation.requestedAt || null,
-    status: vacation.status || "scheduled",
     notes: vacation.notes || "",
-    warnings,
     createdAt: vacation.createdAt,
     updatedAt: vacation.updatedAt,
   };

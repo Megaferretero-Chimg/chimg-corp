@@ -3,6 +3,7 @@ import crypto from "node:crypto";
 
 const SESSION_COOKIE_NAME = "control_asistencia_session";
 const PLANNING_EXCEPTIONS_ACCESS_ROLE = "planning_exceptions";
+const BRANCH_MANAGER_ACCESS_ROLE = "branch_manager";
 const LIMITED_API_ALLOWLIST = [
   "/api/auth/login",
   "/api/auth/logout",
@@ -48,6 +49,28 @@ function canLimitedUserAccessApi(pathname) {
   );
 }
 
+function canBranchManagerAccessApi(pathname, method) {
+  if (pathname.startsWith("/api/auth/")) return true;
+
+  const readOnlyPaths = [
+    "/api/company/employees",
+    "/api/company/roles",
+    "/api/planner/planning/base-schedules",
+    "/api/planner/planning/operational-setup",
+    "/api/planner/planning/holidays",
+    "/api/planner/planning/vacations",
+  ];
+
+  if (method === "GET" && readOnlyPaths.some((path) => pathname === path || pathname.startsWith(`${path}/`))) {
+    return true;
+  }
+
+  return [
+    "/api/planner/planning/schedule-assignments",
+    "/api/planner/planning/exceptions",
+  ].some((path) => pathname === path || pathname.startsWith(`${path}/`));
+}
+
 export function proxy(request) {
   const pathname = request.nextUrl.pathname;
   const sessionCookie = request.cookies.get(SESSION_COOKIE_NAME)?.value || "";
@@ -60,6 +83,18 @@ export function proxy(request) {
   ) {
     return NextResponse.json(
       { error: "Este perfil solo puede usar las APIs de ajustes y excepciones." },
+      { status: 403 },
+    );
+  }
+
+
+  if (
+    pathname.startsWith("/api/")
+    && accessRole === BRANCH_MANAGER_ACCESS_ROLE
+    && !canBranchManagerAccessApi(pathname, request.method)
+  ) {
+    return NextResponse.json(
+      { error: "El Jefe de sucursal solo puede planificar y gestionar sus propios ajustes y excepciones." },
       { status: 403 },
     );
   }

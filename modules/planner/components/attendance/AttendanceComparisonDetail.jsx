@@ -15,6 +15,7 @@ import {
 import CatalogDrawer from "@/components/catalog/CatalogDrawer";
 import AutocompleteSelect from "@/components/ui/AutocompleteSelect";
 import ConfirmDialog from "@/components/ui/ConfirmDialog";
+import FloatingNotice from "@/components/ui/FloatingNotice";
 import SelectInput from "@/components/ui/SelectInput";
 import { formatEcuadorMonthKey } from "@/lib/datetime/ecuador";
 import { calculatePayrollAdditionalRate } from "@/modules/planner/lib/payroll/rates";
@@ -406,7 +407,13 @@ function punchDisplayLabelForDay(day, punch) {
 }
 
 function expectedPunchesFromScheduleDraft(draft) {
-  if (!draft || draft.type !== "schedule_change" || !draft.plannedStartTime || !draft.plannedEndTime) return 0;
+  if (
+    !draft ||
+    draft.type !== "schedule_change" ||
+    draft.plannedDayType === "off_day" ||
+    !draft.plannedStartTime ||
+    !draft.plannedEndTime
+  ) return 0;
 
   return draft.plannedLunchStartTime && draft.plannedLunchEndTime ? 4 : 2;
 }
@@ -444,16 +451,6 @@ function hasSavedDayDecision(day) {
   return Boolean(day?.authorization?.isSaved && day.authorization.source !== "operational_exception");
 }
 
-function hasSavedAdditionalApproval(day) {
-  if (!hasSavedDayDecision(day) || !hasAuthorizableTime(day)) return false;
-  if (!["custom", "full", "planned"].includes(day?.authorization?.decision)) return false;
-
-  return (
-    (Number(day?.authorization?.authorizedSupplementaryMinutes) || 0) > 0 ||
-    (Number(day?.authorization?.authorizedExtraordinaryMinutes) || 0) > 0
-  );
-}
-
 function isScheduledExtraDay(day) {
   return day?.dayType === "weekend_overtime";
 }
@@ -486,6 +483,10 @@ function punchChipClass(day, index) {
 
 function isIgnorableRestDay(day) {
   return day.dayType === "off_day" && day.punchCount === 0;
+}
+
+function hasActiveExecutionException(day) {
+  return Boolean(day?.executionException?.id);
 }
 
 function hasPlannedStart(day) {
@@ -598,7 +599,7 @@ function additionalValueRows(day, summary = {}) {
   const authorizedMinutes = isExtraordinaryDay(day)
     ? Math.max(0, Number(day?.authorization?.authorizedExtraordinaryMinutes) || 0)
     : Math.max(0, Number(day?.authorization?.authorizedSupplementaryMinutes) || 0);
-  const hasSavedAuthorization = Boolean(day?.authorization?.isSaved);
+  const hasSavedAuthorization = Boolean(day?.authorization?.isSaved) && authorizedMinutes > plannedMinutes;
 
   const rows = [
     {
@@ -664,7 +665,6 @@ function defaultAppliedLateMinutes(day) {
 
 function displayLateMinutes(day) {
   if (!day || isIgnorableRestDay(day)) return 0;
-  if (day.authorization?.decision === "reviewed") return 0;
   const currentLateMinutes = detectedLateIssueMinutes(day);
 
   if (day.authorization?.adjustedLateMinutes !== undefined && day.authorization?.adjustedLateMinutes !== null) {
@@ -677,25 +677,25 @@ function displayLateMinutes(day) {
   return currentLateMinutes;
 }
 
+function displayEarlyLeaveMinutes(day) {
+  if (!day || isIgnorableRestDay(day)) return 0;
+  const currentEarlyLeaveMinutes = detectedEarlyLeaveIssueMinutes(day);
+
+  if (day.authorization?.adjustedEarlyLeaveMinutes !== undefined && day.authorization?.adjustedEarlyLeaveMinutes !== null) {
+    return Math.min(
+      currentEarlyLeaveMinutes,
+      Math.max(0, Number(day.authorization.adjustedEarlyLeaveMinutes) || 0),
+    );
+  }
+
+  return currentEarlyLeaveMinutes;
+}
+
 function attendanceDelayMinutes(day) {
   if (!day || isIgnorableRestDay(day)) return 0;
   if (isExtraordinaryDay(day) && !isScheduledExtraDay(day)) return 0;
 
-  const lateMinutes = Math.max(
-    0,
-    Number(day.lateMinutes) || 0,
-    Number(day.authorization?.adjustedLateMinutes) || 0,
-    Number(day.authorization?.detectedLateMinutes) || 0,
-    (Number(day.entryLateMinutes) || 0) + (Number(day.lunchOverageMinutes ?? day.lunchOverageRemainderMinutes) || 0),
-  );
-  const earlyLeaveMinutes = Math.max(
-    0,
-    Number(day.earlyLeaveMinutes) || 0,
-    Number(day.authorization?.adjustedEarlyLeaveMinutes) || 0,
-    Number(day.authorization?.detectedEarlyLeaveMinutes) || 0,
-  );
-
-  return lateMinutes + earlyLeaveMinutes;
+  return displayLateMinutes(day) + displayEarlyLeaveMinutes(day);
 }
 
 function attendanceEntryLateMinutes(day) {
@@ -720,12 +720,7 @@ function attendanceEarlyLeaveMinutes(day) {
   if (!day || isIgnorableRestDay(day)) return 0;
   if (isExtraordinaryDay(day) && !isScheduledExtraDay(day)) return 0;
 
-  return Math.max(
-    0,
-    Number(day.earlyLeaveMinutes) || 0,
-    Number(day.authorization?.adjustedEarlyLeaveMinutes) || 0,
-    Number(day.authorization?.detectedEarlyLeaveMinutes) || 0,
-  );
+  return displayEarlyLeaveMinutes(day);
 }
 
 function attendanceDelayParts(day) {
@@ -796,7 +791,7 @@ function hasIncoherentWorkedDay(day) {
 }
 
 function hasOperationalError(day) {
-  return (day.tags || []).some((tag) => [
+  return (day?.tags || []).some((tag) => [
     "Sin picadas",
     "Picadas incompletas",
     "Picadas de más",
@@ -854,18 +849,14 @@ function dayRowClass(day) {
 
   if (isWeekendDateKey(day.dateKey)) rowClasses.push(styles.weekendRow);
 
-  if (isIgnorableRestDay(day)) {
+  if (isIgnorableRestDay(day) && !hasActiveExecutionException(day)) {
     rowClasses.push(styles.ignoredRestRow);
     return rowClasses.join(" ");
   }
 
   if (canOpenDayDecision(day)) rowClasses.push(styles.actionableRow);
-  if (hasOperationalError(day)) rowClasses.push(styles.severeIssueRow);
-  else if (
-    hasVisibleDayWarning(day) ||
-    displayLateMinutes(day) > 0 ||
-    (Number(day?.earlyLeaveMinutes) || 0) > 0
-  ) rowClasses.push(styles.issueRow);
+  if (hasReviewableDayAlert(day)) rowClasses.push(styles.severeIssueRow);
+  else if (hasLateDayAlert(day)) rowClasses.push(styles.issueRow);
   else if (hasAdditionalDayAlert(day)) rowClasses.push(styles.additionalIssueRow);
 
   return rowClasses.join(" ");
@@ -889,6 +880,8 @@ function canManuallyAuthorizeHours(day) {
 }
 
 function canOpenDayDecision(day) {
+  if (hasActiveExecutionException(day)) return true;
+
   return !isIgnorableRestDay(day) && canManuallyAuthorizeHours(day);
 }
 
@@ -903,6 +896,11 @@ function issueTagClass(tag) {
     "Justificación operativa",
     "Trabajo fuera justificado",
     "Aprobado",
+    "Dia planificado pagado",
+    "Todo autorizado",
+    "Según plan",
+    "Planificado",
+    "Ajustado",
     "Vacaciones",
   ].includes(tag)) {
     return `${styles.issueTag} ${styles.justifiedTag}`;
@@ -949,10 +947,44 @@ const VISIBLE_DAY_TAGS = new Set([
   "Dia descontado",
 ]);
 
+const RESOLUTION_DAY_TAGS = new Set([
+  "Ajustado a planificación",
+  "Picadas justificadas",
+  "Atraso justificado",
+  "Salida justificada",
+  "Revisado",
+  "Jornada laboral completada",
+  "Justificación operativa",
+  "Trabajo fuera justificado",
+  "Aprobado",
+  "No aprobado",
+  "Horas descontadas",
+  "Dia descontado",
+  "Dia planificado pagado",
+  "Todo autorizado",
+  "Según plan",
+  "Planificado",
+  "Ajustado",
+]);
+
 function visibleDayTags(day) {
-  const rawTags = day.tags || [];
+  const rawTags = day?.tags || [];
   const hasBlockingAlert = hasOperationalError(day);
   const hasPendingDelay = hasLateDayAlert(day);
+  const hasPendingAdditional = hasAdditionalDayAlert(day);
+  const detectedLateMinutes = Number(day?.authorization?.detectedLateMinutes) || 0;
+  const detectedEarlyLeaveMinutes = Number(day?.authorization?.detectedEarlyLeaveMinutes) || 0;
+  const additionalToleranceMinutes = Math.max(0, Number(day?.lateDepartureToleranceMinutes) || 0);
+  const detectedAdditionalBeyondPlan =
+    (Number(day?.detectedSupplementaryMinutes) || 0) - (Number(day?.plannedSupplementaryMinutes) || 0) > additionalToleranceMinutes ||
+    (Number(day?.detectedExtraordinaryMinutes) || 0) - (Number(day?.plannedExtraordinaryMinutes) || 0) > additionalToleranceMinutes;
+  const hasReviewContext =
+    hasBlockingAlert ||
+    hasPendingDelay ||
+    hasPendingAdditional ||
+    detectedLateMinutes > 0 ||
+    detectedEarlyLeaveMinutes > 0 ||
+    detectedAdditionalBeyondPlan;
   const normalizedTags = rawTags
     .map((tag) => tag === "Tiempo adicional sin justificar" ? "Tiempo adicional" : tag)
     .map((tag) => tag === "Falta almuerzo" ? "Picadas incompletas" : tag)
@@ -965,8 +997,10 @@ function visibleDayTags(day) {
     );
   const tags = normalizedTags
     .filter((tag) => VISIBLE_DAY_TAGS.has(tag))
+    .filter((tag) => tag !== "Revisado" || day?.authorization?.isSaved)
     .filter((tag) => !hasBlockingAlert || !["Plan no completado", "Tiempo adicional"].includes(tag))
-    .filter((tag) => !hasPendingDelay || tag !== "Tiempo adicional");
+    .filter((tag) => tag !== "Plan no completado" || hasPendingDelay)
+    .filter((tag) => tag !== "Tiempo adicional" || hasPendingAdditional);
   const statusLabel = day?.authorization?.statusLabel || "";
   const displayTags = [...new Set(tags)];
 
@@ -978,12 +1012,14 @@ function visibleDayTags(day) {
     displayTags.push("Jornada incompleta");
   }
 
-  if (["Revisado", "No aprobado", "Dia descontado"].includes(statusLabel) && !displayTags.includes(statusLabel)) {
-    displayTags.push(statusLabel);
-  }
+  if (day?.authorization?.isSaved && statusLabel) {
+    const pendingTags = displayTags.filter((tag) => !RESOLUTION_DAY_TAGS.has(tag));
 
-  if (hasSavedAdditionalApproval(day) && !displayTags.includes("Aprobado")) {
-    displayTags.push("Aprobado");
+    if (statusLabel === "Revisado" && !hasReviewContext) {
+      return pendingTags;
+    }
+
+    return [...pendingTags, statusLabel];
   }
 
   return displayTags;
@@ -1012,26 +1048,28 @@ function weeklyComparisonTotals(days = [], summary = {}) {
       return;
     }
 
-    const registeredMinutes = registeredAdditionalMinutes(day);
+    const recognizedMinutes = isExtraordinaryDay(day)
+      ? Math.max(0, Number(day?.extraordinaryMinutes) || 0)
+      : Math.max(0, Number(day?.supplementaryMinutes) || 0);
     const plannedHsMinutes = plannedSupplementaryMinutes(day);
     const plannedHeMinutes = plannedExtraordinaryMinutes(day);
 
     totals.plannedMinutes += plannedRegularMinutes(day);
     totals.workedMinutes += Number(day.workedMinutes) || 0;
     totals.laborMinutes += Number(day.regularWorkedMinutes) || 0;
-    totals.issueMinutes += displayLateMinutes(day) + (Number(day.earlyLeaveMinutes) || 0);
+    totals.issueMinutes += displayLateMinutes(day) + displayEarlyLeaveMinutes(day);
     totals.issueCount += visibleDayTags(day).length;
 
     if (isExtraordinaryDay(day)) {
       totals.plannedHeMinutes += plannedHeMinutes;
-      totals.detectedHeMinutes += registeredMinutes;
+      totals.detectedHeMinutes += recognizedMinutes;
       totals.plannedHeAmount += additionalAmountValue(plannedHeMinutes, day, summary);
-      totals.detectedHeAmount += additionalAmountValue(registeredMinutes, day, summary);
+      totals.detectedHeAmount += additionalAmountValue(recognizedMinutes, day, summary);
     } else {
       totals.plannedHsMinutes += plannedHsMinutes;
-      totals.detectedHsMinutes += registeredMinutes;
+      totals.detectedHsMinutes += recognizedMinutes;
       totals.plannedHsAmount += additionalAmountValue(plannedHsMinutes, day, summary);
-      totals.detectedHsAmount += additionalAmountValue(registeredMinutes, day, summary);
+      totals.detectedHsAmount += additionalAmountValue(recognizedMinutes, day, summary);
     }
   });
 
@@ -1039,7 +1077,7 @@ function weeklyComparisonTotals(days = [], summary = {}) {
 }
 
 function hasDayTag(day, tag) {
-  return (day.tags || []).includes(tag);
+  return (day?.tags || []).includes(tag);
 }
 
 function hasIncompletePunchTag(day) {
@@ -1070,11 +1108,15 @@ function inlineExceptionOptionsForDay(day) {
   }
 
   if (hasDayTag(day, "Sin picadas")) {
-    return INLINE_EXCEPTION_OPTIONS.filter((option) => option.value === "missing_punch");
+    return INLINE_EXCEPTION_OPTIONS.filter((option) => [
+      "schedule_change",
+      "missing_punch",
+      "outside_work",
+    ].includes(option.value));
   }
 
   if (displayLateMinutes(day) > 0 || (Number(day?.earlyLeaveMinutes) || 0) > 0) {
-    return INLINE_EXCEPTION_OPTIONS.filter((option) => ["permission", "outside_work"].includes(option.value));
+    return INLINE_EXCEPTION_OPTIONS.filter((option) => option.value === "schedule_change");
   }
 
   if (hasUnapprovedExtraTime(day)) {
@@ -1340,6 +1382,7 @@ function buildDecisionPreview(day, draft = {}, summary = {}) {
   const total = previewSupplementaryAmount + previewExtraordinaryAmount;
   const additionalMultiplier = isExtraordinary ? extraordinaryMultiplier : supplementaryMultiplier;
   const plannedAdditional = plannedAdditionalMinutes(day);
+  const detectedAdditional = registeredAdditionalMinutes(day);
   const registeredAdditional = isExtraordinary ? extraordinaryMinutes : supplementaryMinutes;
 
   return {
@@ -1347,8 +1390,10 @@ function buildDecisionPreview(day, draft = {}, summary = {}) {
     extraordinaryLabel: extraordinaryMinutes ? formatMinutes(extraordinaryMinutes) : "--",
     additionalLabel: formatMinutes(registeredAdditional),
     plannedAdditionalLabel: formatMinutes(plannedAdditional),
+    detectedAdditionalLabel: formatMinutes(detectedAdditional),
     registeredAdditionalLabel: formatMinutes(registeredAdditional),
     plannedAmountLabel: moneyLabel((plannedAdditional / 60) * calculatePayrollAdditionalRate(hourlyRate, additionalMultiplier)),
+    detectedAmountLabel: moneyLabel((detectedAdditional / 60) * calculatePayrollAdditionalRate(hourlyRate, additionalMultiplier)),
     registeredAmountLabel: moneyLabel((registeredAdditional / 60) * calculatePayrollAdditionalRate(hourlyRate, additionalMultiplier)),
     additionalKindLabel: additionalKindLabel(day),
     additionalKindLongLabel: additionalKindLabel(day, true),
@@ -1406,6 +1451,8 @@ function lastPunchTime(day) {
 }
 
 function defaultInlineExceptionType(day) {
+  if (hasDayTag(day, "Sin picadas")) return "missing_punch";
+
   const options = inlineExceptionOptionsForDay(day);
 
   if (options.length) {
@@ -1448,6 +1495,7 @@ function buildInlineExceptionDraft(row, day, nextType = "", templates = []) {
     plannedEndTime: type === "schedule_change"
       ? recommendedRow?.endTime || (hasSchedule ? day.endTime : "")
       : "",
+    plannedDayType: "workday",
     templateId: recommendedTemplate?.id || "",
     allowSupplementaryTime: type === "outside_work",
     notes: exceptionNoteForDay(day),
@@ -1466,16 +1514,19 @@ function inlineExceptionPayload(employeeId, draft) {
   };
 
   if (draft.type === "schedule_change") {
+    const isRestDay = draft.plannedDayType === "off_day";
+
     return {
       ...common,
       scope: "full_day",
       effect: "planning_change",
       attendanceMode: "use_punches",
       payMode: "no_pay_change",
-      plannedStartTime: draft.plannedStartTime,
-      plannedLunchStartTime: draft.plannedLunchStartTime,
-      plannedLunchEndTime: draft.plannedLunchEndTime,
-      plannedEndTime: draft.plannedEndTime,
+      plannedDayType: isRestDay ? "off_day" : "workday",
+      plannedStartTime: isRestDay ? "" : draft.plannedStartTime,
+      plannedLunchStartTime: isRestDay ? "" : draft.plannedLunchStartTime,
+      plannedLunchEndTime: isRestDay ? "" : draft.plannedLunchEndTime,
+      plannedEndTime: isRestDay ? "" : draft.plannedEndTime,
       applicableWeekdays: [dateFromDateKey(draft.dateKey).getUTCDay()],
     };
   }
@@ -1557,7 +1608,7 @@ export default function AttendanceComparisonDetail({ employeeId, initialFilters 
   const [row, setRow] = useState(null);
   const [templates, setTemplates] = useState([]);
   const [error, setError] = useState("");
-  const [success, setSuccess] = useState("");
+  const [notice, setNotice] = useState(null);
   const [isLoading, setIsLoading] = useState(true);
   const [actionDrafts, setActionDrafts] = useState({});
   const [savingDay, setSavingDay] = useState("");
@@ -1581,6 +1632,42 @@ export default function AttendanceComparisonDetail({ employeeId, initialFilters 
   const [pendingHistoryDelete, setPendingHistoryDelete] = useState(null);
   const [deletingHistoryId, setDeletingHistoryId] = useState("");
   const decisionHistoryRequestRef = useRef(0);
+  const noticeExitTimeoutRef = useRef(null);
+  const noticeRemoveTimeoutRef = useRef(null);
+
+  const clearNoticeTimers = useCallback(() => {
+    if (noticeExitTimeoutRef.current) {
+      window.clearTimeout(noticeExitTimeoutRef.current);
+      noticeExitTimeoutRef.current = null;
+    }
+
+    if (noticeRemoveTimeoutRef.current) {
+      window.clearTimeout(noticeRemoveTimeoutRef.current);
+      noticeRemoveTimeoutRef.current = null;
+    }
+  }, []);
+
+  const dismissNotice = useCallback(() => {
+    clearNoticeTimers();
+    setNotice((current) => (current ? { ...current, isLeaving: true } : null));
+    noticeRemoveTimeoutRef.current = window.setTimeout(() => {
+      setNotice(null);
+      noticeRemoveTimeoutRef.current = null;
+    }, 240);
+  }, [clearNoticeTimers]);
+
+  const showNotice = useCallback((type, message) => {
+    clearNoticeTimers();
+    setNotice({ type, message, isLeaving: false });
+    noticeExitTimeoutRef.current = window.setTimeout(() => {
+      dismissNotice();
+    }, 4000);
+  }, [clearNoticeTimers, dismissNotice]);
+
+  const clearNotice = useCallback(() => {
+    clearNoticeTimers();
+    setNotice(null);
+  }, [clearNoticeTimers]);
 
   const filters = {
     ...stableInitialFilters,
@@ -1590,8 +1677,16 @@ export default function AttendanceComparisonDetail({ employeeId, initialFilters 
     onlyAdditional: showOnlyAdditionalDays,
   };
   const selectedDay = row?.days?.find((day) => day.dateKey === selectedDayKey) || null;
+  const monthlyUnfulfilledMinutes = (row?.days || []).reduce(
+    (total, day) => total + attendanceDelayMinutes(day),
+    0,
+  );
+  const monthlyUnfulfilledDays = (row?.days || []).filter(
+    (day) => attendanceDelayMinutes(day) > 0,
+  ).length;
   const exceptionOptions = exceptionDraft ? inlineExceptionOptionsForDay(selectedDay) : [];
   const exceptionTemplateOptions = exceptionDraft?.type === "schedule_change"
+    && exceptionDraft?.plannedDayType !== "off_day"
     ? scheduleTemplateOptionsForDay(row?.employee, templates, selectedDay)
     : [];
   const scheduleChangeCreatesExtraPunchLayer = createsExtraPunchLayer(selectedDay, exceptionDraft);
@@ -1614,47 +1709,34 @@ export default function AttendanceComparisonDetail({ employeeId, initialFilters 
   const visibleWeekGroups = groupDaysByWeek(visibleReportDays);
   const selectedDraft = selectedDay ? actionDrafts[selectedDay.dateKey] || {} : {};
   const selectedPreview = selectedDay ? buildDecisionPreview(selectedDay, selectedDraft, row?.summary || {}) : null;
-  const selectedHasExecutionException = Boolean(selectedDay?.executionException?.id);
-  const selectedHasSavedAdditionalApproval = hasSavedAdditionalApproval(selectedDay);
-  const selectedIsReviewed = selectedDay?.authorization?.decision === "reviewed";
-  const selectedDetectedLateMinutes = selectedDay
-    ? displayLateMinutes(selectedDay)
-    : 0;
+  const selectedIsReviewed = Boolean(
+    selectedDay?.authorization?.isSaved &&
+    ["reviewed", "resolve_late"].includes(selectedDay.authorization.decision),
+  );
   const selectedHasIncompletePunches = selectedDay ? hasIncompletePunchTag(selectedDay) : false;
-  const selectedHasCleanableAlert = selectedDay
-    ? hasOperationalError(selectedDay) ||
-      hasVisibleDayWarning(selectedDay)
-    : false;
+  const selectedHasOperationalStage = selectedDay ? hasReviewableDayAlert(selectedDay) : false;
+  const selectedHasLateStage = selectedDay ? hasLateDayAlert(selectedDay) : false;
+  const selectedHasCleanableAlert = selectedHasOperationalStage;
   const selectedCanDiscountPlannedDay = selectedDay
     ? (hasDayTag(selectedDay, "Sin picadas") || hasIncompletePunchTag(selectedDay)) &&
       activePunchesForDisplay(selectedDay).length === 0
     : false;
-  const selectedNeedsExplicitDecision = selectedDay
-    ? selectedHasCleanableAlert ||
-      hasUnapprovedExtraTime(selectedDay) ||
-      selectedDetectedLateMinutes > 0 ||
-      (Number(selectedDay.earlyLeaveMinutes) || 0) > 0
-    : false;
   const selectedCanUsePlannedDay = selectedDay ? canAdjustAlertToPlanned(selectedDay) : false;
+  const selectedHasAdditionalStage = selectedDay ? hasAdditionalDayAlert(selectedDay) : false;
   const selectedHasOnlyAdditionalTime = selectedDay
-    ? hasUnapprovedExtraTime(selectedDay) &&
-      !selectedHasCleanableAlert &&
-      selectedDetectedLateMinutes <= 0 &&
-      (Number(selectedDay.earlyLeaveMinutes) || 0) <= 0 &&
+    ? selectedHasAdditionalStage &&
+      hasUnapprovedExtraTime(selectedDay) &&
       !hasNoSchedulePunches(selectedDay)
     : false;
-  const selectedCanAcceptRegisteredExtraDay = selectedDay
-    ? isExtraordinaryDay(selectedDay) &&
-      plannedAdditionalMinutes(selectedDay) > 0 &&
-      detectedAdditionalMinutesForDay(selectedDay) > 0 &&
-      (selectedDetectedLateMinutes > 0 || (Number(selectedDay.earlyLeaveMinutes) || 0) > 0) &&
-      !selectedHasSavedAdditionalApproval
-    : false;
+  const selectedHasQuickActions = !selectedIsReviewed && Boolean(
+    selectedHasOnlyAdditionalTime ||
+    selectedHasCleanableAlert ||
+    hasNoSchedulePunches(selectedDay) ||
+    selectedCanDiscountPlannedDay ||
+    selectedHasLateStage ||
+    selectedCanUsePlannedDay
+  );
   const selectedPlannedDayDecision = selectedHasIncompletePunches ? "justify_incomplete_punches" : "justify_no_punches";
-  const selectedHasReviewFooter = !selectedIsReviewed &&
-    !selectedNeedsExplicitDecision &&
-    !selectedHasSavedAdditionalApproval &&
-    !selectedHasExecutionException;
 
   function syncUrl(nextMonth, nextFilters = {}) {
     if (typeof window === "undefined") return;
@@ -1743,7 +1825,9 @@ export default function AttendanceComparisonDetail({ employeeId, initialFilters 
     try {
       setIsLoadingDecisionHistory(true);
       const params = new URLSearchParams({ employeeId, dateKey });
-      const response = await fetch(`/api/planner/attendance/decision-history?${params.toString()}`);
+      const response = await fetch(`/api/planner/attendance/decision-history?${params.toString()}`, {
+        cache: "no-store",
+      });
       const payload = await response.json();
 
       if (!response.ok) {
@@ -1803,7 +1887,7 @@ export default function AttendanceComparisonDetail({ employeeId, initialFilters 
   }, []);
 
   function handleMonthChange(value) {
-    setSuccess("");
+    clearNotice();
     setMonth(value);
     syncUrl(value);
     loadReport(value);
@@ -1915,6 +1999,8 @@ export default function AttendanceComparisonDetail({ employeeId, initialFilters 
     if (String(draft.notes || "").trim().length < 4) return false;
 
     if (draft.type === "schedule_change") {
+      if (draft.plannedDayType === "off_day") return true;
+
       const requiresTemplate = exceptionTemplateOptions.length > 0;
       return Boolean(
         draft.plannedStartTime &&
@@ -1936,7 +2022,7 @@ export default function AttendanceComparisonDetail({ employeeId, initialFilters 
     try {
       setIsSavingException(true);
       setError("");
-      setSuccess("");
+      clearNotice();
 
       const response = await fetch("/api/planner/planning/exceptions", {
         method: "POST",
@@ -1957,7 +2043,8 @@ export default function AttendanceComparisonDetail({ employeeId, initialFilters 
       setSelectedDayKey(dayKey);
       await loadReport(month, { background: true });
       await loadDecisionHistory(dayKey);
-      setSuccess(
+      showNotice(
+        "success",
         wasResolved
           ? `Excepción aplicada correctamente para ${exceptionDraft.dayLabel} ${exceptionDraft.dateLabel}.`
           : `Excepción enviada a aprobación para ${exceptionDraft.dayLabel} ${exceptionDraft.dateLabel}.`,
@@ -2123,23 +2210,33 @@ export default function AttendanceComparisonDetail({ employeeId, initialFilters 
   }
 
   function openAdditionalApproval(day) {
-    const minutes = detectedAdditionalMinutesForDay(day);
-    const plannedMinutes = Math.min(minutes, plannedAdditionalMinutes(day));
+    const detectedMinutes = detectedAdditionalMinutesForDay(day);
+    const plannedMinutes = Math.min(detectedMinutes, plannedAdditionalMinutes(day));
+    const maximumExcessMinutes = Math.max(0, detectedMinutes - plannedMinutes);
     const currentApprovedMinutes = isExtraordinaryDay(day)
       ? Number(day?.authorization?.authorizedExtraordinaryMinutes) || 0
       : Number(day?.authorization?.authorizedSupplementaryMinutes) || 0;
     const isEdit = hasSavedDayDecision(day);
+    const currentApprovedExcessMinutes = Math.max(0, currentApprovedMinutes - plannedMinutes);
+    const approvalMode = isEdit
+      ? currentApprovedExcessMinutes <= 0
+        ? "planned"
+        : currentApprovedMinutes >= detectedMinutes
+          ? "all"
+          : "custom"
+      : plannedMinutes > 0
+        ? "planned"
+        : "all";
 
     setPendingAdditionalApproval({
       dateKey: day.dateKey,
-      minutes: String((isEdit ? currentApprovedMinutes : minutes) || ""),
-      detectedMinutes: minutes,
+      minutes: String((isEdit ? currentApprovedExcessMinutes : maximumExcessMinutes) || ""),
+      detectedMinutes,
       plannedMinutes,
-      approvalMode: isEdit ? "custom" : plannedMinutes > 0 ? "planned" : "all",
+      maximumExcessMinutes,
+      approvalMode,
       isEdit,
-      note: !isEdit && plannedMinutes > 0
-        ? "Tiempo adicional aprobado según planificación."
-        : "Tiempo adicional aprobado.",
+      note: !isEdit && plannedMinutes > 0 ? "Se mantiene el tiempo planificado." : "Excedente autorizado.",
     });
   }
 
@@ -2151,19 +2248,16 @@ export default function AttendanceComparisonDetail({ employeeId, initialFilters 
     setPendingAdditionalApproval((current) => {
       if (!current) return current;
 
-      const hasDefaultApprovalNote = !current.note || current.note === "Tiempo adicional aprobado.";
-      const hasDefaultRejectionNote = current.note === "Tiempo adicional no aprobado.";
-      const hasDefaultPlannedNote = current.note === "Tiempo adicional aprobado según planificación.";
+      const hasDefaultApprovalNote = !current.note || current.note === "Excedente autorizado.";
+      const hasDefaultPlannedNote = current.note === "Se mantiene el tiempo planificado.";
 
       return {
         ...current,
         approvalMode,
-        note: approvalMode === "none" && (hasDefaultApprovalNote || hasDefaultPlannedNote)
-          ? "Tiempo adicional no aprobado."
-          : approvalMode === "planned" && (hasDefaultApprovalNote || hasDefaultRejectionNote)
-            ? "Tiempo adicional aprobado según planificación."
-          : !["none", "planned"].includes(approvalMode) && (hasDefaultRejectionNote || hasDefaultPlannedNote)
-            ? "Tiempo adicional aprobado."
+        note: approvalMode === "planned" && hasDefaultApprovalNote
+          ? "Se mantiene el tiempo planificado."
+          : approvalMode !== "planned" && hasDefaultPlannedNote
+            ? "Excedente autorizado."
             : current.note,
       };
     });
@@ -2173,65 +2267,40 @@ export default function AttendanceComparisonDetail({ employeeId, initialFilters 
     if (!selectedDay || !pendingAdditionalApproval) return;
 
     const detectedMinutes = detectedAdditionalMinutesForDay(selectedDay);
-    const isRejected = pendingAdditionalApproval.approvalMode === "none";
     const isPlannedOnly = pendingAdditionalApproval.approvalMode === "planned";
-    const approvedMinutes = isRejected
-      ? 0
-      : isPlannedOnly
-        ? Math.min(detectedMinutes, pendingAdditionalApproval.plannedMinutes || 0)
+    const plannedMinutes = Math.min(detectedMinutes, pendingAdditionalApproval.plannedMinutes || 0);
+    const approvedMinutes = isPlannedOnly
+      ? plannedMinutes
       : pendingAdditionalApproval.approvalMode === "all"
         ? detectedMinutes
-        : Math.min(detectedMinutes, hourInputToMinutes(pendingAdditionalApproval.minutes));
+        : Math.min(detectedMinutes, plannedMinutes + hourInputToMinutes(pendingAdditionalApproval.minutes));
+    const approvedExcessMinutes = Math.max(0, approvedMinutes - plannedMinutes);
     const draft = {
       ...(actionDrafts[selectedDay.dateKey] || {}),
-      decision: isRejected ? "none" : "custom",
+      decision: "custom",
       supplementary: isExtraordinaryDay(selectedDay) ? "" : minutesToHourInput(approvedMinutes),
       extraordinary: isExtraordinaryDay(selectedDay) ? minutesToHourInput(approvedMinutes) : "",
       late: minutesToHourInput(defaultAppliedLateMinutes(selectedDay)),
       earlyLeave: minutesToHourInput(
         selectedDay.authorization?.adjustedEarlyLeaveMinutes ?? selectedDay.earlyLeaveMinutes ?? 0,
       ),
-      note: pendingAdditionalApproval.note || (isRejected
-        ? "Tiempo adicional no aprobado."
-        : isPlannedOnly
-          ? "Tiempo adicional aprobado según planificación."
-        : "Tiempo adicional aprobado."),
+      note: pendingAdditionalApproval.note || (isPlannedOnly
+        ? "Se mantiene el tiempo planificado."
+        : "Excedente autorizado."),
       additionalResolved: true,
     };
 
     const wasSaved = await saveDayAction(
       selectedDay,
       draft,
-      isRejected
-        ? "Tiempo adicional no aprobado."
-        : isPlannedOnly
-          ? `${formatMinutes(approvedMinutes)} de tiempo adicional planificado aprobado.`
-        : `${formatMinutes(approvedMinutes)} de tiempo adicional ${pendingAdditionalApproval.isEdit ? "actualizados" : "aprobados"}.`,
+      isPlannedOnly
+        ? `${formatMinutes(plannedMinutes)} planificados; no se autorizó tiempo por encima del plan.`
+        : `${formatMinutes(approvedExcessMinutes)} por encima del plan ${pendingAdditionalApproval.isEdit ? "actualizados" : "autorizados"}.`,
     );
 
     if (wasSaved) {
       setPendingAdditionalApproval(null);
     }
-  }
-
-  async function acceptRegisteredExtraTime(day) {
-    const detectedMinutes = detectedAdditionalMinutesForDay(day);
-
-    if (!detectedMinutes) return;
-
-    await saveDayAction(
-      day,
-      {
-        ...(actionDrafts[day.dateKey] || {}),
-        decision: "custom",
-        supplementary: isExtraordinaryDay(day) ? "" : minutesToHourInput(detectedMinutes),
-        extraordinary: isExtraordinaryDay(day) ? minutesToHourInput(detectedMinutes) : "",
-        late: "",
-        earlyLeave: "",
-        note: "Se acepta únicamente el tiempo registrado en el día extra.",
-      },
-      `${formatMinutes(detectedMinutes)} de tiempo registrado aceptado.`,
-    );
   }
 
   async function saveDayAction(day, overrideDraft = null, successMessage = "Decisión guardada correctamente.") {
@@ -2254,7 +2323,7 @@ export default function AttendanceComparisonDetail({ employeeId, initialFilters 
     try {
       setSavingDay(day.dateKey);
       setError("");
-      setSuccess("");
+      clearNotice();
 
       const response = await fetch("/api/planner/attendance/day-decisions", {
         method: "POST",
@@ -2271,46 +2340,11 @@ export default function AttendanceComparisonDetail({ employeeId, initialFilters 
 
       setSelectedDayKey("");
       await loadReport(month);
-      setSuccess(successMessage);
+      showNotice("success", successMessage);
       return true;
     } catch (requestError) {
       setError(requestError.message);
       return false;
-    } finally {
-      setSavingDay("");
-    }
-  }
-
-  async function toggleReviewedDay(day) {
-    const isReviewed = day.authorization?.decision === "reviewed";
-
-    try {
-      setSavingDay(day.dateKey);
-      setError("");
-
-      const response = await fetch("/api/planner/attendance/day-decisions", {
-        method: isReviewed ? "DELETE" : "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify(isReviewed
-          ? { employeeId, dateKey: day.dateKey }
-          : authorizationPayloadForDay(employeeId, day, "reviewed", {
-            ...(actionDrafts[day.dateKey] || {}),
-            decision: "reviewed",
-            note: actionDrafts[day.dateKey]?.note || "Día revisado sin ajuste de valores.",
-          })),
-      });
-      const payload = await response.json();
-
-      if (!response.ok) {
-        throw new Error(payload.error || "No se pudo actualizar la revisión.");
-      }
-
-      setSelectedDayKey("");
-      await loadReport(month);
-    } catch (requestError) {
-      setError(requestError.message);
     } finally {
       setSavingDay("");
     }
@@ -2325,7 +2359,7 @@ export default function AttendanceComparisonDetail({ employeeId, initialFilters 
     try {
       setDeletingHistoryId(item.id);
       setError("");
-      setSuccess("");
+      clearNotice();
 
       const isException = item.kind === "operational_exception";
       const response = isPermanent
@@ -2363,9 +2397,12 @@ export default function AttendanceComparisonDetail({ employeeId, initialFilters 
       setPendingHistoryDelete(null);
       await loadReport(month, { background: true });
       await loadDecisionHistory(dateKey);
-      setSuccess(isPermanent
-        ? "Decisión eliminada definitivamente."
-        : "Decisión desactivada correctamente. El antecedente permanece en el historial.");
+      showNotice(
+        "success",
+        isPermanent
+          ? "Decisión eliminada definitivamente."
+          : "Decisión desactivada correctamente. El antecedente permanece en el historial.",
+      );
     } catch (requestError) {
       setError(requestError.message);
     } finally {
@@ -2397,25 +2434,24 @@ export default function AttendanceComparisonDetail({ employeeId, initialFilters 
     try {
       setSavingBulkAction(pendingSelectedLateAction);
       setError("");
-      setSuccess("");
+      clearNotice();
       const selectedDayCount = selectedLateDays.length;
 
       for (const day of selectedLateDays) {
         const detectedAdditionalMinutes = detectedAdditionalMinutesForDay(day);
+        const plannedPayableMinutes = Math.min(detectedAdditionalMinutes, plannedAdditionalMinutes(day));
+        const detectedExcessMinutes = Math.max(0, detectedAdditionalMinutes - plannedPayableMinutes);
         const approvedAdditionalMinutes = pendingSelectedLateAction === "approve_additional"
           ? selectedAdditionalApprovalMode === "max"
-            ? Math.min(detectedAdditionalMinutes, maxAdditionalMinutes)
+            ? plannedPayableMinutes + Math.min(detectedExcessMinutes, maxAdditionalMinutes)
             : selectedAdditionalApprovalMode === "planned"
-              ? Math.min(detectedAdditionalMinutes, plannedAdditionalMinutes(day))
-              : selectedAdditionalApprovalMode === "none"
-                ? 0
+              ? plannedPayableMinutes
             : detectedAdditionalMinutes
           : 0;
-        const rejectsAdditional = pendingSelectedLateAction === "approve_additional" && approvedAdditionalMinutes <= 0;
         const decision = pendingSelectedLateAction === "justify_late"
           ? "justify_late"
           : pendingSelectedLateAction === "approve_additional"
-            ? rejectsAdditional ? "none" : "custom"
+            ? "custom"
             : "resolve_late";
         const draft = pendingSelectedLateAction === "approve_additional"
           ? {
@@ -2426,11 +2462,9 @@ export default function AttendanceComparisonDetail({ employeeId, initialFilters 
             earlyLeave: minutesToHourInput(
               day.authorization?.adjustedEarlyLeaveMinutes ?? day.earlyLeaveMinutes ?? 0,
             ),
-            note: note || (rejectsAdditional
-              ? "Tiempo adicional no aprobado."
-              : selectedAdditionalApprovalMode === "planned"
-                ? "Tiempo adicional aprobado según planificación."
-                : "Tiempo adicional aprobado."),
+            note: note || (selectedAdditionalApprovalMode === "planned"
+              ? "Se mantiene el tiempo planificado."
+              : "Excedente autorizado."),
             additionalResolved: true,
             decision,
           }
@@ -2460,7 +2494,8 @@ export default function AttendanceComparisonDetail({ employeeId, initialFilters 
       setSelectedAdditionalApprovalMax("");
       setSelectedLateDayKeys([]);
       await loadReport(month);
-      setSuccess(
+      showNotice(
+        "success",
         pendingSelectedLateAction === "approve_additional"
           ? `Tiempo adicional resuelto en ${selectedDayCount} ${selectedDayCount === 1 ? "día" : "días"}.`
           : `Decisión guardada en ${selectedDayCount} ${selectedDayCount === 1 ? "día" : "días"}.`,
@@ -2476,19 +2511,18 @@ export default function AttendanceComparisonDetail({ employeeId, initialFilters 
     loadReport(initialFiltersRef.current.month);
   }, [loadReport]);
 
+  useEffect(() => () => {
+    clearNoticeTimers();
+  }, [clearNoticeTimers]);
+
   return (
     <section className={styles.panel}>
+      <FloatingNotice notice={notice} onClose={dismissNotice} />
+
       {error ? (
         <div className={styles.errorBox}>
           <AlertTriangle size={17} />
           {error}
-        </div>
-      ) : null}
-
-      {success ? (
-        <div className={styles.successBox} role="status">
-          <CircleCheck size={17} />
-          {success}
         </div>
       ) : null}
 
@@ -2528,18 +2562,18 @@ export default function AttendanceComparisonDetail({ employeeId, initialFilters 
             </article>
             <article>
               <span>Suplementarias</span>
-              <strong>{minutesBadge(row.summary.detectedSupplementaryLabel)}</strong>
+              <strong>{minutesBadge(row.summary.supplementaryLabel)}</strong>
               <small>Planificadas {minutesBadge(row.summary.plannedSupplementaryLabel)}</small>
             </article>
             <article>
               <span>Extraordinarias</span>
-              <strong>{minutesBadge(row.summary.detectedExtraordinaryLabel)}</strong>
+              <strong>{minutesBadge(row.summary.extraordinaryLabel)}</strong>
               <small>Planificadas {minutesBadge(row.summary.plannedExtraordinaryLabel)}</small>
             </article>
             <article>
-              <span>Atraso total</span>
-              <strong>{minutesBadge(row.summary.lateLabel)}</strong>
-              <small>{row.summary.pendingLateDays ?? row.summary.lateDays} días con atraso</small>
+              <span>Tiempo no cumplido</span>
+              <strong>{minutesBadge(formatMinutes(monthlyUnfulfilledMinutes))}</strong>
+              <small>{monthlyUnfulfilledDays} días con diferencias</small>
             </article>
           </div>
 
@@ -2569,7 +2603,7 @@ export default function AttendanceComparisonDetail({ employeeId, initialFilters 
                 onClick={toggleOnlyLateDays}
                 aria-pressed={showOnlyLateDays}
               >
-                Atrasos
+                Faltantes
                 <span>{lateIssueDays.length}</span>
               </button>
               <button
@@ -2587,13 +2621,13 @@ export default function AttendanceComparisonDetail({ employeeId, initialFilters 
           {showOnlyLateDays || showOnlyAdditionalDays ? (
             <div className={styles.selectionActions}>
               <div className={styles.selectionSummaryGroup}>
-                <label className={styles.masterSelection} title={allVisibleLateDaysSelected ? "Quitar selección" : showOnlyAdditionalDays ? "Seleccionar tiempo adicional" : "Seleccionar todos los atrasos"}>
+                <label className={styles.masterSelection} title={allVisibleLateDaysSelected ? "Quitar selección" : showOnlyAdditionalDays ? "Seleccionar tiempo adicional" : "Seleccionar todos los faltantes"}>
                   <input
                     type="checkbox"
                     checked={allVisibleLateDaysSelected}
                     onChange={toggleVisibleLateDaySelection}
                     disabled={!selectableReviewDays.length || Boolean(savingBulkAction)}
-                    aria-label={allVisibleLateDaysSelected ? "Quitar selección visible" : showOnlyAdditionalDays ? "Seleccionar tiempo adicional visible" : "Seleccionar atrasos visibles"}
+                    aria-label={allVisibleLateDaysSelected ? "Quitar selección visible" : showOnlyAdditionalDays ? "Seleccionar tiempo adicional visible" : "Seleccionar faltantes visibles"}
                   />
                   <span aria-hidden="true" />
                 </label>
@@ -2659,7 +2693,7 @@ export default function AttendanceComparisonDetail({ employeeId, initialFilters 
                           <th>Horario y picadas</th>
                           <th>Planificado</th>
                           <th>Trabajado</th>
-                          <th>Atraso</th>
+                          <th>Tiempo no cumplido</th>
                           <th>Adicional / valor</th>
                           <th>Avisos</th>
                         </tr>
@@ -2700,7 +2734,7 @@ export default function AttendanceComparisonDetail({ employeeId, initialFilters 
                                         type="checkbox"
                                         checked={selectedLateDayKeys.includes(day.dateKey)}
                                         onChange={() => toggleLateDaySelection(day.dateKey)}
-                                        aria-label={`Seleccionar ${showOnlyAdditionalDays ? "tiempo adicional" : "atraso"} de ${day.dayLabel} ${day.dateLabel}`}
+                                        aria-label={`Seleccionar ${showOnlyAdditionalDays ? "tiempo adicional" : "faltante"} de ${day.dayLabel} ${day.dateLabel}`}
                                       />
                                       <span aria-hidden="true" />
                                     </label>
@@ -2916,11 +2950,9 @@ export default function AttendanceComparisonDetail({ employeeId, initialFilters 
                     <small>{selectedPreview?.plannedAmountLabel || "$0.00"}</small>
                   </article>
                   <article>
-                    <span>
-                      {selectedPreview?.additionalKindLabel || "HS"} {selectedHasSavedAdditionalApproval ? "aprobadas" : "registradas"}
-                    </span>
-                    <strong>{selectedPreview?.registeredAdditionalLabel || "--"}</strong>
-                    <small>{selectedPreview?.registeredAmountLabel || "$0.00"}</small>
+                    <span>{selectedPreview?.additionalKindLabel || "HS"} detectadas</span>
+                    <strong>{selectedPreview?.detectedAdditionalLabel || "--"}</strong>
+                    <small>{selectedPreview?.detectedAmountLabel || "$0.00"}</small>
                   </article>
                 </div>
 
@@ -2942,7 +2974,7 @@ export default function AttendanceComparisonDetail({ employeeId, initialFilters 
                       type="button"
                       className={`${styles.punchChipButton} ${punch.adjustedFrom ? styles.punchChipAdjusted : ""} ${punch.isIgnored ? styles.punchChipIgnored : ""}`}
                       onClick={() => openDeletePunch(selectedDay, punch)}
-                      disabled={punch.isIgnored || isSavingPunch || savingDay === selectedDay.dateKey}
+                      disabled={selectedIsReviewed || punch.isIgnored || isSavingPunch || savingDay === selectedDay.dateKey}
                       title={punch.isIgnored ? `Picada anulada: ${punch.ignoredReason || "sin motivo"}` : punch.adjustedFrom ? `Picada real: ${punch.adjustedFrom}` : "Anular picada"}
                     >
                       <small>{punchDisplayLabelForDay(selectedDay, punch)}</small>
@@ -2960,43 +2992,20 @@ export default function AttendanceComparisonDetail({ employeeId, initialFilters 
                   ))}
                 </div>
 
-                {!selectedIsReviewed ? (
+                {selectedHasQuickActions ? (
                   <div className="catalog-actions-block catalog-actions-separated">
                     <div className={styles.quickActionGrid}>
-                      {selectedCanAcceptRegisteredExtraDay ? (
-                        <>
-                          <button
-                            type="button"
-                            className="catalog-button-primary"
-                            onClick={() => acceptRegisteredExtraTime(selectedDay)}
-                            disabled={savingDay === selectedDay.dateKey}
-                          >
-                            Aceptar tiempo registrado
-                          </button>
-                          <button
-                            type="button"
-                            className="catalog-button-ghost"
-                            onClick={() => applyQuickAction(selectedDay, "pay_planned_day")}
-                            disabled={savingDay === selectedDay.dateKey}
-                          >
-                            Ajustar al planificado
-                          </button>
-                        </>
-                      ) : null}
-                      {selectedHasOnlyAdditionalTime || selectedHasSavedAdditionalApproval ? (
+                      {selectedHasOnlyAdditionalTime ? (
                         <button
                           type="button"
-                          className={selectedHasSavedAdditionalApproval ? "catalog-button-neutral" : "catalog-button-primary"}
+                          className="catalog-button-ghost"
                           onClick={() => openAdditionalApproval(selectedDay)}
                           disabled={savingDay === selectedDay.dateKey}
                         >
-                          {selectedHasSavedAdditionalApproval ? "Modificar horas aprobadas" : "Resolver tiempo adicional"}
+                          Autorizar excedente
                         </button>
                       ) : null}
-                      {hasAuthorizableTime(selectedDay) && !hasNoSchedulePunches(selectedDay) && !selectedHasOnlyAdditionalTime && !selectedHasSavedAdditionalApproval && !selectedHasExecutionException && !selectedCanAcceptRegisteredExtraDay ? (
-                        <button type="button" className="catalog-button-ghost" onClick={() => applyQuickAction(selectedDay, "full")} disabled={savingDay === selectedDay.dateKey}>Usar registrado</button>
-                      ) : null}
-                      {selectedHasCleanableAlert && !selectedCanAcceptRegisteredExtraDay ? (
+                      {selectedHasCleanableAlert ? (
                         <button
                           type="button"
                           className="catalog-button-ghost"
@@ -3016,8 +3025,16 @@ export default function AttendanceComparisonDetail({ employeeId, initialFilters 
                           {selectedCanDiscountPlannedDay ? "No trabajado" : "Anular día"}
                         </button>
                       ) : null}
-                      {selectedDetectedLateMinutes > 0 && !selectedCanAcceptRegisteredExtraDay ? (
+                      {selectedHasLateStage ? (
                         <>
+                          <button
+                            type="button"
+                            className="catalog-button-ghost"
+                            onClick={() => openInlineException(selectedDay, "schedule_change")}
+                            disabled={isSavingException}
+                          >
+                            Cambiar horario
+                          </button>
                           <button
                             type="button"
                             className="catalog-button-ghost"
@@ -3047,21 +3064,6 @@ export default function AttendanceComparisonDetail({ employeeId, initialFilters 
                         </button>
                       ) : null}
                     </div>
-                  </div>
-                ) : null}
-
-                {selectedHasReviewFooter ? (
-                  <div className="catalog-actions catalog-actions-end catalog-actions-separated">
-                    <button
-                      type="button"
-                      className="catalog-button-primary"
-                      onClick={() => toggleReviewedDay(selectedDay)}
-                      disabled={savingDay === selectedDay.dateKey}
-                    >
-                      {savingDay === selectedDay.dateKey
-                        ? "Guardando..."
-                        : "Marcar revisado"}
-                    </button>
                   </div>
                 ) : null}
 
@@ -3120,6 +3122,7 @@ export default function AttendanceComparisonDetail({ employeeId, initialFilters 
                           </div>
                           <p>{item.summary}</p>
                           {item.note ? <blockquote>{item.note}</blockquote> : null}
+                          {item.dependencyMessage ? <small>{item.dependencyMessage}</small> : null}
                           <small>{item.actor} · {formatDecisionTimestamp(item.happenedAt)}</small>
                         </article>
                       ))}
@@ -3156,15 +3159,13 @@ export default function AttendanceComparisonDetail({ employeeId, initialFilters 
 
           <ConfirmDialog
             isOpen={Boolean(pendingAdditionalApproval)}
-            title={pendingAdditionalApproval?.isEdit ? "Modificar horas aprobadas" : "Resolver tiempo adicional"}
+            title={pendingAdditionalApproval?.isEdit ? "Modificar excedente autorizado" : "Autorizar excedente"}
             message={selectedDay ? `${selectedDay.dayLabel} ${selectedDay.dateLabel}` : ""}
-            confirmLabel={pendingAdditionalApproval?.approvalMode === "none"
-              ? "No aprobar ninguna hora"
-              : pendingAdditionalApproval?.approvalMode === "planned"
-                ? "Aprobar lo planificado"
+            confirmLabel={pendingAdditionalApproval?.approvalMode === "planned"
+                ? "Mantener lo planificado"
               : pendingAdditionalApproval?.isEdit
-                ? "Guardar nueva aprobación"
-                : "Aprobar adicional"}
+                ? "Guardar autorización"
+                : "Autorizar excedente"}
             cancelLabel="Cancelar"
             tone="default"
             isPending={Boolean(savingDay)}
@@ -3174,7 +3175,7 @@ export default function AttendanceComparisonDetail({ employeeId, initialFilters 
                 pendingAdditionalApproval.approvalMode === "custom" &&
                 (
                   hourInputToMinutes(pendingAdditionalApproval.minutes) <= 0 ||
-                  hourInputToMinutes(pendingAdditionalApproval.minutes) > (pendingAdditionalApproval.detectedMinutes || 0)
+                  hourInputToMinutes(pendingAdditionalApproval.minutes) > (pendingAdditionalApproval.maximumExcessMinutes || 0)
                 )
               ) ||
               (
@@ -3212,7 +3213,7 @@ export default function AttendanceComparisonDetail({ employeeId, initialFilters 
                         checked={pendingAdditionalApproval.approvalMode === "planned"}
                         onChange={() => selectAdditionalApprovalMode("planned")}
                       />
-                      <span>Aprobar solo lo planificado ({formatMinutes(pendingAdditionalApproval.plannedMinutes)})</span>
+                      <span>Mantener solo lo planificado ({formatMinutes(pendingAdditionalApproval.plannedMinutes)})</span>
                     </label>
                   ) : null}
                   <label>
@@ -3222,7 +3223,7 @@ export default function AttendanceComparisonDetail({ employeeId, initialFilters 
                       checked={pendingAdditionalApproval.approvalMode === "custom"}
                       onChange={() => selectAdditionalApprovalMode("custom")}
                     />
-                    <span>Indicar minutos</span>
+                    <span>Autorizar una parte del excedente</span>
                   </label>
                   <label>
                     <input
@@ -3231,25 +3232,16 @@ export default function AttendanceComparisonDetail({ employeeId, initialFilters 
                       checked={pendingAdditionalApproval.approvalMode === "all"}
                       onChange={() => selectAdditionalApprovalMode("all")}
                     />
-                    <span>Aprobar todo ({formatMinutes(pendingAdditionalApproval.detectedMinutes)})</span>
-                  </label>
-                  <label>
-                    <input
-                      type="radio"
-                      name="day-additional-approval-mode"
-                      checked={pendingAdditionalApproval.approvalMode === "none"}
-                      onChange={() => selectAdditionalApprovalMode("none")}
-                    />
-                    <span>No aprobar ninguna hora adicional</span>
+                    <span>Autorizar todo el excedente ({formatMinutes(pendingAdditionalApproval.maximumExcessMinutes)})</span>
                   </label>
                 </div>
                 {pendingAdditionalApproval.approvalMode === "custom" ? (
                   <label className={styles.bulkNoteField}>
-                    <span>Minutos a aprobar</span>
+                    <span>Minutos del excedente a autorizar</span>
                     <input
                       type="number"
                       min="1"
-                      max={pendingAdditionalApproval.detectedMinutes}
+                      max={pendingAdditionalApproval.maximumExcessMinutes}
                       value={pendingAdditionalApproval.minutes}
                       onChange={(event) => updateAdditionalApproval("minutes", event.target.value)}
                       placeholder="Minutos"
@@ -3315,12 +3307,10 @@ export default function AttendanceComparisonDetail({ employeeId, initialFilters 
               <span>Acción</span>
               <strong>{pendingSelectedLateAction === "approve_additional"
                 ? selectedAdditionalApprovalMode === "max"
-                  ? `Aprobar máximo ${formatMinutes(hourInputToMinutes(selectedAdditionalApprovalMax))} por día`
+                  ? `Autorizar máximo ${formatMinutes(hourInputToMinutes(selectedAdditionalApprovalMax))} del excedente por día`
                   : selectedAdditionalApprovalMode === "planned"
-                    ? "Aprobar solo lo planificado por día"
-                    : selectedAdditionalApprovalMode === "none"
-                      ? "No aprobar tiempo adicional"
-                  : "Aprobar todo lo detectado"
+                    ? "Mantener lo planificado por día"
+                  : "Autorizar todo el excedente"
                 : pendingSelectedLateAction === "justify_late"
                   ? "Atraso justificado"
                   : "Atraso revisado con descuento"}</strong>
@@ -3335,7 +3325,7 @@ export default function AttendanceComparisonDetail({ employeeId, initialFilters 
                       checked={selectedAdditionalApprovalMode === "all"}
                       onChange={() => setSelectedAdditionalApprovalMode("all")}
                     />
-                    <span>Aprobar todo lo detectado</span>
+                    <span>Autorizar todo el excedente</span>
                   </label>
                   <label>
                     <input
@@ -3344,7 +3334,7 @@ export default function AttendanceComparisonDetail({ employeeId, initialFilters 
                       checked={selectedAdditionalApprovalMode === "planned"}
                       onChange={() => setSelectedAdditionalApprovalMode("planned")}
                     />
-                    <span>Aprobar solo lo planificado por día</span>
+                    <span>Mantener lo planificado por día</span>
                   </label>
                   <label>
                     <input
@@ -3353,21 +3343,12 @@ export default function AttendanceComparisonDetail({ employeeId, initialFilters 
                       checked={selectedAdditionalApprovalMode === "max"}
                       onChange={() => setSelectedAdditionalApprovalMode("max")}
                     />
-                    <span>Aprobar máximo por día</span>
-                  </label>
-                  <label>
-                    <input
-                      type="radio"
-                      name="additional-approval-mode"
-                      checked={selectedAdditionalApprovalMode === "none"}
-                      onChange={() => setSelectedAdditionalApprovalMode("none")}
-                    />
-                    <span>No aprobar ninguna hora adicional</span>
+                    <span>Autorizar parte del excedente por día</span>
                   </label>
                 </div>
                 {selectedAdditionalApprovalMode === "max" ? (
                   <label className={styles.bulkNoteField}>
-                    <span>Máximo por día</span>
+                    <span>Máximo de minutos del excedente por día</span>
                     <input
                       type="number"
                       min="1"
@@ -3431,69 +3412,85 @@ export default function AttendanceComparisonDetail({ employeeId, initialFilters 
 
                 {exceptionDraft.type === "schedule_change" ? (
                   <>
-                    <AutocompleteSelect
-                      label="Plantilla de horario"
-                      value={exceptionDraft.templateId || ""}
-                      options={exceptionTemplateOptions.map((option) => ({
-                        value: option.id,
-                        label: `${option.name}${option.isRecommended ? " (más cercana)" : ""}`,
-                        description: option.scheduleLabel,
-                        searchText: option.scheduleLabel,
-                      }))}
-                      placeholder={exceptionTemplateOptions.length ? "Selecciona una plantilla" : "Horario manual"}
-                      searchPlaceholder="Buscar plantilla por nombre u horario"
-                      emptyText="No encontramos plantillas compatibles"
-                      onChange={selectExceptionTemplate}
-                    />
-                    {!exceptionTemplateOptions.length ? (
+                    <SelectInput
+                      label="Nueva planificación"
+                      value={exceptionDraft.plannedDayType || "workday"}
+                      onChange={(event) => updateExceptionDraft("plannedDayType", event.target.value)}
+                    >
+                      <option value="workday">Horario laboral</option>
+                      <option value="off_day">Descanso</option>
+                    </SelectInput>
+                    {exceptionDraft.plannedDayType === "off_day" ? (
                       <p className={styles.exceptionTypeHint}>
-                        No hay plantillas compatibles para este empleado. Puedes registrar el horario manualmente.
+                        El día quedará como descanso y no se exigirán picadas ni horas planificadas.
                       </p>
-                    ) : null}
-                    <div className={styles.exceptionTimeGrid}>
-                      <label>
-                        <span>Entrada</span>
-                        <input
-                          type="time"
-                          value={exceptionDraft.plannedStartTime}
-                          disabled={Boolean(exceptionTemplateOptions.length)}
-                          onChange={(event) => updateExceptionDraft("plannedStartTime", event.target.value)}
+                    ) : (
+                      <>
+                        <AutocompleteSelect
+                          label="Plantilla de horario"
+                          value={exceptionDraft.templateId || ""}
+                          options={exceptionTemplateOptions.map((option) => ({
+                            value: option.id,
+                            label: `${option.name}${option.isRecommended ? " (más cercana)" : ""}`,
+                            description: option.scheduleLabel,
+                            searchText: option.scheduleLabel,
+                          }))}
+                          placeholder={exceptionTemplateOptions.length ? "Selecciona una plantilla" : "Horario manual"}
+                          searchPlaceholder="Buscar plantilla por nombre u horario"
+                          emptyText="No encontramos plantillas compatibles"
+                          onChange={selectExceptionTemplate}
                         />
-                      </label>
-                      <label>
-                        <span>Almuerzo sale</span>
-                        <input
-                          type="time"
-                          value={exceptionDraft.plannedLunchStartTime}
-                          disabled={Boolean(exceptionTemplateOptions.length)}
-                          onChange={(event) => updateExceptionDraft("plannedLunchStartTime", event.target.value)}
-                        />
-                      </label>
-                      <label>
-                        <span>Almuerzo vuelve</span>
-                        <input
-                          type="time"
-                          value={exceptionDraft.plannedLunchEndTime}
-                          disabled={Boolean(exceptionTemplateOptions.length)}
-                          onChange={(event) => updateExceptionDraft("plannedLunchEndTime", event.target.value)}
-                        />
-                      </label>
-                      <label>
-                        <span>Salida</span>
-                        <input
-                          type="time"
-                          value={exceptionDraft.plannedEndTime}
-                          disabled={Boolean(exceptionTemplateOptions.length)}
-                          onChange={(event) => updateExceptionDraft("plannedEndTime", event.target.value)}
-                        />
-                      </label>
-                    </div>
-                    {scheduleChangeCreatesExtraPunchLayer ? (
-                      <div className={styles.exceptionWarning}>
-                        <AlertTriangle size={16} aria-hidden="true" />
-                        <span>Este cambio dejará picadas de más. Luego deberás anular las picadas que no aplican.</span>
-                      </div>
-                    ) : null}
+                        {!exceptionTemplateOptions.length ? (
+                          <p className={styles.exceptionTypeHint}>
+                            No hay plantillas compatibles para este empleado. Puedes registrar el horario manualmente.
+                          </p>
+                        ) : null}
+                        <div className={styles.exceptionTimeGrid}>
+                          <label>
+                            <span>Entrada</span>
+                            <input
+                              type="time"
+                              value={exceptionDraft.plannedStartTime}
+                              disabled={Boolean(exceptionTemplateOptions.length)}
+                              onChange={(event) => updateExceptionDraft("plannedStartTime", event.target.value)}
+                            />
+                          </label>
+                          <label>
+                            <span>Almuerzo sale</span>
+                            <input
+                              type="time"
+                              value={exceptionDraft.plannedLunchStartTime}
+                              disabled={Boolean(exceptionTemplateOptions.length)}
+                              onChange={(event) => updateExceptionDraft("plannedLunchStartTime", event.target.value)}
+                            />
+                          </label>
+                          <label>
+                            <span>Almuerzo vuelve</span>
+                            <input
+                              type="time"
+                              value={exceptionDraft.plannedLunchEndTime}
+                              disabled={Boolean(exceptionTemplateOptions.length)}
+                              onChange={(event) => updateExceptionDraft("plannedLunchEndTime", event.target.value)}
+                            />
+                          </label>
+                          <label>
+                            <span>Salida</span>
+                            <input
+                              type="time"
+                              value={exceptionDraft.plannedEndTime}
+                              disabled={Boolean(exceptionTemplateOptions.length)}
+                              onChange={(event) => updateExceptionDraft("plannedEndTime", event.target.value)}
+                            />
+                          </label>
+                        </div>
+                        {scheduleChangeCreatesExtraPunchLayer ? (
+                          <div className={styles.exceptionWarning}>
+                            <AlertTriangle size={16} aria-hidden="true" />
+                            <span>Este cambio dejará picadas de más. Luego deberás anular las picadas que no aplican.</span>
+                          </div>
+                        ) : null}
+                      </>
+                    )}
                   </>
                 ) : null}
 

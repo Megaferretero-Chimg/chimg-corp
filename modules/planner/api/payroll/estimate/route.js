@@ -5,6 +5,7 @@ import {
   format,
   isValid,
   parse,
+  parseISO,
   startOfMonth,
   startOfWeek,
 } from "date-fns";
@@ -18,12 +19,13 @@ import {
   ECUADOR_DAILY_BASE_HOURS,
 } from "@/modules/planner/lib/payroll/laborConstants";
 import { resolveMonthlyBaseHours } from "@/modules/planner/lib/payroll/monthlyBaseHours";
-import { AttendancePunch } from "@/modules/planner/models";
+import { AttendanceDayDecision, AttendancePunch } from "@/modules/planner/models";
 import { Employee, Role } from "@/modules/company/models";
 import { PayrollIncompleteDayDecision } from "@/modules/planner/models";
 import { PayrollLateDecision } from "@/modules/planner/models";
 import { PayrollSupplementaryDecision } from "@/modules/planner/models";
 import { ScheduleRuleConfig } from "@/modules/planner/models";
+import { ScheduleAssignment } from "@/modules/planner/models";
 import { WorkSchedule } from "@/modules/planner/models";
 
 function parseMonthParam(value) {
@@ -33,6 +35,36 @@ function parseMonthParam(value) {
 
   const parsed = parse(String(value), "yyyy-MM", new Date());
   return isValid(parsed) ? parsed : null;
+}
+
+function schedulesFromAssignments(assignments = []) {
+  return assignments.flatMap((assignment) => (assignment.generatedDays || []).map((day) => {
+    const date = parseISO(day.dateKey);
+    const dayType = day.dayType || "workday";
+
+    return {
+      ...day,
+      weekKey: format(startOfWeek(date, { weekStartsOn: 1 }), "yyyy-MM-dd"),
+      dayOfWeek: Number.isInteger(day.dayOfWeek) ? day.dayOfWeek : date.getDay(),
+      dayType,
+      hasLunch: (Number(day.lunchDurationMinutes) || 0) > 0,
+      isWorkingDay: ["workday", "weekend_overtime"].includes(dayType),
+      isPaidDay: ["vacation", "holiday"].includes(dayType),
+      authorizedExtraMinutes: Math.max(0, Number(day.authorizedExtraMinutes) || 0),
+    };
+  }));
+}
+
+function mergeSchedules(workSchedules = [], assignmentSchedules = []) {
+  const schedulesByDay = new Map(
+    workSchedules.map((schedule) => [`${schedule.weekKey}-${schedule.dayOfWeek}`, schedule]),
+  );
+
+  assignmentSchedules.forEach((schedule) => {
+    schedulesByDay.set(`${schedule.weekKey}-${schedule.dayOfWeek}`, schedule);
+  });
+
+  return [...schedulesByDay.values()];
 }
 
 export async function GET(request) {
@@ -73,12 +105,17 @@ export async function GET(request) {
       ),
     ];
 
-    const [role, schedules, punches, scheduleRuleConfig, supplementaryDecisions, lateDecisions, incompleteDayDecisions] =
+    const monthKey = format(month, "yyyy-MM");
+    const [role, workSchedules, assignments, punches, scheduleRuleConfig, supplementaryDecisions, attendanceDecisions, lateDecisions, incompleteDayDecisions] =
       await Promise.all([
       Role.findOne({ code: employee.roleCode }).lean(),
       WorkSchedule.find({
         employee: employeeId,
         weekKey: { $in: weekKeys },
+      }).lean(),
+      ScheduleAssignment.find({
+        employee: employeeId,
+        monthKey,
       }).lean(),
       AttendancePunch.find({
         employee: employeeId,
@@ -92,6 +129,13 @@ export async function GET(request) {
         .lean(),
       ScheduleRuleConfig.findOne({ key: "default" }).lean(),
       PayrollSupplementaryDecision.find({
+        employee: employeeId,
+        date: {
+          $gte: monthStart,
+          $lte: monthEnd,
+        },
+      }).lean(),
+      AttendanceDayDecision.find({
         employee: employeeId,
         date: {
           $gte: monthStart,
@@ -117,6 +161,7 @@ export async function GET(request) {
       ...employee,
       punchesAffectHours: role?.punchesAffectHours !== false,
     };
+    const schedules = mergeSchedules(workSchedules, schedulesFromAssignments(assignments));
 
     if (!schedules.length) {
       return NextResponse.json({
@@ -137,6 +182,16 @@ export async function GET(request) {
           decision: item.decision,
           candidateHours: item.candidateHours || 0,
           candidateMinutes: item.candidateMinutes || 0,
+        },
+      ]),
+    );
+
+    const attendanceDecisionsByDate = new Map(
+      attendanceDecisions.map((item) => [
+        item.dateKey || format(item.date, "yyyy-MM-dd"),
+        {
+          additionalResolved: item.additionalResolved === true,
+          authorizedSupplementaryMinutes: item.authorizedSupplementaryMinutes || 0,
         },
       ]),
     );
@@ -178,6 +233,7 @@ export async function GET(request) {
         ),
       },
       supplementaryByDate,
+      attendanceDecisionsByDate,
       lateByDate,
       incompleteDayByDate,
     });

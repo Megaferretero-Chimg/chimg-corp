@@ -185,7 +185,7 @@
 .skeletonNumber,
 .skeletonAvatar,
 .skeletonCell,
-.skeletonPill,
+.skeletonDays,
 .skeletonActions {
   display: block;
   border-radius: 999px;
@@ -214,9 +214,9 @@
   height: 1rem;
 }
 
-.skeletonPill {
-  width: min(100%, 8rem);
-  height: 1.8rem;
+.skeletonDays {
+  width: 2.5rem;
+  height: 1rem;
 }
 
 .skeletonActions {
@@ -259,27 +259,6 @@
 .table td strong,
 .table td span {
   display: block;
-}
-
-.warningPill,
-.okPill {
-  display: inline-flex;
-  align-items: center;
-  width: fit-content;
-  border-radius: 999px;
-  padding: 0.42rem 0.68rem;
-  font-size: var(--font-size-xs);
-  font-weight: 600;
-}
-
-.warningPill {
-  background: #fff4c2;
-  color: #674300;
-}
-
-.okPill {
-  background: #e8f7ef;
-  color: #166534;
 }
 
 .rowActions {
@@ -360,8 +339,7 @@
 
 .employeeSnapshot strong,
 .employeeSnapshot span,
-.formSummary span,
-.formSummary strong {
+.formSummary span {
   display: block;
 }
 
@@ -381,10 +359,6 @@
   gap: 0.75rem;
   color: #425b80;
   flex-wrap: wrap;
-}
-
-.formSummary strong {
-  color: #17428c;
 }
 
 @media (max-width: 820px) {
@@ -416,7 +390,7 @@
   }
 
   .skeletonRow .skeletonCell:nth-of-type(n + 3),
-  .skeletonPill,
+  .skeletonDays,
   .skeletonActions {
     display: none;
   }

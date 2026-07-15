@@ -20,8 +20,6 @@ import EmployeeAutocomplete from "@/components/ui/EmployeeAutocomplete";
 import FloatingNotice from "@/components/ui/FloatingNotice";
 import styles from "@/modules/planner/styles/components/planning/VacationPlanner.module.scss";
 
-const VACATION_NOTICE_DAYS = 30;
-
 const EMPTY_FORM = {
   id: "",
   employeeId: "",
@@ -29,10 +27,6 @@ const EMPTY_FORM = {
   endDateKey: "",
   notes: "",
 };
-
-function getTodayKey() {
-  return format(new Date(), "yyyy-MM-dd");
-}
 
 function calculateDays(startDateKey, endDateKey) {
   if (!startDateKey || !endDateKey) {
@@ -44,14 +38,6 @@ function calculateDays(startDateKey, endDateKey) {
   const total = differenceInCalendarDays(endDate, startDate) + 1;
 
   return Number.isFinite(total) && total > 0 ? total : 0;
-}
-
-function calculateNoticeDays(startDateKey) {
-  if (!startDateKey) {
-    return null;
-  }
-
-  return differenceInCalendarDays(parseISO(startDateKey), parseISO(getTodayKey()));
 }
 
 export default function VacationPlanner() {
@@ -79,8 +65,6 @@ export default function VacationPlanner() {
     [activeEmployees, form.employeeId],
   );
   const requestedDays = calculateDays(form.startDateKey, form.endDateKey);
-  const noticeDays = calculateNoticeDays(form.startDateKey);
-  const hasNoticeWarning = noticeDays !== null && noticeDays < VACATION_NOTICE_DAYS;
   const canSave = Boolean(form.employeeId && form.startDateKey && form.endDateKey && requestedDays > 0);
 
   const clearNoticeTimers = useCallback(() => {
@@ -353,7 +337,7 @@ export default function VacationPlanner() {
                 <span className={styles.skeletonAvatar} />
                 <span className={styles.skeletonCell} />
                 <span className={styles.skeletonCell} />
-                <span className={styles.skeletonPill} />
+                <span className={styles.skeletonDays} />
                 <span className={styles.skeletonActions} />
               </div>
             ))}
@@ -367,7 +351,6 @@ export default function VacationPlanner() {
                   <th>Area / rol</th>
                   <th>Fechas</th>
                   <th>Dias</th>
-                  <th>Estado</th>
                   <th aria-label="Acciones" />
                 </tr>
               </thead>
@@ -388,13 +371,6 @@ export default function VacationPlanner() {
                     </td>
                     <td>{vacation.totalCalendarDays}</td>
                     <td>
-                      {vacation.warnings?.length ? (
-                        <span className={styles.warningPill}>{vacation.warnings[0]}</span>
-                      ) : (
-                        <span className={styles.okPill}>Anticipacion correcta</span>
-                      )}
-                    </td>
-                    <td>
                       <div className={styles.rowActions}>
                         <button type="button" onClick={() => openEditEditor(vacation)} aria-label="Editar vacaciones">
                           <Edit3 size={15} />
@@ -413,14 +389,14 @@ export default function VacationPlanner() {
           <div className={styles.emptyState}>
             <Plane size={26} />
             <strong>No hay vacaciones registradas para este mes.</strong>
-            <span>Agrega las solicitudes aprobadas antes de armar el horario.</span>
+            <span>Agrega los registros de vacaciones antes de armar el horario.</span>
           </div>
         )}
       </section>
 
       <CatalogDrawer
         isOpen={isEditorOpen}
-        eyebrow={form.id ? "Editar solicitud" : "Nueva solicitud"}
+        eyebrow={form.id ? "Editar registro" : "Nuevo registro"}
         title={form.id ? "Editar vacaciones" : "Registrar vacaciones"}
         onClose={closeEditor}
       >
@@ -467,11 +443,6 @@ export default function VacationPlanner() {
 
             <div className={styles.formSummary}>
               <span>{requestedDays || 0} dias calendario</span>
-              {hasNoticeWarning ? (
-                <strong>No cumple los {VACATION_NOTICE_DAYS} dias de anticipacion.</strong>
-              ) : form.startDateKey ? (
-                <strong>Anticipacion correcta.</strong>
-              ) : null}
             </div>
           </fieldset>
 

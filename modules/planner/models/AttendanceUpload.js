@@ -109,6 +109,14 @@ const attendanceUploadSchema = new Schema(
       default: 0,
     },
     normalizedSnapshot: {
+      timeAdjustmentKey: {
+        type: String,
+        default: "",
+      },
+      timeAdjustmentMinutes: {
+        type: Number,
+        default: 0,
+      },
       summary: {
         totalEmployees: { type: Number, default: 0 },
         totalPunches: { type: Number, default: 0 },

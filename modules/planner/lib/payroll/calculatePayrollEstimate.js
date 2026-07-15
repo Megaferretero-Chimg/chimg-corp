@@ -55,7 +55,7 @@ function formatHours(hours) {
   return `${fullHours}h ${remainingMinutes}m`;
 }
 
-function formatDailyDiscount(absenceHours, lateMinutes) {
+function formatDailyDiscount(absenceHours, lateMinutes, regularShortfallMinutes = 0) {
   const parts = [];
 
   if (absenceHours > 0) {
@@ -64,6 +64,10 @@ function formatDailyDiscount(absenceHours, lateMinutes) {
 
   if (lateMinutes > 0) {
     parts.push(`${lateMinutes}m`);
+  }
+
+  if (regularShortfallMinutes > 0) {
+    parts.push(`${regularShortfallMinutes}m faltantes`);
   }
 
   return parts.length ? parts.join(" + ") : "--";
@@ -159,17 +163,28 @@ function resolveSupplementaryHours(day, employee) {
     return 0;
   }
 
-  if (day.savedSupplementaryDecision !== "supplementary") {
-    return 0;
+  if (day.savedAttendanceAdditionalResolved) {
+    return Math.max(0, Number(day.savedAttendanceSupplementaryMinutes) || 0) / 60;
   }
 
-  const savedMinutes = Math.max(0, Number(day.savedSupplementaryMinutes) || 0);
+  if (day.savedSupplementaryDecision) {
+    if (day.savedSupplementaryDecision !== "supplementary") {
+      return 0;
+    }
 
-  if (savedMinutes > 0) {
-    return savedMinutes / 60;
+    const savedMinutes = Math.max(0, Number(day.savedSupplementaryMinutes) || 0);
+
+    if (savedMinutes > 0) {
+      return savedMinutes / 60;
+    }
+
+    return Math.max(0, Number(day.savedSupplementaryHours) || 0);
   }
 
-  return Math.max(0, Number(day.savedSupplementaryHours) || 0);
+  const detectedMinutes = Math.max(0, Number(day.extraWorkedMinutes) || 0);
+  const plannedMinutes = Math.max(0, Number(day.schedule?.authorizedExtraMinutes) || 0);
+
+  return Math.min(detectedMinutes, plannedMinutes) / 60;
 }
 
 function resolveAbsenceHours(day, employee) {
@@ -207,6 +222,22 @@ function resolveLateDiscountMinutes(day) {
   }
 
   return Math.max(0, Number(day.savedLateMinutes || day.lateArrivalMinutes) || 0);
+}
+
+function resolveRegularShortfallMinutes(day, employee, absenceHours) {
+  if (isPlannedAttendanceExempt(employee) || absenceHours > 0) return 0;
+  if (day.schedule?.dayType !== "workday") return 0;
+  if (day.needsManualDayReview) return 0;
+
+  const scheduledMinutes = Math.max(0, Number(day.scheduledWorkedMinutes) || 0);
+  const plannedSupplementaryMinutes = Math.max(0, Number(day.schedule?.authorizedExtraMinutes) || 0);
+  const plannedRegularMinutes = Math.min(
+    REGULAR_DAILY_HOURS * 60,
+    Math.max(0, scheduledMinutes - plannedSupplementaryMinutes),
+  );
+  const workedRegularMinutes = Math.max(0, Number(day.baseWorkedMinutes) || 0);
+
+  return Math.max(0, plannedRegularMinutes - workedRegularMinutes);
 }
 
 function resolveStatus(day, extraordinaryHours, supplementaryHours, absenceHours, lateDiscountMinutes, employee) {
@@ -261,6 +292,7 @@ export default function calculatePayrollEstimate({
   punches,
   schedules,
   supplementaryByDate = new Map(),
+  attendanceDecisionsByDate = new Map(),
   lateByDate = new Map(),
   incompleteDayByDate = new Map(),
   scheduleRules,
@@ -281,6 +313,7 @@ export default function calculatePayrollEstimate({
     .filter((day) => !terminationDateKey || day.dateKey <= terminationDateKey)
     .map((day) => {
       const saved = supplementaryByDate.get(day.dateKey);
+      const attendanceDecision = attendanceDecisionsByDate.get(day.dateKey);
       const savedLate = lateByDate.get(day.dateKey);
 
       return {
@@ -288,6 +321,8 @@ export default function calculatePayrollEstimate({
         savedSupplementaryDecision: saved?.decision || "",
         savedSupplementaryHours: saved?.candidateHours || 0,
         savedSupplementaryMinutes: saved?.candidateMinutes || 0,
+        savedAttendanceAdditionalResolved: attendanceDecision?.additionalResolved === true,
+        savedAttendanceSupplementaryMinutes: attendanceDecision?.authorizedSupplementaryMinutes || 0,
         savedLateConfirmation: savedLate?.confirmed || false,
         savedLateMinutes: savedLate?.lateMinutes || 0,
         savedIncompleteDayDecision: incompleteDayByDate.get(day.dateKey)?.decision || "",
@@ -303,10 +338,12 @@ export default function calculatePayrollEstimate({
   let supplementaryHoursTotal = 0;
   let extraordinaryHoursTotal = 0;
   let lateDiscountMinutesTotal = 0;
+  let regularShortfallMinutesTotal = 0;
   let basePaidHoursTotal = 0;
   let basePayTotal = 0;
   let absenceDiscount = 0;
   let lateDiscountAmount = 0;
+  let regularShortfallDiscount = 0;
   let supplementaryPay = 0;
   let extraordinaryPay = 0;
 
@@ -315,6 +352,8 @@ export default function calculatePayrollEstimate({
     const supplementaryHours = resolveSupplementaryHours(day, employee);
     const absenceHours = resolveAbsenceHours(day, employee);
     const lateDiscountMinutes = resolveLateDiscountMinutes(day);
+    const detectedRegularShortfallMinutes = resolveRegularShortfallMinutes(day, employee, absenceHours);
+    const regularShortfallMinutes = Math.max(0, detectedRegularShortfallMinutes - lateDiscountMinutes);
     const normalPaidHours =
       day.schedule?.dayType === "vacation" || day.schedule?.dayType === "holiday"
         ? REGULAR_DAILY_HOURS
@@ -329,6 +368,7 @@ export default function calculatePayrollEstimate({
     const basePayAmount = normalPaidHours * hourlyRate;
     const deductionAmount = absenceHours > 0 ? dailyRate : 0;
     const lateAmount = (lateDiscountMinutes / 60) * hourlyRate;
+    const regularShortfallAmount = (regularShortfallMinutes / 60) * hourlyRate;
     const supplementaryAmount = supplementaryHours * calculatePayrollAdditionalRate(hourlyRate, SUPPLEMENTARY_PAY_MULTIPLIER);
     const extraordinaryAmount = extraordinaryHours * calculatePayrollAdditionalRate(hourlyRate, EXTRAORDINARY_PAY_MULTIPLIER);
     const adjustmentAmount =
@@ -338,10 +378,12 @@ export default function calculatePayrollEstimate({
     supplementaryHoursTotal += supplementaryHours;
     extraordinaryHoursTotal += extraordinaryHours;
     lateDiscountMinutesTotal += lateDiscountMinutes;
+    regularShortfallMinutesTotal += regularShortfallMinutes;
     basePaidHoursTotal += normalPaidHours;
     basePayTotal += basePayAmount;
     absenceDiscount += deductionAmount;
     lateDiscountAmount += lateAmount;
+    regularShortfallDiscount += regularShortfallAmount;
     supplementaryPay += supplementaryAmount;
     extraordinaryPay += extraordinaryAmount;
 
@@ -359,14 +401,22 @@ export default function calculatePayrollEstimate({
       extraordinaryHours,
       absenceHours,
       lateDiscountMinutes,
-      discountLabel: formatDailyDiscount(absenceHours, lateDiscountMinutes),
+      regularShortfallMinutes,
+      regularShortfallLabel: `${regularShortfallMinutes}m`,
+      regularShortfallAmount,
+      regularShortfallAmountLabel: formatMoney(hasSalaryConfigured ? regularShortfallAmount : 0),
+      discountLabel: formatDailyDiscount(absenceHours, lateDiscountMinutes, regularShortfallMinutes),
       adjustmentAmount,
       adjustmentAmountLabel: formatMoney(hasSalaryConfigured ? adjustmentAmount : 0),
     };
   });
 
+  const totalDiscount = absenceDiscount + lateDiscountAmount + regularShortfallDiscount;
+  const estimatedBaseSalary = hasSalaryConfigured
+    ? Math.max(0, salary - totalDiscount)
+    : null;
   const estimatedSalary = hasSalaryConfigured
-    ? salary + supplementaryPay + extraordinaryPay
+    ? estimatedBaseSalary + supplementaryPay + extraordinaryPay
     : null;
 
   return {
@@ -412,6 +462,14 @@ export default function calculatePayrollEstimate({
       absenceDiscountLabel: formatMoney(hasSalaryConfigured ? absenceDiscount : 0),
       lateDiscountAmount,
       lateDiscountAmountLabel: formatMoney(hasSalaryConfigured ? lateDiscountAmount : 0),
+      regularShortfallMinutes: regularShortfallMinutesTotal,
+      regularShortfallMinutesLabel: `${regularShortfallMinutesTotal}m`,
+      regularShortfallDiscount,
+      regularShortfallDiscountLabel: formatMoney(hasSalaryConfigured ? regularShortfallDiscount : 0),
+      totalDiscount,
+      totalDiscountLabel: formatMoney(hasSalaryConfigured ? totalDiscount : 0),
+      estimatedBaseSalary,
+      estimatedBaseSalaryLabel: formatMoney(hasSalaryConfigured ? estimatedBaseSalary : 0),
       supplementaryPay,
       supplementaryPayLabel: formatMoney(hasSalaryConfigured ? supplementaryPay : 0),
       extraordinaryPay,

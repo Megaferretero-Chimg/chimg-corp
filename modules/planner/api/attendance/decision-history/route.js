@@ -12,6 +12,12 @@ import {
 import { serializeOperationalException } from "@/modules/planner/lib/planning/exceptions";
 import { deleteExceptionManualPunch } from "@/modules/planner/lib/planning/exceptionPunches";
 import { AttendanceDayDecision, OperationalException } from "@/modules/planner/models";
+import {
+  findLaterAttendanceDecisionForException,
+  findLaterExceptionForDay,
+  findLaterExceptionForException,
+} from "@/modules/planner/lib/attendance/decisionDependencies";
+import { removeCurrentAttendanceDecisionRevision } from "@/modules/planner/lib/attendance/dayDecisionRevisions";
 
 const DECISION_LABELS = {
   full: "Tiempo registrado aprobado",
@@ -71,6 +77,10 @@ function exceptionSummary(exception = {}) {
     return exception.allowSupplementaryTime
       ? "Jornada calculada con la primera y última picada"
       : "Jornada reconocida sin crear picadas ficticias";
+  }
+
+  if (exception.type === "schedule_change" && exception.plannedDayType === "off_day") {
+    return "Planificación cambiada a descanso";
   }
 
   if (exception.type === "schedule_change" && exception.plannedStartTime && exception.plannedEndTime) {
@@ -276,9 +286,32 @@ export async function GET(request) {
         });
       });
 
+    const activeHistory = history
+      .filter((item) => item.status === "active")
+      .sort((left, right) => new Date(right.happenedAt || 0) - new Date(left.happenedAt || 0));
+    const latestActiveId = activeHistory[0]?.id || "";
+
+    history.forEach((item) => {
+      if (item.status === "active" && item.id !== latestActiveId) {
+        item.canDelete = false;
+        item.canPurge = false;
+        item.purgeTarget = null;
+        item.dependencyMessage = `Primero debes desactivar “${activeHistory[0]?.title || "la resolución posterior"}”.`;
+      }
+
+      if (item.status === "replaced" && activeHistory.length) {
+        item.canPurge = false;
+        item.purgeTarget = null;
+        item.dependencyMessage = "Este antecedente sostiene una resolución vigente y no se puede eliminar todavía.";
+      }
+    });
+
     history.sort((left, right) => new Date(right.happenedAt || 0) - new Date(left.happenedAt || 0));
 
-    return NextResponse.json({ history, canPurgeHistory: isAdmin });
+    return NextResponse.json(
+      { history, canPurgeHistory: isAdmin },
+      { headers: { "Cache-Control": "no-store" } },
+    );
   } catch (error) {
     return NextResponse.json(
       { error: error.message || "No se pudo cargar el historial de decisiones." },
@@ -333,6 +366,29 @@ export async function DELETE(request) {
         return NextResponse.json({ error: "Antecedente no encontrado." }, { status: 404 });
       }
 
+      if (["attendanceDayDecision.upsert", "operationalException.update"].includes(auditLog.action)) {
+        const [activeDecision, activeExceptions] = await Promise.all([
+          AttendanceDayDecision.findOne({ employee: employeeId, dateKey }).select("_id").lean(),
+          OperationalException.find({
+            employee: employeeId,
+            planningSource: "attendance_comparison",
+            status: { $ne: "void" },
+            resolution: { $ne: "pending" },
+            $or: [
+              { dateKey },
+              { dateKey: { $lte: dateKey }, endDateKey: { $gte: dateKey } },
+            ],
+          }).select("_id applicableWeekdays dateKey endDateKey").lean(),
+        ]);
+        const hasActiveException = activeExceptions.some((exception) => exceptionAppliesToDate(exception, dateKey));
+
+        if (activeDecision || hasActiveException) {
+          return NextResponse.json({
+            error: "Este antecedente sostiene una resolución vigente. Desactiva primero las decisiones posteriores.",
+          }, { status: 409 });
+        }
+      }
+
       await AuditLog.deleteOne({ _id: auditLog._id });
     } else if (targetType === "attendance_record") {
       const decision = await AttendanceDayDecision.findOne({
@@ -345,10 +401,26 @@ export async function DELETE(request) {
         return NextResponse.json({ error: "Decisión vigente no encontrada." }, { status: 404 });
       }
 
-      await Promise.all([
-        AttendanceDayDecision.deleteOne({ _id: decision._id }),
-        AuditLog.deleteMany({ entityType: "attendanceDayDecision", entityId: targetId }),
-      ]);
+      const laterException = await findLaterExceptionForDay({
+        employeeId,
+        dateKey,
+        happenedAt: decision.updatedAt || decision.createdAt,
+      });
+
+      if (laterException) {
+        return NextResponse.json({
+          error: "Esta decisión tiene una resolución posterior. Elimina primero la decisión más reciente del día.",
+        }, { status: 409 });
+      }
+
+      await removeCurrentAttendanceDecisionRevision({
+        decision,
+        employeeId,
+        employeeName: decision.employeeName || "",
+        dateKey,
+        actor: user.employeeName || user.username || user.id,
+        permanent: true,
+      });
     } else if (targetType === "operational_exception") {
       const exception = await OperationalException.findOne({
         _id: targetId,
@@ -358,6 +430,17 @@ export async function DELETE(request) {
 
       if (!exception || !exceptionAppliesToDate(exception, dateKey)) {
         return NextResponse.json({ error: "Excepción operativa no encontrada." }, { status: 404 });
+      }
+
+      const [laterAttendanceDecision, laterException] = await Promise.all([
+        findLaterAttendanceDecisionForException(exception),
+        findLaterExceptionForException(exception),
+      ]);
+
+      if (laterAttendanceDecision || laterException) {
+        return NextResponse.json({
+          error: "Esta excepción tiene una resolución posterior. Elimina primero la decisión más reciente del día.",
+        }, { status: 409 });
       }
 
       await deleteExceptionManualPunch(exception);

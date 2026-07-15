@@ -158,7 +158,7 @@ export const ALL_ACCESS_PERMISSIONS = ACCESS_PERMISSION_CATALOG.flatMap((module)
   module.groups.flatMap((group) => group.permissions.map((permission) => permission.key)),
 );
 
-export const PAGE_PERMISSION_REQUIREMENTS = ACCESS_PERMISSION_CATALOG.flatMap((module) =>
+const PRIMARY_PAGE_PERMISSION_REQUIREMENTS = ACCESS_PERMISSION_CATALOG.flatMap((module) =>
   module.groups.flatMap((group) =>
     group.permissions
       .filter((permission) => permission.type === "page" && permission.path)
@@ -168,6 +168,101 @@ export const PAGE_PERMISSION_REQUIREMENTS = ACCESS_PERMISSION_CATALOG.flatMap((m
       })),
   ),
 ).sort((left, right) => right.path.length - left.path.length);
+
+export const ACCESS_PAGE_CATALOG = [
+  {
+    moduleKey: "company",
+    moduleLabel: "Empresa y configuración",
+    pages: [
+      ["Entrada al módulo", "/modules/company", "company.home.view"],
+      ["Inicio", "/modules/company/home", "company.home.view"],
+      ["Organización", "/modules/company/organization", "company.organization.view"],
+      ["Áreas", "/modules/company/areas", "company.areas.view"],
+      ["Cargos", "/modules/company/roles", "company.roles.view"],
+      ["Sucursales", "/modules/company/branches", "company.branches.view"],
+      ["Estructura organizacional", "/modules/company/structure", "company.structure.view"],
+      ["Empleados", "/modules/company/employees", "company.employees.view"],
+      ["Acceso", "/modules/company/access", "company.access.view"],
+      ["Usuarios", "/modules/company/users", "company.users.view"],
+      ["Roles de acceso", "/modules/company/permissions", "company.accessRoles.view"],
+    ],
+  },
+  {
+    moduleKey: "planner",
+    moduleLabel: "Planificación",
+    pages: [
+      ["Entrada al módulo", "/modules/planning", "planner.home.view"],
+      ["Inicio", "/modules/planning/home", "planner.home.view"],
+      ["Planificación semanal", "/modules/planning/schedules", "planner.schedules.view"],
+      ["Resumen de planificación", "/modules/planning/planning", "planner.schedules.summary.view"],
+      ["Planificación semanal (ruta auxiliar)", "/modules/planning/planning/weekly", "planner.schedules.view"],
+      ["Planificación mensual", "/modules/planning/planning/monthly", "planner.schedules.view"],
+      ["Detalle mensual por empleado", "/modules/planning/planning/monthly/[employeeId]", "planner.schedules.view"],
+      ["Vacaciones programadas", "/modules/planning/planning/time-off", "planner.timeOff.view"],
+      ["Feriados", "/modules/planning/planning/holidays", "planner.holidays.view"],
+      ["Pendientes de aprobación", "/modules/planning/updates", "planner.updates.view"],
+      ["Ajustes y excepciones", "/modules/planning/planning/exceptions", "planner.exceptions.view"],
+      ["Empleados de planificación", "/modules/planning/employees", "planner.schedules.view"],
+      ["Asistencia", "/modules/planning/attendance", "planner.attendance.view"],
+      ["Cargar picadas", "/modules/planning/attendance/uploads", "planner.attendance.view"],
+      ["Detalle de carga", "/modules/planning/attendance/uploads/[id]", "planner.attendance.view"],
+      ["Cargas (ruta auxiliar)", "/modules/planning/uploads", "planner.attendance.view"],
+      ["Detalle de carga (ruta auxiliar)", "/modules/planning/uploads/[id]", "planner.attendance.view"],
+      ["Revisar picadas", "/modules/planning/attendance/review", "planner.attendance.view"],
+      ["Horario vs. picadas", "/modules/planning/attendance/comparison", "planner.attendance.view"],
+      ["Comparación por empleado", "/modules/planning/attendance/comparison/[employeeId]", "planner.attendance.view"],
+      ["Cierre mensual de asistencia", "/modules/planning/attendance/monthly-closure", "planner.attendance.view"],
+      ["Control operativo", "/modules/planning/operations", "planner.operations.view"],
+      ["Cobertura", "/modules/planning/operations/coverage", "planner.operations.view"],
+      ["Incidencias", "/modules/planning/operations/incidents", "planner.operations.view"],
+      ["Seguimiento semanal", "/modules/planning/operations/weekly-tracking", "planner.operations.view"],
+      ["Pre-nómina", "/modules/planning/operations/monthly-payroll", "planner.operations.view"],
+      ["Resumen mensual", "/modules/planning/operations/monthly-summary", "planner.operations.view"],
+      ["Detalle de resumen mensual", "/modules/planning/operations/monthly-summary/[month]", "planner.operations.view"],
+      ["Cierre mensual operativo", "/modules/planning/operations/monthly-closure", "planner.operations.view"],
+      ["Revisión", "/modules/planning/review", "planner.operations.view"],
+      ["Cierre", "/modules/planning/closure", "planner.operations.view"],
+      ["Conciliación", "/modules/planning/reconciliation", "planner.operations.view"],
+      ["Nómina y costos", "/modules/planning/payroll", "planner.payroll.view"],
+      ["Estimación de nómina", "/modules/planning/payroll/estimate", "planner.payroll.view"],
+      ["Nómina por empleado", "/modules/planning/payroll/by-employee", "planner.payroll.view"],
+      ["Horas extra", "/modules/planning/payroll/overtime", "planner.payroll.view"],
+      ["Costo planificado", "/modules/planning/payroll/planned-cost", "planner.payroll.view"],
+      ["Análisis de costo planificado", "/modules/planning/payroll/planned-cost/analysis", "planner.payroll.view"],
+      ["Costo ejecutado", "/modules/planning/payroll/executed-cost", "planner.payroll.view"],
+      ["Reportes", "/modules/planning/reports", "planner.history.view"],
+      ["Reporte mensual", "/modules/planning/reports/monthly", "planner.history.view"],
+      ["Reporte semanal", "/modules/planning/reports/weekly", "planner.history.view"],
+      ["Reporte por empleado", "/modules/planning/reports/employees", "planner.history.view"],
+      ["Reporte por sucursal", "/modules/planning/reports/branches", "planner.history.view"],
+      ["Reporte organizacional", "/modules/planning/reports/organization", "planner.history.view"],
+      ["Planificado vs. real", "/modules/planning/reports/plan-vs-real", "planner.history.view"],
+      ["Historial operativo", "/modules/planning/history", "planner.history.view"],
+      ["Configuración de planificación", "/modules/planning/settings", "planner.settings.view"],
+      ["Plantillas de horarios", "/modules/planning/settings/base-schedules", "planner.settings.view"],
+      ["Horarios por cargo", "/modules/planning/settings/role-schedules", "planner.settings.view"],
+      ["Reglas de horario", "/modules/planning/settings/schedule-rules", "planner.settings.view"],
+      ["Áreas de planificación", "/modules/planning/settings/areas", "planner.settings.view"],
+      ["Sucursales de planificación", "/modules/planning/settings/branches", "planner.settings.view"],
+      ["Cargos de planificación", "/modules/planning/settings/roles", "planner.settings.view"],
+      ["Usuarios de planificación", "/modules/planning/settings/users", "planner.settings.view"],
+      ["Feriados de configuración", "/modules/planning/settings/holidays", "planner.settings.view"],
+      ["Autorizaciones (redirección)", "/modules/planning/settings/authorizations", "planner.settings.view"],
+      ["Reglas laborales (redirección)", "/modules/planning/settings/labor-rules", "planner.settings.view"],
+      ["Reglas de picadas (redirección)", "/modules/planning/settings/punch-rules", "planner.settings.view"],
+    ],
+  },
+].map((module) => ({
+  ...module,
+  pages: module.pages.map(([label, path, permission]) => ({ label, path, permission })),
+}));
+
+export const PAGE_PERMISSION_REQUIREMENTS = ACCESS_PAGE_CATALOG.flatMap((module) =>
+  module.pages.map(({ path, permission }) => ({
+    path: path.replace(/\[[^/]+\]/g, "").replace(/\/$/, ""),
+    permission,
+  })),
+).concat(PRIMARY_PAGE_PERMISSION_REQUIREMENTS).sort((left, right) => right.path.length - left.path.length);
 
 const KNOWN_PERMISSION_SET = new Set(ALL_ACCESS_PERMISSIONS);
 const ADMIN_ACCESS_ROLE_CODES = new Set(["admin", "administrator", "administrador"]);
@@ -186,6 +281,13 @@ export function isAdminAccessUser(user = {}) {
 
 export const DEFAULT_ROLE_PERMISSIONS = {
   admin: ALL_ACCESS_PERMISSIONS,
+  branch_manager: [
+    "planner.schedules.view",
+    "planner.schedules.manage",
+    "planner.exceptions.view",
+    "planner.exceptions.manage",
+  ],
+  payroll_manager: ALL_ACCESS_PERMISSIONS.filter((permission) => permission.startsWith("planner.")),
   supervisor: [
     "company.home.view",
     "company.employees.view",

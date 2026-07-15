@@ -693,7 +693,13 @@ function buildFixedScheduleFallbackAssignments({ employees = [], rolesByCode = n
         template: template._id,
         templateName: template.name || "",
         rotationGroup: template.rotationGroup || "",
-        generatedDays: buildGeneratedDays(fallbackMonthKey, template, holidaysByMonth.get(fallbackMonthKey) || []),
+        generatedDays: buildGeneratedDays(
+          fallbackMonthKey,
+          template,
+          holidaysByMonth.get(fallbackMonthKey) || [],
+          [],
+          { weekdaysOnly: true },
+        ),
         weeklyPlan: [],
         source: "fixed_template",
       });
@@ -1155,10 +1161,17 @@ function buildExceptionPlannedScheduleMap(exceptions = []) {
     if (!["planning_change", "external_work"].includes(effect)) return;
     if (exception.scope === "other") return;
 
-    const startTime = exception.plannedStartTime || (effect === "external_work" ? exception.startTime : "");
-    const endTime = exception.plannedEndTime || (effect === "external_work" ? exception.endTime : "");
+    const plannedDayType = effect === "planning_change" && exception.plannedDayType === "off_day"
+      ? "off_day"
+      : "workday";
+    const startTime = plannedDayType === "off_day"
+      ? ""
+      : exception.plannedStartTime || (effect === "external_work" ? exception.startTime : "");
+    const endTime = plannedDayType === "off_day"
+      ? ""
+      : exception.plannedEndTime || (effect === "external_work" ? exception.endTime : "");
 
-    if (!startTime || !endTime) return;
+    if (plannedDayType !== "off_day" && (!startTime || !endTime)) return;
 
     const employeeId = toId(exception.employee);
     if (!employeeId || !exception.dateKey) return;
@@ -1186,7 +1199,7 @@ function buildExceptionPlannedScheduleMap(exceptions = []) {
       schedulesByKey.set(`${employeeId}|${dateKey}`, {
         dateKey,
         dayOfWeek,
-        dayType: "workday",
+        dayType: plannedDayType,
         startTime,
         endTime,
         lunchStartTime,
@@ -1336,9 +1349,11 @@ function applyAuthorizedExternalWorkFallbackSchedules(days = [], authorizedExter
 function applyExceptionPlannedSchedule(day, plannedSchedule) {
   if (!plannedSchedule) return day;
   const isPlanningChange = plannedSchedule.effect === "planning_change";
-  const plannedDayType = isPlanningChange && isWeekendDateKey(day?.dateKey)
-    ? "weekend_overtime"
-    : plannedSchedule.dayType || day.dayType || "workday";
+  const plannedDayType = plannedSchedule.dayType === "off_day"
+    ? "off_day"
+    : isPlanningChange && isWeekendDateKey(day?.dateKey)
+      ? "weekend_overtime"
+      : plannedSchedule.dayType || day.dayType || "workday";
   const previousPlanningTags = new Set([
     "Sin picadas",
     "Picadas incompletas",
@@ -1457,7 +1472,12 @@ function applyWeeklyExtraByAttendance(days = []) {
         }
 
         if (!hasPlannedSchedule) {
-          const tags = [...new Set([...(day.tags || []), "Trabajo sin horario"])];
+          const tags = [
+            ...new Set([
+              ...(day.tags || []).filter((tag) => !UNPLANNED_WORK_TAGS.has(tag)),
+              "Trabajo sin horario",
+            ]),
+          ];
 
           byDate.set(day.dateKey, {
             ...day,
@@ -2069,7 +2089,10 @@ function applyDayDecision(day, decision) {
   const lateAdjustedTags = adjustedTags.filter((tag) => tag !== "Atraso");
   const hasUnauthorizedSupplementaryTime = authorizedSupplementaryMinutes < detectedSupplementaryMinutes;
   const hasUnauthorizedExtraordinaryTime = authorizedExtraordinaryMinutes < detectedExtraordinaryMinutes;
-  const hasUnauthorizedExtraTime = hasUnauthorizedSupplementaryTime || hasUnauthorizedExtraordinaryTime;
+  const additionalApprovalToleranceMinutes = Math.max(0, Number(day.lateDepartureToleranceMinutes) || 0);
+  const hasApprovedAdditionalTime =
+    authorizedSupplementaryMinutes - Math.max(0, Number(day.plannedSupplementaryMinutes) || 0) > additionalApprovalToleranceMinutes ||
+    authorizedExtraordinaryMinutes - Math.max(0, Number(day.plannedExtraordinaryMinutes) || 0) > additionalApprovalToleranceMinutes;
   const shouldShowLateWarning =
     adjustedLateMinutes > 0 &&
     (Number(day.entryLateMinutes ?? day.lateMinutes) || 0) > (Number(day.graceMinutes) || 0);
@@ -2182,14 +2205,18 @@ function applyDayDecision(day, decision) {
         : effectiveDecision.decision === "justify_late"
           ? "Atraso justificado"
         : effectiveDecision.decision === "full"
-          ? "Todo autorizado"
+          ? hasApprovedAdditionalTime
+            ? "Aprobado"
+            : "Revisado"
         : effectiveDecision.decision === "planned"
             ? isAutomaticDecision
               ? "Registrado"
-              : hasUnauthorizedExtraTime
-                ? "Según plan"
-                : "Planificado"
-            : "Ajustado",
+              : hasApprovedAdditionalTime
+                ? "Aprobado"
+                : "Revisado"
+            : hasApprovedAdditionalTime
+              ? "Aprobado"
+              : "Revisado",
       authorizedSupplementaryMinutes,
       authorizedExtraordinaryMinutes,
       detectedLateMinutes,
@@ -2394,7 +2421,8 @@ function compareDay(day, punches, employee = {}, scheduleRules = {}) {
       !isWorkingDay);
   const isWeekendOrHoliday = isWeekendDateKey(day.dateKey) || day?.isHoliday;
   const plannedLunchDurationMinutes = resolvePlannedLunchDurationMinutes(day);
-  const hasPlannedAttendanceSchedule = hasAssignedSchedule || isWorkingDay || isPlannedHolidayWork;
+  const hasScheduledTimeRange = Boolean(day?.startTime && day?.endTime);
+  const hasPlannedAttendanceSchedule = hasScheduledTimeRange;
   const hasLunch = hasPlannedAttendanceSchedule && plannedLunchDurationMinutes > 0;
   const hasHolidayLunchPunches = day?.isHoliday && punchCount >= 4;
   const expectedPunches = hasPlannedAttendanceSchedule ? (hasLunch ? 4 : 2) : 0;
@@ -2471,12 +2499,13 @@ function compareDay(day, punches, employee = {}, scheduleRules = {}) {
   }
 
   const hasWorkWithoutAssignedSchedule =
-    !hasAssignedSchedule &&
+    !hasScheduledTimeRange &&
     punchCount > 0 &&
     !shouldUsePlannedAttendance &&
     !shouldIgnorePunchesForPayroll;
 
   if (hasWorkWithoutAssignedSchedule) {
+    tags = tags.filter((tag) => !["Picadas de más", "No planificado"].includes(tag));
     tags.push("Trabajo sin horario");
   }
 
@@ -2510,6 +2539,7 @@ function compareDay(day, punches, employee = {}, scheduleRules = {}) {
   }
 
   if (
+    !hasWorkWithoutAssignedSchedule &&
     hasAssignedSchedule &&
     !isWorkingDay &&
     !isPlannedHolidayWork &&
@@ -2551,24 +2581,6 @@ function compareDay(day, punches, employee = {}, scheduleRules = {}) {
     if (earlyLeaveIsOnlyLunchOverage) {
       earlyLeaveMinutes = 0;
     } else if (earlyLeaveMinutes > 0 && earlyLeaveAffectsPlannedTime) {
-      tags.push("Salida anticipada");
-    }
-  }
-
-  if (
-    !hasWorkWithoutAssignedSchedule &&
-    isWorkingDay &&
-    plannedMinutes.plannedRegularMinutes > 0 &&
-    workedMinutes < plannedMinutes.plannedRegularMinutes &&
-    !shouldUsePlannedAttendance &&
-    !hasIncompleteStructure &&
-    !hasInsufficientTwoPunchSpan &&
-    scheduleAffectsSalary
-  ) {
-    const regularDeficitMinutes = plannedMinutes.plannedRegularMinutes - workedMinutes;
-    earlyLeaveMinutes = Math.max(earlyLeaveMinutes, regularDeficitMinutes);
-
-    if (!tags.includes("Salida anticipada")) {
       tags.push("Salida anticipada");
     }
   }
@@ -2635,7 +2647,7 @@ function compareDay(day, punches, employee = {}, scheduleRules = {}) {
       : plannedMinutes.scheduledWorkedMinutes
     : 0;
 
-  return suppressSecondaryAttendanceIssues({
+  return {
     dateKey: day.dateKey,
     dateLabel: formatEcuadorDate(new Date(`${day.dateKey}T12:00:00.000Z`)),
     dayLabel: day.label || "",
@@ -2643,7 +2655,7 @@ function compareDay(day, punches, employee = {}, scheduleRules = {}) {
     dayTypeLabel: displayDayTypeLabel,
     source: day.source || "calendar",
     isHoliday: Boolean(day.isHoliday),
-    plannedScheduleExists: hasAssignedScheduleDay(day),
+    plannedScheduleExists: hasPlannedAttendanceSchedule || isPlannedHolidayWork,
     plannedTemplateId: day.plannedTemplateId || "",
     plannedTemplateName: day.plannedTemplateName || "",
     holidayPlannedStartTime: day.holidayPlannedStartTime || "",
@@ -2719,7 +2731,7 @@ function compareDay(day, punches, employee = {}, scheduleRules = {}) {
     justifiedWorkIntervals: [],
     tags,
     hasIssue,
-  });
+  };
 }
 
 function emptyEmployeeSummary() {
@@ -2775,11 +2787,14 @@ export async function GET(request) {
     const areaCode = String(searchParams.get("areaCode") || "").trim();
     const roleCode = String(searchParams.get("roleCode") || "").trim();
     const employeeId = String(searchParams.get("employeeId") || "").trim();
+    const summaryOnly = searchParams.get("summaryOnly") === "1";
     const start = makeEcuadorDate(year, monthIndex, 1);
     const end = makeEcuadorDate(year, monthIndex + 1, 1);
     const { contextStart, contextEnd } = getWeekContextRange(start, end);
     const contextStartKey = formatEcuadorDateKey(contextStart);
     const contextEndKey = formatEcuadorDateKey(contextEnd);
+    const startKey = formatEcuadorDateKey(start);
+    const endKey = formatEcuadorDateKey(end);
     const employeeQuery = buildEmployeeActiveInMonthQuery(start);
 
     if (branchCode) {
@@ -2799,19 +2814,53 @@ export async function GET(request) {
     }
 
     const [allEmployees, roles, holidays, vacations, scheduleRuleConfig] = await Promise.all([
-      Employee.find(employeeQuery).sort({ branchName: 1, areaName: 1, roleName: 1, fullName: 1 }).lean(),
-      Role.find({}).lean(),
+      Employee.find(employeeQuery)
+        .select({
+          fullName: 1,
+          dni: 1,
+          branchCode: 1,
+          branchName: 1,
+          areaCode: 1,
+          areaName: 1,
+          roleCode: 1,
+          roleName: 1,
+          salary: 1,
+          employmentStartDate: 1,
+          hireDate: 1,
+          startDate: 1,
+          terminationDate: 1,
+          isActive: 1,
+        })
+        .sort({ branchName: 1, areaName: 1, roleName: 1, fullName: 1 })
+        .lean(),
+      Role.find({})
+        .select({
+          code: 1,
+          name: 1,
+          areaCode: 1,
+          areaName: 1,
+          punchesAffectHours: 1,
+          scheduleMode: 1,
+          fixedScheduleTemplate: 1,
+          fixedScheduleTemplateName: 1,
+          fixedScheduleAreaCode: 1,
+          fixedScheduleAreaName: 1,
+          fixedScheduleRoleCode: 1,
+          fixedScheduleRoleName: 1,
+          fixedScheduleRotationGroup: 1,
+          fixedScheduleWeeklyRows: 1,
+        })
+        .lean(),
       Holiday.find({
         dateKey: {
           $gte: contextStartKey,
           $lt: contextEndKey,
         },
-      }).lean(),
+      }).select({ dateKey: 1 }).lean(),
       VacationRequest.find({
-        status: "scheduled",
         startDate: { $lt: contextEnd },
         endDate: { $gte: contextStart },
-      }).lean(),
+      }).select({ employee: 1, startDateKey: 1, endDateKey: 1 }).lean(),
       ScheduleRuleConfig.findOne({ key: "default" }).lean(),
     ]);
     const scheduleRules = {
@@ -2837,6 +2886,25 @@ export async function GET(request) {
       };
     }).filter((employee) => employee.punchesAffectHours !== false);
     const employeeIds = employees.map((employee) => employee._id);
+    const coverageBranchCodes = [...new Set(employees.map((employee) => employee.branchCode).filter(Boolean))];
+    const coverageBranchNames = [...new Set(employees.map((employee) => employee.branchName).filter(Boolean))];
+    const coverageEmployeeQuery = buildEmployeeActiveInMonthQuery(start);
+
+    if (coverageBranchCodes.length || coverageBranchNames.length) {
+      coverageEmployeeQuery.$and.push({
+        $or: [
+          ...(coverageBranchCodes.length ? [{ branchCode: { $in: coverageBranchCodes } }] : []),
+          ...(coverageBranchNames.length ? [{ branchName: { $in: coverageBranchNames } }] : []),
+        ],
+      });
+    }
+
+    const needsExpandedCoverage = Boolean(areaCode || roleCode || employeeId);
+    const coverageEmployeeIds = employeeIds.length
+      ? needsExpandedCoverage
+        ? await Employee.distinct("_id", coverageEmployeeQuery)
+        : employeeIds
+      : [];
     const contextMonthKeys = new Set();
     const contextCursorEnd = contextEnd;
 
@@ -2852,7 +2920,14 @@ export async function GET(request) {
           .map((role) => role.fixedScheduleTemplate.toString()),
       ),
     ];
-    const [manualAssignments, fixedScheduleTemplates] = employeeIds.length
+    const [
+      manualAssignments,
+      fixedScheduleTemplates,
+      punches,
+      latestCoveragePunch,
+      dayDecisions,
+      operationalExceptions,
+    ] = employeeIds.length
       ? await Promise.all([
           ScheduleAssignment.find({
             employee: { $in: employeeIds },
@@ -2864,55 +2939,37 @@ export async function GET(request) {
                 isActive: { $ne: false },
               }).lean()
             : [],
-        ])
-      : [[], []];
-    const employeesById = new Map(employees.map((employee) => [toId(employee), employee]));
-    const currentManualAssignments = manualAssignments.filter((assignment) =>
-      assignmentMatchesCurrentEmployeeOrg(assignment, employeesById.get(toId(assignment.employee))),
-    );
-    const fallbackAssignments = buildFixedScheduleFallbackAssignments({
-      employees,
-      rolesByCode,
-      templates: fixedScheduleTemplates,
-      monthKeys: [...contextMonthKeys],
-      holidays,
-    });
-    const assignments = [...fallbackAssignments, ...currentManualAssignments];
-    const manualDaysByEmployeeDate = new Map();
-
-    currentManualAssignments.forEach((assignment) => {
-      const employeeKey = toId(assignment.employee);
-
-      if (!employeeKey || !Array.isArray(assignment.generatedDays)) return;
-
-      assignment.generatedDays.forEach((day) => {
-        if (!day?.dateKey) return;
-
-        manualDaysByEmployeeDate.set(`${employeeKey}|${day.dateKey}`, {
-          ...day,
-          source: day.source || "manual_override",
-        });
-      });
-    });
-    const punches = employeeIds.length
-      ? await AttendancePunch.find({
-          employee: { $in: employeeIds },
-          punchedAt: {
-            $gte: contextStart,
-            $lt: contextEnd,
-          },
-        }).sort({ punchedAt: 1 }).lean()
-      : [];
-    const assignmentsByEmployeeMonth = new Map(
-      assignments.map((assignment) => [`${toId(assignment.employee)}|${assignment.monthKey}`, assignment]),
-    );
-    const [dayDecisions, operationalExceptions] = employeeIds.length
-      ? await Promise.all([
+          AttendancePunch.find({
+            employee: { $in: employeeIds },
+            punchedAt: {
+              $gte: contextStart,
+              $lt: contextEnd,
+            },
+          })
+            .select({
+              employee: 1,
+              punchedAt: 1,
+              source: 1,
+              isIgnored: 1,
+              ignoredAt: 1,
+              ignoredBy: 1,
+              ignoredReason: 1,
+            })
+            .sort({ punchedAt: 1 })
+            .lean(),
+          AttendancePunch.findOne({
+            employee: { $in: coverageEmployeeIds },
+            isIgnored: { $ne: true },
+            punchedAt: {
+              $gte: contextStart,
+              $lt: contextEnd,
+            },
+          }).sort({ punchedAt: -1 }).select({ punchedAt: 1 }).lean(),
           AttendanceDayDecision.find({
             employee: { $in: employeeIds },
-            date: {
-              $gte: start,
-              $lt: end,
+            dateKey: {
+              $gte: startKey,
+              $lt: endKey,
             },
           }).lean(),
           OperationalException.find({
@@ -2927,6 +2984,7 @@ export async function GET(request) {
                     plannedStartTime: { $type: "string", $ne: "" },
                     plannedEndTime: { $type: "string", $ne: "" },
                   },
+                  { plannedDayType: "off_day" },
                 ],
               },
               {
@@ -2938,7 +2996,48 @@ export async function GET(request) {
             ],
           }).lean(),
         ])
-      : [[], []];
+      : [[], [], [], null, [], []];
+    const employeesById = new Map(employees.map((employee) => [toId(employee), employee]));
+    const currentManualAssignments = manualAssignments.filter((assignment) =>
+      assignmentMatchesCurrentEmployeeOrg(assignment, employeesById.get(toId(assignment.employee))),
+    );
+    const fallbackAssignments = buildFixedScheduleFallbackAssignments({
+      employees,
+      rolesByCode,
+      templates: fixedScheduleTemplates,
+      monthKeys: [...contextMonthKeys],
+      holidays,
+    });
+    const fixedEmployeeIds = new Set(
+      employees
+        .filter((employee) =>
+          rolesByCode.get(String(employee.roleCode || "").trim().toUpperCase())?.scheduleMode === "fixed",
+        )
+        .map((employee) => toId(employee)),
+    );
+    const effectiveManualAssignments = currentManualAssignments.filter((assignment) =>
+      !fixedEmployeeIds.has(toId(assignment.employee)),
+    );
+    const assignments = [...fallbackAssignments, ...effectiveManualAssignments];
+    const manualDaysByEmployeeDate = new Map();
+
+    effectiveManualAssignments.forEach((assignment) => {
+      const employeeKey = toId(assignment.employee);
+
+      if (!employeeKey || !Array.isArray(assignment.generatedDays)) return;
+
+      assignment.generatedDays.forEach((day) => {
+        if (!day?.dateKey) return;
+
+        manualDaysByEmployeeDate.set(`${employeeKey}|${day.dateKey}`, {
+          ...day,
+          source: day.source || "manual_override",
+        });
+      });
+    });
+    const assignmentsByEmployeeMonth = new Map(
+      assignments.map((assignment) => [`${toId(assignment.employee)}|${assignment.monthKey}`, assignment]),
+    );
     const dayDecisionsByEmployeeDate = buildDayDecisionMap(dayDecisions);
     const operationalDecisionsByEmployeeDate = buildOperationalExceptionDecisionMap(operationalExceptions);
     const justifiedWorkIntervalsByEmployeeDate = buildJustifiedWorkIntervalMap(operationalExceptions);
@@ -2950,19 +3049,9 @@ export async function GET(request) {
     const vacationDateKeysByEmployee = buildVacationDateKeysByEmployee(vacations);
     const punchesByEmployeeDate = new Map();
     const todayKey = formatEcuadorDateKey(new Date());
-    const latestPunchDateKey = punches.reduce((latestDateKey, punch) => {
-      if (punch.isIgnored === true) {
-        return latestDateKey;
-      }
-
-      const punchDateKey = formatEcuadorDateKey(punch.punchedAt);
-
-      if (!punchDateKey) {
-        return latestDateKey;
-      }
-
-      return !latestDateKey || punchDateKey > latestDateKey ? punchDateKey : latestDateKey;
-    }, "");
+    const latestPunchDateKey = latestCoveragePunch?.punchedAt
+      ? formatEcuadorDateKey(latestCoveragePunch.punchedAt)
+      : "";
     const attendanceReviewCutoffDateKey =
       latestPunchDateKey && latestPunchDateKey < todayKey ? latestPunchDateKey : latestPunchDateKey ? todayKey : "";
 
@@ -3125,16 +3214,27 @@ export async function GET(request) {
       const salary = Number(employee.salary) || 0;
       const hourlyDivisor = MONTHLY_HOURLY_DIVISOR;
       const hourlyRate = calculatePayrollHourlyRate(salary, hourlyDivisor);
-      const daysWithPay = days.map((day) => ({
-        ...day,
-        pay: buildDailyPay(day, hourlyRate),
-      }));
+      const daysWithPay = summaryOnly
+        ? []
+        : days.map((day) => ({
+            ...day,
+            pay: buildDailyPay(day, hourlyRate),
+          }));
       const isDismissedInPayrollMonth = isEmployeeDismissedInMonth(employee, monthKey);
       const workedRegularSalary = Math.min(
         salary,
         (Math.max(0, Number(summary.regularWorkedMinutes) || 0) / 60) * hourlyRate,
       );
       const salaryExpected = isDismissedInPayrollMonth ? workedRegularSalary : salary;
+      const regularShortfallMinutes = Math.max(
+        0,
+        regularTargetMinutes - Math.max(0, Number(summary.regularWorkedMinutes) || 0),
+      );
+      const regularShortfallAffectsSalary = !isDismissedInPayrollMonth;
+      const regularShortfallDiscount = regularShortfallAffectsSalary
+        ? Math.min(salaryExpected, (regularShortfallMinutes / 60) * hourlyRate)
+        : 0;
+      const salaryBaseAfterAttendance = Math.max(0, salaryExpected - regularShortfallDiscount);
       const plannedPayrollTotal =
         (summary.plannedSupplementaryMinutes / 60) * calculatePayrollAdditionalRate(hourlyRate, SUPPLEMENTARY_SURCHARGE_MULTIPLIER) +
         (summary.plannedExtraordinaryMinutes / 60) * calculatePayrollAdditionalRate(hourlyRate, EXTRAORDINARY_SURCHARGE_MULTIPLIER);
@@ -3144,9 +3244,9 @@ export async function GET(request) {
       const approvedPayrollTotal =
         (summary.supplementaryMinutes / 60) * calculatePayrollAdditionalRate(hourlyRate, SUPPLEMENTARY_SURCHARGE_MULTIPLIER) +
         (summary.extraordinaryMinutes / 60) * calculatePayrollAdditionalRate(hourlyRate, EXTRAORDINARY_SURCHARGE_MULTIPLIER);
-      const salaryPlanned = salaryExpected + plannedPayrollTotal;
-      const salaryReal = salaryExpected + realPayrollTotal;
-      const salaryApproved = salaryExpected + approvedPayrollTotal;
+      const salaryPlanned = salaryBaseAfterAttendance + plannedPayrollTotal;
+      const salaryReal = salaryBaseAfterAttendance + realPayrollTotal;
+      const salaryApproved = salaryBaseAfterAttendance + approvedPayrollTotal;
       const salaryProjected = salaryApproved;
 
       return {
@@ -3180,6 +3280,15 @@ export async function GET(request) {
           salaryExpectedRaw: salaryExpected,
           salaryExpectedValue: money(salaryExpected),
           salaryExpectedLabel: moneyLabel(salaryExpected),
+          salaryBaseAfterAttendance: money(salaryBaseAfterAttendance),
+          salaryBaseAfterAttendanceRaw: salaryBaseAfterAttendance,
+          salaryBaseAfterAttendanceLabel: moneyLabel(salaryBaseAfterAttendance),
+          regularShortfallMinutes,
+          regularShortfallLabel: minutesLabel(regularShortfallMinutes),
+          regularShortfallDiscount: money(regularShortfallDiscount),
+          regularShortfallDiscountRaw: regularShortfallDiscount,
+          regularShortfallDiscountLabel: moneyLabel(regularShortfallDiscount),
+          regularShortfallAffectsSalary,
           salaryPlanned: money(salaryPlanned),
           salaryPlannedLabel: moneyLabel(salaryPlanned),
           salaryReal: money(salaryReal),

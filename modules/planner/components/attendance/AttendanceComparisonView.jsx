@@ -169,16 +169,12 @@ function hasControlAdditionalIssue(day = {}) {
   return Math.max(pendingSupplementaryMinutes, pendingExtraordinaryMinutes) > toleranceMinutes;
 }
 
-function lateTimeCount(row = {}) {
+function pendingUnfulfilledDaysCount(row = {}) {
   if (row.summary?.pendingLateDays !== undefined) {
     return Number(row.summary.pendingLateDays) || 0;
   }
 
-  if (Array.isArray(row.days)) {
-    return row.days.filter(hasControlLateIssue).length;
-  }
-
-  return Number(row.summary?.lateDays) || 0;
+  return (row.days || []).filter(hasControlLateIssue).length;
 }
 
 function additionalTimeCount(row = {}) {
@@ -394,7 +390,7 @@ export default function AttendanceComparisonView() {
     try {
       setIsLoadingCatalogs(true);
       const [employeesResponse, branchesResponse] = await Promise.all([
-        fetch("/api/company/employees"),
+        fetch("/api/company/employees?view=attendance-comparison"),
         fetch("/api/company/branches"),
       ]);
       const [employeesPayload, branchesPayload] = await Promise.all([
@@ -427,6 +423,7 @@ export default function AttendanceComparisonView() {
       const targetFilters = nextFilters || initialFiltersRef.current;
       const params = new URLSearchParams();
       params.set("month", targetFilters.month);
+      params.set("summaryOnly", "1");
 
       if (targetFilters.branchCode) params.set("branchCode", targetFilters.branchCode);
       if (targetFilters.areaCode) params.set("areaCode", targetFilters.areaCode);
@@ -532,7 +529,7 @@ export default function AttendanceComparisonView() {
           <td>
             <div className={styles.controlCounters}>
               <ControlCounter label="Alertas" value={operationalAlertCount(row.summary)} tone="danger" />
-              <ControlCounter label="Atrasos" value={lateTimeCount(row)} tone="warning" />
+              <ControlCounter label="Faltantes" value={pendingUnfulfilledDaysCount(row)} tone="warning" />
               <ControlCounter label="Adicional" value={additionalTimeCount(row)} tone="additional" />
             </div>
           </td>
@@ -545,13 +542,13 @@ export default function AttendanceComparisonView() {
           <td>
             <div className={styles.flatMetrics}>
               <FlatMetric label="Planificado" value={minutesBadge(row.summary.plannedSupplementaryLabel)} />
-              <FlatMetric label="Registrado" value={minutesBadge(row.summary.detectedSupplementaryLabel)} />
+              <FlatMetric label="Registrado" value={minutesBadge(row.summary.supplementaryLabel)} />
             </div>
           </td>
           <td>
             <div className={styles.flatMetrics}>
               <FlatMetric label="Planificado" value={minutesBadge(row.summary.plannedExtraordinaryLabel)} />
-              <FlatMetric label="Registrado" value={minutesBadge(row.summary.detectedExtraordinaryLabel)} />
+              <FlatMetric label="Registrado" value={minutesBadge(row.summary.extraordinaryLabel)} />
             </div>
           </td>
           <td>

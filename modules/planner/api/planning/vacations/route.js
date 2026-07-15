@@ -5,7 +5,7 @@ import connectToDatabase from "@/lib/db/mongodb";
 import {
   buildMonthVacationQuery,
   normalizeVacationPayload,
-  serializeVacationRequest,
+  serializeVacationRecord,
 } from "@/modules/planner/lib/planning/vacations";
 import { Employee } from "@/modules/company/models";
 import { VacationRequest } from "@/modules/planner/models";
@@ -13,7 +13,6 @@ import { VacationRequest } from "@/modules/planner/models";
 async function hasOverlappingVacation({ employeeId, startDate, endDate, excludeId = "" }) {
   const query = {
     employee: employeeId,
-    status: "scheduled",
     startDate: { $lte: endDate },
     endDate: { $gte: startDate },
   };
@@ -43,7 +42,7 @@ export async function GET(request) {
       .lean();
 
     return NextResponse.json({
-      vacations: vacations.map(serializeVacationRequest),
+      vacations: vacations.map(serializeVacationRecord),
     });
   } catch (error) {
     return NextResponse.json(
@@ -90,7 +89,7 @@ export async function POST(request) {
     return NextResponse.json(
       {
         message: "Vacaciones programadas correctamente.",
-        vacation: serializeVacationRequest(vacation),
+        vacation: serializeVacationRecord(vacation),
       },
       { status: 201 },
     );

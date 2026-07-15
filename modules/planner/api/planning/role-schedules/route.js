@@ -135,9 +135,10 @@ export async function PUT(request) {
           : template
             ? cloneTemplateSchedule(template)
             : [];
+      const fixedWeekdayRows = snapshotRows.filter((row) => [1, 2, 3, 4, 5].includes(row.dayOfWeek));
 
       if (scheduleMode === "fixed") {
-        if (!snapshotRows.length) {
+        if (!fixedWeekdayRows.some((row) => row.dayType === "workday" && row.startTime && row.endTime)) {
           throw new Error(`Define un horario fijo para ${role.name}.`);
         }
 
@@ -162,7 +163,7 @@ export async function PUT(request) {
               fixedScheduleRoleCode: scheduleMode === "fixed" ? template?.roleCode || role.fixedScheduleRoleCode || role.code || "" : "",
               fixedScheduleRoleName: scheduleMode === "fixed" ? template?.roleName || role.fixedScheduleRoleName || role.name || "" : "",
               fixedScheduleRotationGroup: scheduleMode === "fixed" ? template?.rotationGroup || role.fixedScheduleRotationGroup || "" : "",
-              fixedScheduleWeeklyRows: scheduleMode === "fixed" ? snapshotRows : [],
+              fixedScheduleWeeklyRows: scheduleMode === "fixed" ? fixedWeekdayRows : [],
             },
           },
         },

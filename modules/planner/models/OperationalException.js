@@ -108,6 +108,11 @@ const operationalExceptionSchema = new Schema(
       trim: true,
       default: "",
     },
+    plannedDayType: {
+      type: String,
+      enum: ["workday", "off_day"],
+      default: "workday",
+    },
     plannedLunchStartTime: {
       type: String,
       trim: true,
@@ -167,6 +172,11 @@ const operationalExceptionSchema = new Schema(
       uppercase: true,
       required: true,
     },
+    createdByUser: {
+      type: String,
+      trim: true,
+      default: "",
+    },
     authorizedBy: {
       type: String,
       trim: true,
@@ -203,6 +213,7 @@ operationalExceptionSchema.index({ employee: 1, date: 1 });
 operationalExceptionSchema.index({ date: 1, status: 1 });
 operationalExceptionSchema.index({ type: 1, resolution: 1 });
 operationalExceptionSchema.index({ effect: 1, status: 1 });
+operationalExceptionSchema.index({ createdByUser: 1, date: 1 });
 
 if (process.env.NODE_ENV !== "production" && mongoose.models.OperationalException) {
   delete mongoose.models.OperationalException;

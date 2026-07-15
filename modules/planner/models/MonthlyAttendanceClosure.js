@@ -136,6 +136,25 @@ const monthlyAttendanceClosureRowSchema = new Schema(
       min: 0,
       default: 0,
     },
+    salaryBaseAfterAttendance: {
+      type: Number,
+      min: 0,
+      default: 0,
+    },
+    regularShortfallMinutes: {
+      type: Number,
+      min: 0,
+      default: 0,
+    },
+    regularShortfallDiscount: {
+      type: Number,
+      min: 0,
+      default: 0,
+    },
+    regularShortfallAffectsSalary: {
+      type: Boolean,
+      default: true,
+    },
     hourlyRate: {
       type: Number,
       min: 0,
@@ -208,6 +227,8 @@ const monthlyAttendanceClosureSchema = new Schema(
       holidayExtraordinaryMinutes: { type: Number, min: 0, default: 0 },
       lateMinutes: { type: Number, min: 0, default: 0 },
       salaryTotal: { type: Number, min: 0, default: 0 },
+      regularShortfallMinutes: { type: Number, min: 0, default: 0 },
+      regularShortfallDiscount: { type: Number, min: 0, default: 0 },
       baseCompletionMinutes: { type: Number, min: 0, default: 0 },
       baseCompletionFromSupplementaryMinutes: { type: Number, min: 0, default: 0 },
       baseCompletionFromExtraordinaryMinutes: { type: Number, min: 0, default: 0 },
