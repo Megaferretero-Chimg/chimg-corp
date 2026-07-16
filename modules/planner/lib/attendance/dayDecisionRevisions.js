@@ -47,7 +47,6 @@ export async function removeCurrentAttendanceDecisionRevision({
   employeeName = "",
   dateKey,
   actor,
-  permanent = false,
 }) {
   const decisionId = decision?._id?.toString?.() || "";
   const latestRevisionAudit = await AuditLog.findOne({
@@ -74,44 +73,22 @@ export async function removeCurrentAttendanceDecisionRevision({
   }
 
   try {
-    if (latestRevisionAudit) {
-      if (permanent) {
-        await AuditLog.deleteOne({ _id: latestRevisionAudit._id });
-      } else {
-        await AuditLog.updateOne(
-          { _id: latestRevisionAudit._id },
-          {
-            $set: {
-              actor,
-              action: "attendanceDayDecision.delete",
-              route: "/api/planner/attendance/day-decisions",
-              happenedAt: new Date(),
-              "details.employeeId": employeeId,
-              "details.employeeName": employeeName,
-              "details.dateKey": dateKey,
-              "details.before": removedSnapshot,
-              "details.after": null,
-            },
-          },
-        );
-      }
-    } else if (!permanent) {
-      await createAuditLog({
-        actor,
-        action: "attendanceDayDecision.delete",
-        entityType: "attendanceDayDecision",
-        entityId: decisionId,
-        entityLabel: `${employeeName || employeeId} ${dateKey}`,
-        route: "/api/planner/attendance/day-decisions",
-        details: {
-          employeeId,
-          employeeName,
-          dateKey,
-          before: removedSnapshot,
-          after: null,
-        },
-      });
-    }
+    await createAuditLog({
+      actor,
+      action: "attendanceDayDecision.deactivate",
+      entityType: "attendanceDayDecision",
+      entityId: decisionId,
+      entityLabel: `${employeeName || employeeId} ${dateKey}`,
+      route: "/api/planner/attendance/day-decisions",
+      details: {
+        employeeId,
+        employeeName,
+        dateKey,
+        before: removedSnapshot,
+        after: previousSnapshot,
+        restoredPreviousRevision: Boolean(previousSnapshot),
+      },
+    });
   } catch (error) {
     await AttendanceDayDecision.updateOne(
       { _id: decision._id },

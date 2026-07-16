@@ -214,6 +214,8 @@ operationalExceptionSchema.index({ date: 1, status: 1 });
 operationalExceptionSchema.index({ type: 1, resolution: 1 });
 operationalExceptionSchema.index({ effect: 1, status: 1 });
 operationalExceptionSchema.index({ createdByUser: 1, date: 1 });
+operationalExceptionSchema.index({ employee: 1, dateKey: 1, endDateKey: 1, status: 1 });
+operationalExceptionSchema.index({ employee: 1, planningSource: 1, dateKey: 1, endDateKey: 1, updatedAt: -1 });
 
 if (process.env.NODE_ENV !== "production" && mongoose.models.OperationalException) {
   delete mongoose.models.OperationalException;

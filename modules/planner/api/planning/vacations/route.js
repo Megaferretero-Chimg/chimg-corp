@@ -1,7 +1,13 @@
 import { NextResponse } from "next/server";
 
-import { isAuthenticated } from "@/lib/auth";
+import { getAuthenticatedUser } from "@/lib/auth";
 import connectToDatabase from "@/lib/db/mongodb";
+import { hasAccessPermission } from "@/modules/company/submodules/access/lib/permissions";
+import {
+  applyPlannerScopeToEmployeeReferenceQuery,
+  assertEmployeesInPlannerScope,
+  resolvePlannerEmployeeScope,
+} from "@/modules/planner/lib/planning/accessScope";
 import {
   buildMonthVacationQuery,
   normalizeVacationPayload,
@@ -25,9 +31,9 @@ async function hasOverlappingVacation({ employeeId, startDate, endDate, excludeI
 }
 
 export async function GET(request) {
-  const authenticated = await isAuthenticated();
+  const user = await getAuthenticatedUser();
 
-  if (!authenticated) {
+  if (!user) {
     return NextResponse.json({ error: "Sesion invalida o expirada." }, { status: 401 });
   }
 
@@ -36,6 +42,16 @@ export async function GET(request) {
 
     const { searchParams } = new URL(request.url);
     const query = buildMonthVacationQuery(searchParams.get("month"));
+    const plannerScope = await resolvePlannerEmployeeScope();
+
+    if (
+      !hasAccessPermission(user, "planner.timeOff.view")
+      && !hasAccessPermission(user, "planner.schedules.weekly.view")
+    ) {
+      return NextResponse.json({ error: "No tienes permiso para ver vacaciones." }, { status: 403 });
+    }
+
+    applyPlannerScopeToEmployeeReferenceQuery(query, plannerScope);
 
     const vacations = await VacationRequest.find(query)
       .sort({ startDate: 1, employeeName: 1 })
@@ -53,14 +69,18 @@ export async function GET(request) {
 }
 
 export async function POST(request) {
-  const authenticated = await isAuthenticated();
+  const user = await getAuthenticatedUser();
 
-  if (!authenticated) {
+  if (!user) {
     return NextResponse.json({ error: "Sesion invalida o expirada." }, { status: 401 });
   }
 
   try {
     await connectToDatabase();
+
+    if (!hasAccessPermission(user, "planner.timeOff.manage")) {
+      return NextResponse.json({ error: "No tienes permiso para gestionar vacaciones." }, { status: 403 });
+    }
 
     const body = await request.json();
     const employeeId = String(body?.employeeId || "").trim();
@@ -68,6 +88,9 @@ export async function POST(request) {
     if (!employeeId) {
       throw new Error("Debes seleccionar un empleado.");
     }
+
+    const plannerScope = await resolvePlannerEmployeeScope();
+    assertEmployeesInPlannerScope([employeeId], plannerScope);
 
     const employee = await Employee.findById(employeeId).lean();
     const payload = normalizeVacationPayload(body, employee);

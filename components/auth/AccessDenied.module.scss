@@ -1,0 +1,64 @@
+.overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  display: grid;
+  place-items: center;
+  min-height: 100dvh;
+  padding: 1.5rem;
+  background:
+    radial-gradient(circle at 50% 35%, rgba(220, 38, 38, 0.08), transparent 36%),
+    rgba(247, 249, 252, 0.98);
+}
+
+.card {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: 1rem;
+  width: min(34rem, 100%);
+  padding: clamp(1.25rem, 4vw, 2rem);
+  border: 1px solid rgba(220, 38, 38, 0.2);
+  border-radius: 1.25rem;
+  background: #fff;
+  box-shadow: 0 24px 60px rgba(127, 29, 29, 0.12);
+}
+
+.icon {
+  display: grid;
+  place-items: center;
+  width: 3.5rem;
+  height: 3.5rem;
+  border-radius: 1rem;
+  background: #fee2e2;
+  color: #b91c1c;
+}
+
+.eyebrow {
+  margin: 0 0 0.25rem;
+  color: #b91c1c;
+  font-size: var(--font-size-xs);
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.card h1 {
+  margin: 0;
+  color: #17233f;
+  font-size: clamp(1.25rem, 3vw, 1.65rem);
+  line-height: 1.2;
+}
+
+.card p:last-child {
+  margin: 0.45rem 0 0;
+  color: #64748b;
+  font-size: var(--font-size-base);
+  line-height: 1.5;
+}
+
+@media (max-width: 520px) {
+  .card {
+    grid-template-columns: 1fr;
+  }
+}

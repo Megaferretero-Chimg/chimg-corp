@@ -26,7 +26,7 @@ export default function SettingsPage() {
           {
             title: "Grupos de trabajo",
             description: "Unidad operativa que define quien planifica a quien. Los grupos existentes vuelven a alimentar la planificacion semanal.",
-            href: planningModulePath("/schedules"),
+            href: planningModulePath("/settings/work-groups"),
             bullets: ["Selector de grupo", "Historial por equipo", "Responsable operativo"],
           },
           {

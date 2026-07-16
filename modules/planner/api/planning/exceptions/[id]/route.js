@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { getAuthenticatedUser } from "@/lib/auth";
 import { createAuditLog } from "@/lib/audit";
 import connectToDatabase from "@/lib/db/mongodb";
+import { hasAccessPermission } from "@/modules/company/submodules/access/lib/permissions";
 import {
   assertEmployeesInPlannerScope,
   resolvePlannerEmployeeScope,
@@ -41,7 +42,7 @@ export async function PATCH(request, context) {
 
     const body = await request.json();
     const employeeId = String(body?.employeeId || "").trim();
-    const user = await getAuthenticatedUser();
+    const user = plannerScope.user;
     const currentException = await OperationalException.findById(exceptionId).lean();
     const canApproveExceptions = await canUserApproveExceptions(user);
 
@@ -144,13 +145,17 @@ export async function DELETE(_request, context) {
       return NextResponse.json({ error: "Excepcion no encontrada." }, { status: 404 });
     }
 
-    const user = await getAuthenticatedUser();
+    const user = plannerScope.user;
     const canApproveExceptions = await canUserApproveExceptions(user);
-    const canResetAttendanceExecution = currentException.planningSource === "attendance_comparison";
+    const canDeleteOwn = hasAccessPermission(user, "planner.exceptions.deleteOwn");
+    const isOwner = String(currentException.createdByUser || "").trim() === String(user?.id || "").trim();
+    const isPending = currentException.resolution === "pending" || currentException.status === "open";
+    const canResetAttendanceExecution = currentException.planningSource === "attendance_comparison"
+      && hasAccessPermission(user, "planner.attendance.review");
 
-    if (!canApproveExceptions && !canResetAttendanceExecution) {
+    if (!canApproveExceptions && !canResetAttendanceExecution && !(canDeleteOwn && isOwner && isPending)) {
       return NextResponse.json(
-        { error: "No tienes permiso para anular excepciones." },
+        { error: "Solo puedes eliminar tus propios registros mientras estén pendientes." },
         { status: 403 },
       );
     }
@@ -175,40 +180,15 @@ export async function DELETE(_request, context) {
     const employeeId = currentException.employee?.toString?.() || String(currentException.employee || "");
     const before = serializeOperationalException(currentException);
 
-    if (currentException.resolution === "pending" || currentException.status === "open") {
-      await OperationalException.findByIdAndDelete(exceptionId);
-
-      await createAuditLog({
-        actor,
-        action: "operationalException.delete",
-        entityType: "operationalException",
-        entityId: exceptionId,
-        entityLabel: `${currentException.employeeName || employeeId} ${currentException.dateKey || ""}`,
-        route: `/api/planner/planning/exceptions/${exceptionId}`,
-        details: {
-          employeeId,
-          employeeName: currentException.employeeName || "",
-          dateKey: currentException.dateKey || "",
-          planningSource: currentException.planningSource || "",
-          before,
-          after: null,
-        },
-      });
-
-      return NextResponse.json({
-        success: true,
-        action: "deleted",
-        message: "Justificacion eliminada correctamente.",
-      });
-    }
-
     const voidedException = await OperationalException.findByIdAndUpdate(
       exceptionId,
       {
         $set: {
           status: "void",
           resolution: "no_action",
-          resolutionNotes: currentException.resolutionNotes || "Anulada manualmente.",
+          resolutionNotes: currentException.resolutionNotes || (currentException.resolution === "pending"
+            ? "Registro pendiente anulado por el usuario."
+            : "Anulada manualmente."),
           manualPunch: null,
           manualPunchTime: "",
         },

@@ -4,20 +4,12 @@ import { getAuthenticatedUser } from "@/lib/auth";
 import connectToDatabase from "@/lib/db/mongodb";
 import AuditLog from "@/models/AuditLog";
 import { Employee } from "@/modules/company/models";
-import { isAdminAccessUser } from "@/modules/company/submodules/access/lib/permissions";
 import {
   assertEmployeesInPlannerScope,
   resolvePlannerEmployeeScope,
 } from "@/modules/planner/lib/planning/accessScope";
 import { serializeOperationalException } from "@/modules/planner/lib/planning/exceptions";
-import { deleteExceptionManualPunch } from "@/modules/planner/lib/planning/exceptionPunches";
 import { AttendanceDayDecision, OperationalException } from "@/modules/planner/models";
-import {
-  findLaterAttendanceDecisionForException,
-  findLaterExceptionForDay,
-  findLaterExceptionForException,
-} from "@/modules/planner/lib/attendance/decisionDependencies";
-import { removeCurrentAttendanceDecisionRevision } from "@/modules/planner/lib/attendance/dayDecisionRevisions";
 
 const DECISION_LABELS = {
   full: "Tiempo registrado aprobado",
@@ -117,7 +109,6 @@ function attendanceHistoryItem({
   status,
   statusLabel,
   canDelete = false,
-  purgeTarget = null,
 }) {
   return {
     id,
@@ -131,8 +122,6 @@ function attendanceHistoryItem({
     status,
     statusLabel,
     canDelete,
-    canPurge: Boolean(purgeTarget),
-    purgeTarget,
   };
 }
 
@@ -162,7 +151,7 @@ export async function GET(request) {
     assertEmployeesInPlannerScope([employeeId], plannerScope);
 
     const [employee, currentDecision, exceptionDocs, auditLogs] = await Promise.all([
-      Employee.findById(employeeId).select("_id fullName").lean(),
+      Employee.exists({ _id: employeeId }),
       AttendanceDayDecision.findOne({ employee: employeeId, dateKey }).lean(),
       OperationalException.find({
         employee: employeeId,
@@ -188,7 +177,10 @@ export async function GET(request) {
             "details.dateKey": dateKey,
           },
         ],
-      }).sort({ happenedAt: -1 }).lean(),
+      })
+        .select({ actor: 1, action: 1, entityType: 1, entityId: 1, happenedAt: 1, "details.before": 1, "details.after": 1 })
+        .sort({ happenedAt: -1 })
+        .lean(),
     ]);
 
     if (!employee) {
@@ -196,7 +188,6 @@ export async function GET(request) {
     }
 
     const history = [];
-    const isAdmin = isAdminAccessUser(user);
     const currentDecisionId = currentDecision?._id?.toString?.() || "";
     let skippedCurrentAudit = false;
 
@@ -209,7 +200,6 @@ export async function GET(request) {
         status: "active",
         statusLabel: "Vigente",
         canDelete: true,
-        purgeTarget: isAdmin ? { type: "attendance_record", id: currentDecisionId } : null,
       }));
     }
 
@@ -226,7 +216,7 @@ export async function GET(request) {
           return;
         }
 
-        const isDeleted = log.action === "attendanceDayDecision.delete";
+        const isDeleted = ["attendanceDayDecision.delete", "attendanceDayDecision.deactivate"].includes(log.action);
         const snapshot = isDeleted ? log.details?.before : log.details?.after;
 
         if (!snapshot) return;
@@ -237,8 +227,7 @@ export async function GET(request) {
           actor: log.actor,
           happenedAt: log.happenedAt,
           status: isDeleted ? "deleted" : "replaced",
-          statusLabel: isDeleted ? "Eliminada" : "Reemplazada",
-          purgeTarget: isAdmin ? { type: "audit_log", id: log._id.toString() } : null,
+          statusLabel: isDeleted ? "Desactivada" : "Reemplazada",
         }));
       });
 
@@ -258,10 +247,8 @@ export async function GET(request) {
           actor: serialized.authorizedBy || serialized.registeredBy || "SISTEMA",
           happenedAt: serialized.updatedAt || serialized.createdAt,
           status: isDeleted ? "deleted" : "active",
-          statusLabel: isDeleted ? "Eliminada" : "Vigente",
+          statusLabel: isDeleted ? "Anulada" : "Vigente",
           canDelete: !isDeleted,
-          canPurge: isAdmin,
-          purgeTarget: isAdmin ? { type: "operational_exception", id: serialized.id } : null,
         });
       });
 
@@ -281,8 +268,6 @@ export async function GET(request) {
           status: "replaced",
           statusLabel: "Reemplazada",
           canDelete: false,
-          canPurge: isAdmin,
-          purgeTarget: isAdmin ? { type: "audit_log", id: log._id.toString() } : null,
         });
       });
 
@@ -294,171 +279,23 @@ export async function GET(request) {
     history.forEach((item) => {
       if (item.status === "active" && item.id !== latestActiveId) {
         item.canDelete = false;
-        item.canPurge = false;
-        item.purgeTarget = null;
         item.dependencyMessage = `Primero debes desactivar “${activeHistory[0]?.title || "la resolución posterior"}”.`;
       }
 
       if (item.status === "replaced" && activeHistory.length) {
-        item.canPurge = false;
-        item.purgeTarget = null;
-        item.dependencyMessage = "Este antecedente sostiene una resolución vigente y no se puede eliminar todavía.";
+        item.dependencyMessage = "Este antecedente es inmutable y se conserva para auditoría.";
       }
     });
 
     history.sort((left, right) => new Date(right.happenedAt || 0) - new Date(left.happenedAt || 0));
 
     return NextResponse.json(
-      { history, canPurgeHistory: isAdmin },
+      { history, canPurgeHistory: false },
       { headers: { "Cache-Control": "no-store" } },
     );
   } catch (error) {
     return NextResponse.json(
       { error: error.message || "No se pudo cargar el historial de decisiones." },
-      { status: 400 },
-    );
-  }
-}
-
-export async function DELETE(request) {
-  try {
-    const user = await getAuthenticatedUser();
-
-    if (!user) {
-      return NextResponse.json({ error: "Sesión inválida o expirada." }, { status: 401 });
-    }
-
-    if (!isAdminAccessUser(user)) {
-      return NextResponse.json(
-        { error: "Solo un administrador puede eliminar decisiones definitivamente." },
-        { status: 403 },
-      );
-    }
-
-    const body = await request.json();
-    const employeeId = String(body?.employeeId || "").trim();
-    const dateKey = parseDateKey(body?.dateKey);
-    const targetType = String(body?.targetType || "").trim();
-    const targetId = String(body?.targetId || "").trim();
-
-    if (!employeeId || !targetId) {
-      throw new Error("La decisión que deseas eliminar no es válida.");
-    }
-
-    await connectToDatabase();
-    const plannerScope = await resolvePlannerEmployeeScope();
-
-    if (!plannerScope.isAuthenticated) {
-      return NextResponse.json({ error: "Sesión inválida o expirada." }, { status: 401 });
-    }
-
-    assertEmployeesInPlannerScope([employeeId], plannerScope);
-
-    if (targetType === "audit_log") {
-      const auditLog = await AuditLog.findOne({
-        _id: targetId,
-        entityType: { $in: ["attendanceDayDecision", "operationalException"] },
-        "details.employeeId": employeeId,
-        "details.dateKey": dateKey,
-      }).lean();
-
-      if (!auditLog) {
-        return NextResponse.json({ error: "Antecedente no encontrado." }, { status: 404 });
-      }
-
-      if (["attendanceDayDecision.upsert", "operationalException.update"].includes(auditLog.action)) {
-        const [activeDecision, activeExceptions] = await Promise.all([
-          AttendanceDayDecision.findOne({ employee: employeeId, dateKey }).select("_id").lean(),
-          OperationalException.find({
-            employee: employeeId,
-            planningSource: "attendance_comparison",
-            status: { $ne: "void" },
-            resolution: { $ne: "pending" },
-            $or: [
-              { dateKey },
-              { dateKey: { $lte: dateKey }, endDateKey: { $gte: dateKey } },
-            ],
-          }).select("_id applicableWeekdays dateKey endDateKey").lean(),
-        ]);
-        const hasActiveException = activeExceptions.some((exception) => exceptionAppliesToDate(exception, dateKey));
-
-        if (activeDecision || hasActiveException) {
-          return NextResponse.json({
-            error: "Este antecedente sostiene una resolución vigente. Desactiva primero las decisiones posteriores.",
-          }, { status: 409 });
-        }
-      }
-
-      await AuditLog.deleteOne({ _id: auditLog._id });
-    } else if (targetType === "attendance_record") {
-      const decision = await AttendanceDayDecision.findOne({
-        _id: targetId,
-        employee: employeeId,
-        dateKey,
-      }).lean();
-
-      if (!decision) {
-        return NextResponse.json({ error: "Decisión vigente no encontrada." }, { status: 404 });
-      }
-
-      const laterException = await findLaterExceptionForDay({
-        employeeId,
-        dateKey,
-        happenedAt: decision.updatedAt || decision.createdAt,
-      });
-
-      if (laterException) {
-        return NextResponse.json({
-          error: "Esta decisión tiene una resolución posterior. Elimina primero la decisión más reciente del día.",
-        }, { status: 409 });
-      }
-
-      await removeCurrentAttendanceDecisionRevision({
-        decision,
-        employeeId,
-        employeeName: decision.employeeName || "",
-        dateKey,
-        actor: user.employeeName || user.username || user.id,
-        permanent: true,
-      });
-    } else if (targetType === "operational_exception") {
-      const exception = await OperationalException.findOne({
-        _id: targetId,
-        employee: employeeId,
-        planningSource: "attendance_comparison",
-      }).lean();
-
-      if (!exception || !exceptionAppliesToDate(exception, dateKey)) {
-        return NextResponse.json({ error: "Excepción operativa no encontrada." }, { status: 404 });
-      }
-
-      const [laterAttendanceDecision, laterException] = await Promise.all([
-        findLaterAttendanceDecisionForException(exception),
-        findLaterExceptionForException(exception),
-      ]);
-
-      if (laterAttendanceDecision || laterException) {
-        return NextResponse.json({
-          error: "Esta excepción tiene una resolución posterior. Elimina primero la decisión más reciente del día.",
-        }, { status: 409 });
-      }
-
-      await deleteExceptionManualPunch(exception);
-      await Promise.all([
-        OperationalException.deleteOne({ _id: exception._id }),
-        AuditLog.deleteMany({ entityType: "operationalException", entityId: targetId }),
-      ]);
-    } else {
-      throw new Error("El tipo de decisión no es válido.");
-    }
-
-    return NextResponse.json({
-      success: true,
-      message: "Decisión eliminada definitivamente.",
-    });
-  } catch (error) {
-    return NextResponse.json(
-      { error: error.message || "No se pudo eliminar la decisión definitivamente." },
       { status: 400 },
     );
   }

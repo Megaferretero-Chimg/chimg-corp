@@ -1,7 +1,9 @@
 "use client";
 
+import { useMemo } from "react";
 import { KeyRound, Plus } from "lucide-react";
 
+import AutocompleteSelect from "@/components/ui/AutocompleteSelect";
 import SelectInput from "@/components/ui/SelectInput";
 import styles from "@/modules/company/submodules/access/styles/components/UserForm.module.scss";
 
@@ -17,31 +19,34 @@ export default function UserForm({
   onFieldChange,
   onSubmit,
 }) {
+  const employeeOptions = useMemo(() => employees
+    .filter((employee) => {
+      const isCurrentEmployee = employee.id === form.employeeId;
+      const isAssignedToAnotherUser = assignedEmployeeIds.has(employee.id) && !isCurrentEmployee;
+
+      return isCurrentEmployee || (!isAssignedToAnotherUser && employee.isActive !== false);
+    })
+    .sort((left, right) => left.fullName.localeCompare(right.fullName, "es"))
+    .map((employee) => ({
+      value: employee.id,
+      label: employee.fullName,
+    })), [assignedEmployeeIds, employees, form.employeeId]);
+
   return (
     <form onSubmit={onSubmit} className={`catalog-form-grid ${styles.formGrid}`}>
       <div className="catalog-field">
-        <SelectInput
+        <AutocompleteSelect
           label="Empleado vinculado"
           value={form.employeeId}
-          onChange={(event) => onFieldChange("employeeId", event.target.value)}
+          options={employeeOptions}
+          onChange={(value) => onFieldChange("employeeId", value)}
           disabled={isEditing}
           className={styles.selectField}
-          labelClassName="catalog-label"
           controlClassName={styles.selectControl}
-        >
-          <option value="">Sin empleado vinculado</option>
-          {employees.map((employee) => {
-            const isAssigned = assignedEmployeeIds.has(employee.id) && employee.id !== form.employeeId;
-
-            return (
-              <option key={employee.id} value={employee.id} disabled={isAssigned || employee.isActive === false}>
-                {employee.fullName}
-                {employee.dni ? ` · ${employee.dni}` : ""}
-                {isAssigned ? " · ya tiene usuario" : ""}
-              </option>
-            );
-          })}
-        </SelectInput>
+          placeholder="Sin empleado vinculado"
+          searchPlaceholder="Escribe el nombre del empleado"
+          emptyText="No encontramos empleados disponibles"
+        />
       </div>
 
       <label className="catalog-field">

@@ -1,8 +1,9 @@
 import { endOfMonth } from "date-fns";
 import { NextResponse } from "next/server";
 
-import { isAuthenticated } from "@/lib/auth";
+import { getAuthenticatedUser } from "@/lib/auth";
 import connectToDatabase from "@/lib/db/mongodb";
+import { hasAccessPermission } from "@/modules/company/submodules/access/lib/permissions";
 import {
   normalizeHolidayPayload,
   parseMonthKey,
@@ -12,10 +13,17 @@ import { makeEcuadorDate } from "@/lib/datetime/ecuador";
 import { Holiday } from "@/modules/planner/models";
 
 export async function GET(request) {
-  const authenticated = await isAuthenticated();
+  const user = await getAuthenticatedUser();
 
-  if (!authenticated) {
+  if (!user) {
     return NextResponse.json({ error: "Sesion invalida o expirada." }, { status: 401 });
+  }
+
+  if (
+    !hasAccessPermission(user, "planner.holidays.view")
+    && !hasAccessPermission(user, "planner.schedules.weekly.view")
+  ) {
+    return NextResponse.json({ error: "No tienes permiso para ver feriados." }, { status: 403 });
   }
 
   try {
@@ -48,10 +56,14 @@ export async function GET(request) {
 }
 
 export async function PUT(request) {
-  const authenticated = await isAuthenticated();
+  const user = await getAuthenticatedUser();
 
-  if (!authenticated) {
+  if (!user) {
     return NextResponse.json({ error: "Sesion invalida o expirada." }, { status: 401 });
+  }
+
+  if (!hasAccessPermission(user, "planner.holidays.manage")) {
+    return NextResponse.json({ error: "No tienes permiso para gestionar feriados." }, { status: 403 });
   }
 
   try {

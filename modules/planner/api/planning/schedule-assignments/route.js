@@ -1,18 +1,22 @@
 import { NextResponse } from "next/server";
+import mongoose from "mongoose";
 
 import { getAuthenticatedUser } from "@/lib/auth";
+import { createAuditLog } from "@/lib/audit";
 import connectToDatabase from "@/lib/db/mongodb";
 import { buildEmployeeActiveInMonthQuery, isEmployeeActiveOnDate } from "@/modules/company/submodules/people/lib/employees";
 import { hasAccessPermission } from "@/modules/company/submodules/access/lib/permissions";
 import {
   applyPlannerScopeToAssignmentQuery,
   applyPlannerScopeToEmployeeQuery,
+  applyPlannerScopeToEmployeeReferenceQuery,
   assertEmployeesInPlannerScope,
   assertWorkGroupInPlannerScope,
   resolvePlannerEmployeeScope,
 } from "@/modules/planner/lib/planning/accessScope";
-import { parseMonthKey } from "@/modules/planner/lib/planning/holidays";
+import { parseMonthKey, serializeHoliday } from "@/modules/planner/lib/planning/holidays";
 import { serializeOperationalException } from "@/modules/planner/lib/planning/exceptions";
+import { serializeVacationRecord } from "@/modules/planner/lib/planning/vacations";
 import {
   buildAssignmentPayload,
   buildGeneratedDays,
@@ -149,6 +153,68 @@ function normalizeGroupId(value) {
   return /^[a-f\d]{24}$/i.test(groupId) ? groupId : "";
 }
 
+function castAssignmentEmployeeQuery(query = {}) {
+  const nextQuery = { ...query };
+  const employeeQuery = query.employee;
+
+  if (typeof employeeQuery === "string" && mongoose.isValidObjectId(employeeQuery)) {
+    nextQuery.employee = new mongoose.Types.ObjectId(employeeQuery);
+  } else if (employeeQuery?.$in) {
+    nextQuery.employee = {
+      ...employeeQuery,
+      $in: employeeQuery.$in.map((employeeId) =>
+        mongoose.isValidObjectId(employeeId) ? new mongoose.Types.ObjectId(employeeId) : employeeId,
+      ),
+    };
+  }
+
+  return nextQuery;
+}
+
+function findScheduleAssignmentsForWeek(query, weekStartKey, groupId = "") {
+  const weekDateKeys = getWeekDateKeySet(weekStartKey);
+
+  if (!weekDateKeys) {
+    return ScheduleAssignment.find(query).sort({ employeeName: 1 }).lean();
+  }
+
+  const historyConditions = [
+    { $eq: ["$$entry.weekStartKey", weekStartKey] },
+  ];
+  const approvalConditions = [
+    { $eq: ["$$approval.weekStartKey", weekStartKey] },
+  ];
+
+  if (groupId) {
+    const groupObjectId = new mongoose.Types.ObjectId(groupId);
+    historyConditions.push({ $eq: ["$$entry.groupId", groupObjectId] });
+    approvalConditions.push({ $eq: ["$$approval.groupId", groupObjectId] });
+  }
+
+  return ScheduleAssignment.aggregate([
+    { $match: castAssignmentEmployeeQuery(query) },
+    {
+      $set: {
+        scheduleHistory: {
+          $filter: {
+            input: { $ifNull: ["$scheduleHistory", []] },
+            as: "entry",
+            cond: { $and: historyConditions },
+          },
+        },
+        planningApprovals: {
+          $filter: {
+            input: { $ifNull: ["$planningApprovals", []] },
+            as: "approval",
+            cond: { $and: approvalConditions },
+          },
+        },
+      },
+    },
+    { $sort: { employeeName: 1 } },
+  ]);
+}
+
 function assertEmployeesBelongToGroup(employeeIds = [], workGroup = null) {
   if (!workGroup) {
     throw new Error("El grupo de trabajo seleccionado no existe.");
@@ -205,24 +271,66 @@ function getLatestHistoryVersion(assignments = [], weekStartKey, groupId = "") {
 }
 
 function serializeScheduleAssignmentForWeek(assignment, weekStartKey, groupId = "") {
-  const serialized = serializeScheduleAssignment(assignment);
   const weekDateKeys = getWeekDateKeySet(weekStartKey);
 
   if (!weekDateKeys) {
-    return serialized;
+    return serializeScheduleAssignment(assignment);
   }
 
-  const generatedDays = (serialized.generatedDays || []).filter((day) => weekDateKeys.has(day.dateKey));
+  const matchingHistory = (assignment.scheduleHistory || []).filter((entry) =>
+    entry.weekStartKey === weekStartKey
+    && (!groupId || normalizeGroupId(entry.groupId) === groupId),
+  );
+  const latestPlanningVersion = matchingHistory.reduce((latest, entry) =>
+    !latest || new Date(entry.savedAt || 0) > new Date(latest.savedAt || 0) ? entry : latest,
+  null);
+  const latestVersionKey = latestPlanningVersion
+    ? buildHistoryVersionKey(latestPlanningVersion)
+    : "";
+  const latestPlanningDays = latestVersionKey
+    ? matchingHistory
+      .filter((entry) => buildHistoryVersionKey(entry) === latestVersionKey)
+      .flatMap((entry) => entry.generatedDays || [])
+    : assignment.generatedDays || [];
+  const generatedDays = [...new Map(
+    latestPlanningDays
+      .filter((day) => weekDateKeys.has(day.dateKey))
+      .map((day) => [day.dateKey, day]),
+  ).values()].sort((left, right) => String(left.dateKey).localeCompare(String(right.dateKey)));
+  const serialized = serializeScheduleAssignment({
+    ...assignment,
+    generatedDays,
+    scheduleHistory: [],
+    planningApprovals: [],
+  });
 
   return {
     ...serialized,
-    generatedDays,
-    scheduleHistory: (serialized.scheduleHistory || []).filter((entry) =>
-      entry.weekStartKey === weekStartKey && (!groupId || normalizeGroupId(entry.groupId) === groupId),
-    ),
-    planningApprovals: (serialized.planningApprovals || []).filter((approval) =>
-      approval.weekStartKey === weekStartKey && (!groupId || normalizeGroupId(approval.groupId) === groupId),
-    ),
+    scheduleHistory: matchingHistory.map((entry) => ({
+      groupId: normalizeGroupId(entry.groupId),
+      groupName: entry.groupName || "",
+      weekStartKey: entry.weekStartKey || "",
+      savedAt: entry.savedAt,
+      savedBy: entry.savedBy || "",
+      savedByUser: entry.savedByUser || "",
+      daysCount: (entry.generatedDays || []).length,
+    })),
+    planningApprovals: (assignment.planningApprovals || [])
+      .filter((approval) =>
+        approval.weekStartKey === weekStartKey
+        && (!groupId || normalizeGroupId(approval.groupId) === groupId),
+      )
+      .map((approval) => ({
+        groupId: normalizeGroupId(approval.groupId),
+        groupName: approval.groupName || "",
+        weekStartKey: approval.weekStartKey || "",
+        approvedAt: approval.approvedAt,
+        approvedBy: approval.approvedBy || "",
+        approvedByUser: approval.approvedByUser || "",
+        versionSavedAt: approval.versionSavedAt || null,
+        versionSavedBy: approval.versionSavedBy || "",
+        versionSavedByUser: approval.versionSavedByUser || "",
+      })),
   };
 }
 
@@ -677,6 +785,13 @@ export async function GET(request) {
       return NextResponse.json({ error: "Sesion invalida o expirada." }, { status: 401 });
     }
 
+    if (
+      !hasAccessPermission(plannerScope.user, "planner.schedules.weekly.view")
+      && !hasAccessPermission(plannerScope.user, "planner.schedules.view")
+    ) {
+      return NextResponse.json({ error: "No tienes permiso para ver la planificación semanal." }, { status: 403 });
+    }
+
     const { searchParams } = new URL(request.url);
     const { monthKey } = parseMonthKey(searchParams.get("month"));
     const branchCode = String(searchParams.get("branchCode") || "").trim().toUpperCase();
@@ -686,6 +801,9 @@ export async function GET(request) {
     const employeeIds = normalizeEmployeeIdList(searchParams.get("employeeIds"));
     const groupId = normalizeGroupId(searchParams.get("groupId"));
     const weekStartKey = String(searchParams.get("weekStartKey") || "").trim();
+    const includeOverlays = searchParams.get("includeOverlays") === "true";
+    const weekDateKeySet = getWeekDateKeySet(weekStartKey);
+    const weekDateKeys = weekDateKeySet ? [...weekDateKeySet].sort() : [];
     const monthKeys = getWeekMonthKeys(weekStartKey);
     const targetMonthKeys = monthKeys.length ? monthKeys : [getPreviousMonthKey(monthKey), monthKey, getNextMonthKey(monthKey)];
     const query = { monthKey: { $in: targetMonthKeys } };
@@ -720,11 +838,51 @@ export async function GET(request) {
       assertEmployeesBelongToGroup(employeeId ? [employeeId] : employeeIds, workGroup);
     }
 
-    const [assignments, roles] = await Promise.all([
-      ScheduleAssignment.find(query)
-        .sort({ employeeName: 1 })
-        .lean(),
-      Role.find({}).lean(),
+    const exceptionOverlayQuery = weekDateKeys.length ? {
+      status: { $ne: "void" },
+      $or: [
+        { dateKey: { $in: weekDateKeys } },
+        { dateKey: { $lte: weekDateKeys.at(-1) }, endDateKey: { $gte: weekDateKeys[0] } },
+      ],
+    } : null;
+    const vacationOverlayQuery = weekDateKeys.length ? {
+      startDateKey: { $lte: weekDateKeys.at(-1) },
+      endDateKey: { $gte: weekDateKeys[0] },
+    } : null;
+
+    if (exceptionOverlayQuery) applyPlannerScopeToEmployeeReferenceQuery(exceptionOverlayQuery, plannerScope);
+    if (vacationOverlayQuery) applyPlannerScopeToEmployeeReferenceQuery(vacationOverlayQuery, plannerScope);
+    if (employeeIds.length) {
+      if (exceptionOverlayQuery) exceptionOverlayQuery.employee = { $in: employeeIds };
+      if (vacationOverlayQuery) vacationOverlayQuery.employee = { $in: employeeIds };
+    }
+
+    const [assignments, roles, exceptionOverlays, vacationOverlays, holidayOverlays] = await Promise.all([
+      findScheduleAssignmentsForWeek(query, weekStartKey, groupId),
+      Role.find({}).select({
+        code: 1,
+        name: 1,
+        areaCode: 1,
+        areaName: 1,
+        scheduleMode: 1,
+        fixedScheduleTemplate: 1,
+        fixedScheduleTemplateName: 1,
+        fixedScheduleAreaCode: 1,
+        fixedScheduleAreaName: 1,
+        fixedScheduleRoleCode: 1,
+        fixedScheduleRoleName: 1,
+        fixedScheduleRotationGroup: 1,
+        fixedScheduleWeeklyRows: 1,
+      }).lean(),
+      includeOverlays && exceptionOverlayQuery
+        ? OperationalException.find(exceptionOverlayQuery).sort({ dateKey: 1, employeeName: 1 }).lean()
+        : [],
+      includeOverlays && vacationOverlayQuery
+        ? VacationRequest.find(vacationOverlayQuery).sort({ startDateKey: 1, employeeName: 1 }).lean()
+        : [],
+      includeOverlays && weekDateKeys.length
+        ? Holiday.find({ dateKey: { $in: weekDateKeys } }).sort({ dateKey: 1 }).lean()
+        : [],
     ]);
     const rolesByCode = new Map(
       roles.map((role) => [String(role.code || "").trim().toUpperCase(), role]),
@@ -761,7 +919,17 @@ export async function GET(request) {
     }
 
     const [fixedEmployees, fixedTemplates, fixedHolidays] = await Promise.all([
-      Employee.find(fixedEmployeeQuery).lean(),
+      Employee.find(fixedEmployeeQuery).select({
+        fullName: 1,
+        dni: 1,
+        branchCode: 1,
+        branchName: 1,
+        branch: 1,
+        areaCode: 1,
+        areaName: 1,
+        roleCode: 1,
+        roleName: 1,
+      }).lean(),
       fixedTemplateIds.length
         ? BaseScheduleTemplate.find({ _id: { $in: fixedTemplateIds }, isActive: { $ne: false } }).lean()
         : [],
@@ -785,6 +953,11 @@ export async function GET(request) {
     return NextResponse.json({
       assignments: mergeAssignmentsByEmployee([...fixedAssignments, ...variableAssignments], monthKey)
         .map((assignment) => serializeScheduleAssignmentForWeek(assignment, weekStartKey, groupId)),
+      overlays: includeOverlays ? {
+        exceptions: exceptionOverlays.map(serializeOperationalException),
+        vacations: vacationOverlays.map(serializeVacationRecord),
+        holidays: holidayOverlays.map(serializeHoliday),
+      } : undefined,
     });
   } catch (error) {
     return NextResponse.json(
@@ -806,6 +979,13 @@ export async function POST(request) {
     const body = await request.json();
     const { monthKey } = parseMonthKey(body?.monthKey);
     const action = String(body?.action || "").trim();
+
+    if (
+      action !== "approve-week"
+      && !hasAccessPermission(plannerScope.user, "planner.schedules.manage")
+    ) {
+      return NextResponse.json({ error: "No tienes permiso para modificar horarios." }, { status: 403 });
+    }
 
     if (action === "update-day-schedule") {
       const employeeId = String(body?.employeeId || "").trim();
@@ -1089,14 +1269,12 @@ export async function POST(request) {
                   template: currentAssignment?.template || null,
                   templateName: "PROGRAMACION DE HORARIOS",
                   rotationGroup: "OPERATIVO_VARIABLE",
-                  generatedDays,
                   weeklyPlan: [],
                   notes: "Programacion de horarios armada sin plantillas por semana.",
                 },
                 $push: {
                   scheduleHistory: {
                     $each: [historyEntry],
-                    $slice: -60,
                   },
                 },
                 $pull: {
@@ -1189,15 +1367,30 @@ export async function POST(request) {
         await ScheduleAssignment.bulkWrite(operations);
       }
 
-      if (exceptionOperations.length) {
-        await OperationalException.bulkWrite(exceptionOperations);
-      }
+      // Los efectos derivados se conservan dentro de la versión pendiente; guardar no puede
+      // crear excepciones ni limpiar registros operativos vigentes antes de su aprobación.
 
       const assignmentQuery = { monthKey: { $in: targetMonthKeys }, employee: { $in: employeeIds } };
 
-      const assignments = await ScheduleAssignment.find(assignmentQuery)
-        .sort({ employeeName: 1 })
-        .lean();
+      const assignments = await findScheduleAssignmentsForWeek(assignmentQuery, weekStartKey, groupId);
+
+      await createAuditLog({
+        actor: savedBy,
+        action: "planningSchedule.version.create",
+        entityType: "planningWorkGroup",
+        entityId: groupId,
+        entityLabel: `${groupName} ${weekStartKey}`,
+        route: "/api/planner/planning/schedule-assignments",
+        details: {
+          weekStartKey,
+          groupId,
+          groupName,
+          savedAt,
+          savedByUser,
+          employeeIds: [...savedEmployeeIds],
+          status: "pending_approval",
+        },
+      });
 
       return NextResponse.json({
         message: `Programacion de horarios guardada para ${savedEmployeeIds.size} empleados.`,
@@ -1294,32 +1487,116 @@ export async function POST(request) {
         throw new Error("La version seleccionada ya no existe en el historial.");
       }
 
+      const approvedVersionKey = buildHistoryVersionKey({
+        groupId,
+        savedAt: approvedVersionSavedAt,
+        savedBy: approvedVersionSavedBy,
+        savedByUser: approvedVersionSavedByUser,
+      });
+      const assignmentsWithMatchingHistory = assignmentsForApproval.filter((assignment) =>
+        (assignment.scheduleHistory || []).some((entry) =>
+          entry.weekStartKey === weekStartKey
+          && normalizeGroupId(entry.groupId) === groupId
+          && buildHistoryVersionKey(entry) === approvedVersionKey,
+        ),
+      );
+      const isAlreadyApproved = assignmentsWithMatchingHistory.length > 0
+        && assignmentsWithMatchingHistory.every((assignment) =>
+          (assignment.planningApprovals || []).some((approval) =>
+            approval.weekStartKey === weekStartKey
+            && normalizeGroupId(approval.groupId) === groupId
+            && buildHistoryVersionKey({
+              groupId: approval.groupId,
+              savedAt: approval.versionSavedAt,
+              savedBy: approval.versionSavedBy,
+              savedByUser: approval.versionSavedByUser,
+            }) === approvedVersionKey,
+          ),
+        );
+
+      if (isAlreadyApproved) {
+        return NextResponse.json(
+          { error: "Esta version ya fue aprobada. Guarda una nueva version para volver a aprobar." },
+          { status: 409 },
+        );
+      }
+
       await ScheduleAssignment.updateMany(
         { monthKey: { $in: targetMonthKeys }, employee: { $in: employeeObjectIds } },
         { $pull: { planningApprovals: { weekStartKey, groupId } } },
       );
-      await ScheduleAssignment.updateMany(
-        {
-          monthKey: { $in: targetMonthKeys },
-          employee: { $in: employeeObjectIds },
-          scheduleHistory: { $elemMatch: historyMatch },
-        },
-        {
-          $push: {
-            planningApprovals: {
-              groupId,
-              groupName,
-              weekStartKey,
-              approvedAt,
-              approvedBy,
-              approvedByUser,
-              versionSavedAt: approvedVersionSavedAt,
-              versionSavedBy: approvedVersionSavedBy,
-              versionSavedByUser: approvedVersionSavedByUser,
+      const weekDateKeys = getWeekDateKeySet(weekStartKey);
+      const approvalOperations = assignmentsForApproval.flatMap((assignment) => {
+        const matchingHistory = (assignment.scheduleHistory || []).find((entry) =>
+          buildHistoryVersionKey(entry) === buildHistoryVersionKey({
+            groupId,
+            savedAt: approvedVersionSavedAt,
+            savedBy: approvedVersionSavedBy,
+            savedByUser: approvedVersionSavedByUser,
+          }) && entry.weekStartKey === weekStartKey && normalizeGroupId(entry.groupId) === groupId,
+        );
+
+        if (!matchingHistory || !weekDateKeys) return [];
+
+        const operationalDaysByDate = new Map(
+          (assignment.generatedDays || [])
+            .filter((day) => !weekDateKeys.has(day.dateKey))
+            .map((day) => [day.dateKey, day]),
+        );
+
+        (matchingHistory.generatedDays || [])
+          .filter((day) => weekDateKeys.has(day.dateKey))
+          .forEach((day) => operationalDaysByDate.set(day.dateKey, day));
+
+        return [{
+          updateOne: {
+            filter: { _id: assignment._id },
+            update: {
+              $set: {
+                generatedDays: [...operationalDaysByDate.values()]
+                  .sort((left, right) => String(left.dateKey).localeCompare(String(right.dateKey))),
+              },
+              $push: {
+                planningApprovals: {
+                  groupId,
+                  groupName,
+                  weekStartKey,
+                  approvedAt,
+                  approvedBy,
+                  approvedByUser,
+                  versionSavedAt: approvedVersionSavedAt,
+                  versionSavedBy: approvedVersionSavedBy,
+                  versionSavedByUser: approvedVersionSavedByUser,
+                },
+              },
             },
           },
+        }];
+      });
+
+      if (approvalOperations.length) {
+        await ScheduleAssignment.bulkWrite(approvalOperations);
+      }
+
+      await createAuditLog({
+        actor: approvedBy,
+        action: "planningSchedule.version.approve",
+        entityType: "planningWorkGroup",
+        entityId: groupId,
+        entityLabel: `${groupName} ${weekStartKey}`,
+        route: "/api/planner/planning/schedule-assignments",
+        details: {
+          weekStartKey,
+          groupId,
+          groupName,
+          approvedAt,
+          approvedByUser,
+          versionSavedAt: approvedVersionSavedAt,
+          versionSavedBy: approvedVersionSavedBy,
+          versionSavedByUser: approvedVersionSavedByUser,
+          employeeIds,
         },
-      );
+      });
 
       const assignmentQuery = { monthKey: { $in: targetMonthKeys }, employee: { $in: employeeObjectIds } };
 

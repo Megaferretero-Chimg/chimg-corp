@@ -1,0 +1,64 @@
+.fullWidthBody {
+  @media (min-width: 1280px) { grid-template-columns: minmax(0, 1fr); }
+}
+
+.groupIdentity {
+  display: flex;
+  align-items: center;
+  gap: 0.7rem;
+  color: #163f85;
+
+  div { display: grid; gap: 0.2rem; }
+  strong { color: #10213e; }
+  small { color: #71809a; }
+}
+
+.memberCount {
+  display: inline-flex;
+  border-radius: 999px;
+  background: rgba(31, 111, 255, 0.08);
+  color: #15418f;
+  padding: 0.36rem 0.7rem;
+  font-weight: 700;
+}
+
+.memberSearch {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  border: 1px solid #d9e0eb;
+  border-radius: 0.85rem;
+  padding: 0 0.8rem;
+  background: #fff;
+  color: #657691;
+
+  input { width: 100%; border: 0; outline: 0; padding: 0.75rem 0; background: transparent; color: #10213e; }
+}
+
+.memberList {
+  display: grid;
+  gap: 0.45rem;
+  max-height: 19rem;
+  overflow-y: auto;
+  border: 1px solid #e2e7ef;
+  border-radius: 1rem;
+  padding: 0.55rem;
+  background: #f8faff;
+}
+
+.memberOption {
+  display: flex;
+  align-items: center;
+  gap: 0.7rem;
+  border: 1px solid transparent;
+  border-radius: 0.8rem;
+  padding: 0.68rem 0.75rem;
+  cursor: pointer;
+
+  span { display: grid; gap: 0.15rem; }
+  strong { color: #142746; }
+  small { color: #71809a; }
+}
+
+.memberOptionSelected { border-color: rgba(31, 111, 255, 0.22); background: rgba(31, 111, 255, 0.07); }
+.memberEmpty { padding: 1.25rem; text-align: center; color: #71809a; }

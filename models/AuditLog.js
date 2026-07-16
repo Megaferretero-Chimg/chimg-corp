@@ -50,6 +50,28 @@ const auditLogSchema = new Schema(
 auditLogSchema.index({ entityType: 1, entityId: 1, happenedAt: -1 });
 auditLogSchema.index({ action: 1, happenedAt: -1 });
 auditLogSchema.index({ actor: 1, happenedAt: -1 });
+auditLogSchema.index({ "details.employeeId": 1, "details.dateKey": 1, entityType: 1, happenedAt: -1 });
+
+function rejectAuditMutation() {
+  throw new Error("Los registros de auditoría son inmutables.");
+}
+
+auditLogSchema.pre("save", function protectExistingAuditLog() {
+  if (!this.isNew) rejectAuditMutation();
+});
+
+[
+  "deleteMany",
+  "deleteOne",
+  "findOneAndDelete",
+  "findOneAndReplace",
+  "findOneAndUpdate",
+  "replaceOne",
+  "updateMany",
+  "updateOne",
+].forEach((operation) => {
+  auditLogSchema.pre(operation, rejectAuditMutation);
+});
 
 const AuditLog =
   mongoose.models.AuditLog || mongoose.model("AuditLog", auditLogSchema);

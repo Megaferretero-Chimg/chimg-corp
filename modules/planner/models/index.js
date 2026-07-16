@@ -103,6 +103,7 @@ const planningWorkGroupSchema = new mongoose.Schema(
 
 planningWorkGroupSchema.index({ branchCode: 1, name: 1 });
 planningWorkGroupSchema.index({ "members.employee": 1 });
+planningWorkGroupSchema.index({ ownerEmployee: 1, isActive: 1 });
 
 export const PlanningWorkGroup =
   mongoose.models.PlanningWorkGroup || mongoose.model("PlanningWorkGroup", planningWorkGroupSchema);

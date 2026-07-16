@@ -1,9 +1,9 @@
 import { NextResponse } from "next/server";
 
 import { getAuthenticatedUser } from "@/lib/auth";
-import { BRANCH_MANAGER_ACCESS_ROLE } from "@/lib/access-roles";
 import { createAuditLog } from "@/lib/audit";
 import connectToDatabase from "@/lib/db/mongodb";
+import { hasAccessPermission } from "@/modules/company/submodules/access/lib/permissions";
 import {
   applyPlannerScopeToEmployeeReferenceQuery,
   assertEmployeesInPlannerScope,
@@ -37,14 +37,22 @@ export async function GET(request) {
       return NextResponse.json({ error: "Sesion invalida o expirada." }, { status: 401 });
     }
 
+    if (!hasAccessPermission(plannerScope.user, "planner.exceptions.view")) {
+      return NextResponse.json({ error: "No tienes permiso para ver ajustes y excepciones." }, { status: 403 });
+    }
+
     const { searchParams } = new URL(request.url);
     const query = buildMonthExceptionQuery(searchParams.get("month"));
-    const user = await getAuthenticatedUser();
+    const isWeeklyIndicatorRequest = searchParams.get("context") === "weekly"
+      && hasAccessPermission(plannerScope.user, "planner.schedules.weekly.view");
+    const user = plannerScope.user;
     const canApproveExceptions = await canUserApproveExceptions(user);
+    const canDeleteOwnExceptions = hasAccessPermission(user, "planner.exceptions.deleteOwn");
+    const canCreateExceptions = hasAccessPermission(user, "planner.exceptions.create");
 
     applyPlannerScopeToEmployeeReferenceQuery(query, plannerScope);
 
-    if (user?.accessRole === BRANCH_MANAGER_ACCESS_ROLE) {
+    if (!isWeeklyIndicatorRequest && !hasAccessPermission(user, "planner.exceptions.viewAll")) {
       query.createdByUser = user.id;
     }
 
@@ -61,6 +69,8 @@ export async function GET(request) {
         attendanceModes: ATTENDANCE_MODES,
         payModes: PAY_MODES,
         canApproveExceptions,
+        canCreateExceptions,
+        canDeleteOwnExceptions,
       },
     });
   } catch (error) {
@@ -81,6 +91,17 @@ export async function POST(request) {
     }
 
     const body = await request.json();
+    const planningSource = String(body?.planningSource || "").trim();
+    const canCreateFromAttendance = planningSource === "attendance_comparison"
+      && hasAccessPermission(plannerScope.user, "planner.attendance.review");
+
+    if (
+      !hasAccessPermission(plannerScope.user, "planner.exceptions.create")
+      && !canCreateFromAttendance
+    ) {
+      return NextResponse.json({ error: "No tienes permiso para crear ajustes y excepciones." }, { status: 403 });
+    }
+
     const employeeId = String(body?.employeeId || "").trim();
 
     if (!employeeId) {
@@ -90,10 +111,9 @@ export async function POST(request) {
     assertEmployeesInPlannerScope([employeeId], plannerScope);
 
     const employee = await Employee.findById(employeeId).lean();
-    const user = await getAuthenticatedUser();
+    const user = plannerScope.user;
     const canApproveExceptions = await canUserApproveExceptions(user);
     const registeredBy = user?.employeeName || user?.username || user?.id || "SISTEMA";
-    const planningSource = String(body?.planningSource || "").trim();
     const isAttendanceExecution = planningSource === "attendance_comparison";
     const shouldAutoResolve = isAttendanceExecution || (
       planningSource === "schedule_planner" &&

@@ -23,7 +23,17 @@ export default async function DashboardSchedulesPage({ searchParams }) {
       <SchedulePlanner
         basePath="/schedules"
         initialFilters={{ month, groupId, week }}
-        canApprovePlanning={hasAccessPermission(user, "planner.updates.manage")}
+        capabilities={{
+          canManageSchedules: hasAccessPermission(user, "planner.schedules.manage"),
+          canApprovePlanning: hasAccessPermission(user, "planner.updates.manage"),
+          canExportSchedule: hasAccessPermission(user, "planner.schedules.export"),
+          canCreateQuickTemplates: hasAccessPermission(user, "planner.schedules.quickTemplates.create"),
+          canCreateAdjustments: hasAccessPermission(user, "planner.schedules.adjustments.create"),
+          canOpenMonthlyDetail: hasAccessPermission(user, "planner.schedules.details.view"),
+          showSummaries: hasAccessPermission(user, "planner.schedules.summaries.view"),
+          showHours: hasAccessPermission(user, "planner.schedules.hours.view"),
+          showFinancials: hasAccessPermission(user, "planner.schedules.financial.view"),
+        }}
       />
     </ModuleShell>
   );

@@ -4,6 +4,7 @@ import { getAuthenticatedUser } from "@/lib/auth";
 import connectToDatabase from "@/lib/db/mongodb";
 import {
   DEFAULT_USER_TYPES,
+  normalizeUserTypePayload,
   serializeUserType,
 } from "@/modules/company/submodules/access/lib/user-types";
 import {
@@ -16,13 +17,13 @@ import { UserType } from "@/modules/company/models";
 
 async function ensureDefaultUserTypes() {
   await Promise.all(
-    DEFAULT_USER_TYPES.map((userType) =>
-      UserType.updateOne(
-        { code: userType.code },
-        { $set: userType },
-        { upsert: true },
-      ),
-    ),
+    DEFAULT_USER_TYPES.map((userType) => {
+      const update = userType.code === "admin"
+        ? { $set: userType }
+        : { $setOnInsert: userType };
+
+      return UserType.updateOne({ code: userType.code }, update, { upsert: true });
+    }),
   );
 }
 
@@ -40,9 +41,7 @@ export async function GET() {
   await connectToDatabase();
   await ensureDefaultUserTypes();
 
-  const userTypes = await UserType.find({
-    code: { $in: DEFAULT_USER_TYPES.map((type) => type.code) },
-  }).sort({ name: 1 }).lean();
+  const userTypes = await UserType.find({}).sort({ name: 1 }).lean();
 
   return NextResponse.json({
     userTypes: userTypes.map(serializeUserType),
@@ -52,7 +51,7 @@ export async function GET() {
   });
 }
 
-export async function POST() {
+export async function POST(request) {
   const user = await getAuthenticatedUser();
 
   if (!user) {
@@ -63,8 +62,29 @@ export async function POST() {
     return NextResponse.json({ error: "No tienes permiso para administrar perfiles de acceso." }, { status: 403 });
   }
 
-  return NextResponse.json(
-    { error: "Los perfiles de acceso son fijos: Administrador, Jefe de sucursal y Encargado de nómina." },
-    { status: 405 },
-  );
+  try {
+    await connectToDatabase();
+    const body = await request.json();
+    const payload = normalizeUserTypePayload(body);
+    const userType = await UserType.create(payload);
+
+    return NextResponse.json(
+      { userType: serializeUserType(userType) },
+      { status: 201 },
+    );
+  } catch (error) {
+    if (error?.code === 11000) {
+      const field = Object.keys(error.keyPattern || {})[0];
+      const message = field === "name"
+        ? "Ya existe un perfil de acceso con ese nombre."
+        : "Ya existe un perfil de acceso con ese código.";
+
+      return NextResponse.json({ error: message }, { status: 409 });
+    }
+
+    return NextResponse.json(
+      { error: error.message || "No se pudo crear el perfil de acceso." },
+      { status: 400 },
+    );
+  }
 }

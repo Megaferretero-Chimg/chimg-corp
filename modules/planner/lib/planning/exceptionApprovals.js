@@ -5,11 +5,7 @@ function normalizeCode(value) {
 }
 
 export function canUserApproveExceptions(user) {
-  if (normalizeCode(user?.accessRole) === "ADMIN") {
-    return true;
-  }
-
-  return hasAccessPermission(user, "planner.exceptions.manage");
+  return hasAccessPermission(user, "planner.exceptions.approve");
 }
 
 export function forcePendingExceptionPayload(body = {}) {

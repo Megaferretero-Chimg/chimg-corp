@@ -70,6 +70,7 @@ export function getModuleCardsForUser(user) {
 
     if (module.key === PLANNING_MODULE.key) {
       return hasAccessPermission(user, "planner.home.view") ||
+        hasAccessPermission(user, "planner.schedules.weekly.view") ||
         hasAccessPermission(user, "planner.schedules.view") ||
         hasAccessPermission(user, "planner.attendance.view") ||
         hasAccessPermission(user, "planner.reports.view");

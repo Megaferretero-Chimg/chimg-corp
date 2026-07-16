@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { Edit3, ReceiptText, UserMinus } from "lucide-react";
+import { Edit3, ReceiptText, UserCheck, UserMinus } from "lucide-react";
 
 import CatalogDrawer from "@/components/catalog/CatalogDrawer";
 import { planningModulePath } from "@/modules/planner/routes";
@@ -49,7 +49,7 @@ function DetailSection({ title, items }) {
   );
 }
 
-export default function EmployeeDetailModal({ employee, onClose, onEdit, onDelete }) {
+export default function EmployeeDetailModal({ employee, onClose, onEdit, onDelete, onReactivate }) {
   const documentType = ["cedula", "pasaporte"].includes(employee?.documentType) ? employee.documentType : "cedula";
   const identityDetails = [
     ["Documento de identidad", DOCUMENT_TYPE_LABELS[documentType] || documentType],
@@ -105,7 +105,12 @@ export default function EmployeeDetailModal({ employee, onClose, onEdit, onDelet
                 <UserMinus size={16} />
                 Despedir
               </button>
-            ) : null}
+            ) : (
+              <button type="button" className="catalog-button-ghost" onClick={() => onReactivate(employee)}>
+                <UserCheck size={16} />
+                Anular baja
+              </button>
+            )}
             <button type="button" className="catalog-button-primary" onClick={() => onEdit(employee)}>
               <Edit3 size={16} />
               Editar

@@ -39,6 +39,8 @@ const ACTION_LABELS = {
   "employee.role.assignSellerCoverage": "Cobertura del empleado actualizada",
   "employee.roleAssignments.enableSellerCoverage": "Coberturas del empleado habilitadas",
   "employee.roles.migrateVendorSubroles": "Cargo del empleado migrado",
+  "employee.terminate": "Baja de empleado registrada",
+  "employee.termination.cancel": "Baja de empleado anulada",
   "employee.roleLabel.sync": "Etiqueta de cargo sincronizada",
   "organization_structure.relationship_update": "Relación del organigrama actualizada",
   "area.create": "Área creada",

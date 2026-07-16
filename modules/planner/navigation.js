@@ -22,7 +22,7 @@ export const DASHBOARD_NAVIGATION = [
         href: planningModulePath("/schedules"),
         label: "Planificacion semanal",
         description: "Horario aplicable por sucursal y semana",
-        permission: "planner.schedules.view",
+        permission: "planner.schedules.weekly.view",
       },
       {
         href: planningModulePath("/planning/time-off"),
@@ -127,7 +127,7 @@ export const DASHBOARD_NAVIGATION = [
         permission: "planner.settings.view",
       },
       {
-        href: planningModulePath("/settings"),
+        href: planningModulePath("/settings/work-groups"),
         label: "Grupos de trabajo",
         description: "Responsables y empleados por equipo",
         permission: "planner.settings.view",

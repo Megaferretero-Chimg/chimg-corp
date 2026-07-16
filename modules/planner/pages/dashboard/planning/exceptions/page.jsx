@@ -1,7 +1,5 @@
 import ModuleShell from "@/components/shell/ModuleShell";
 import ExceptionManager from "@/modules/planner/components/planning/ExceptionManager";
-import { requireAuthenticatedUser } from "@/lib/access-control";
-import { getPlanningModuleForUser } from "@/modules/planner/module";
 
 export const metadata = {
   title: "Todos los ajustes y excepciones | Control de Asistencia",
@@ -34,20 +32,17 @@ function normalizeInitialDraft(searchParams = {}) {
 }
 
 export default async function PlanningExceptionsPage({ searchParams }) {
-  const user = await requireAuthenticatedUser();
   const resolvedSearchParams = await searchParams;
 
   return (
     <ModuleShell
       title="Todos los ajustes y excepciones"
       description=""
-      moduleConfig={getPlanningModuleForUser(user)}
     >
       <ExceptionManager
         eyebrow=""
         title=""
         description=""
-        currentUserAccessRole={user.accessRole}
         listTitle="Todos los registros"
         initialDraft={normalizeInitialDraft(resolvedSearchParams)}
         compactListView

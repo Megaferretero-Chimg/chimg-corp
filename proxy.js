@@ -3,7 +3,6 @@ import crypto from "node:crypto";
 
 const SESSION_COOKIE_NAME = "control_asistencia_session";
 const PLANNING_EXCEPTIONS_ACCESS_ROLE = "planning_exceptions";
-const BRANCH_MANAGER_ACCESS_ROLE = "branch_manager";
 const LIMITED_API_ALLOWLIST = [
   "/api/auth/login",
   "/api/auth/logout",
@@ -12,22 +11,27 @@ const LIMITED_API_ALLOWLIST = [
   "/api/planner/planning/exceptions",
 ];
 
-function getSignedAccessRole(token) {
+function getSignedSession(token) {
   const parts = String(token || "").split(":");
 
-  if (parts.length !== 4 || parts[0] !== "user") {
-    return "";
+  if (![4, 5].includes(parts.length) || parts[0] !== "user") {
+    return null;
   }
 
-  const [, userId, accessRole, signature] = parts;
+  const hasEmbeddedPermissions = parts.length === 5;
+  const [, userId, accessRole, permissionsOrSignature, nextSignature] = parts;
+  const encodedPermissions = hasEmbeddedPermissions ? permissionsOrSignature : "";
+  const signature = hasEmbeddedPermissions ? nextSignature : permissionsOrSignature;
 
   if (!userId || !accessRole || !signature || !process.env.SESSION_SECRET) {
-    return "";
+    return null;
   }
 
   const expectedSignature = crypto
     .createHmac("sha256", process.env.SESSION_SECRET)
-    .update(`${userId}:${accessRole}`)
+    .update(hasEmbeddedPermissions
+      ? `${userId}:${accessRole}:${encodedPermissions}`
+      : `${userId}:${accessRole}`)
     .digest("hex");
 
   const signatureBuffer = Buffer.from(signature);
@@ -37,10 +41,128 @@ function getSignedAccessRole(token) {
     signatureBuffer.length !== expectedSignatureBuffer.length ||
     !crypto.timingSafeEqual(signatureBuffer, expectedSignatureBuffer)
   ) {
-    return "";
+    return null;
   }
 
-  return accessRole;
+  let permissions = [];
+
+  if (encodedPermissions) {
+    try {
+      const decoded = JSON.parse(Buffer.from(encodedPermissions, "base64url").toString("utf8"));
+      permissions = Array.isArray(decoded) ? decoded.map(String) : [];
+    } catch {
+      return null;
+    }
+  }
+
+  return { userId, accessRole, permissions };
+}
+
+function isAdminAccessRole(value) {
+  return ["admin", "administrator", "administrador"].includes(String(value || "").trim().toLowerCase());
+}
+
+function hasAnyPermission(permissionSet, permissions = []) {
+  return permissions.some((permission) => permissionSet.has(permission));
+}
+
+function canAccessApi(pathname, method, permissionSet) {
+  if (pathname.startsWith("/api/auth/")) return true;
+
+  if (pathname === "/api/company/employees") {
+    if (method !== "GET") return hasAnyPermission(permissionSet, ["company.employees.create"]);
+    return hasAnyPermission(permissionSet, [
+      "company.employees.view",
+      "planner.schedules.weekly.view",
+      "planner.schedules.view",
+      "planner.attendance.view",
+      "planner.operations.view",
+    ]);
+  }
+
+  if (pathname === "/api/company/branches" && method === "GET") {
+    return hasAnyPermission(permissionSet, [
+      "company.branches.view",
+      "planner.schedules.weekly.view",
+      "planner.attendance.view",
+      "planner.operations.view",
+      "planner.settings.view",
+    ]);
+  }
+
+  if (pathname.startsWith("/api/company/employees/")) {
+    return hasAnyPermission(permissionSet, ["company.employees.update", "company.employees.delete"]);
+  }
+
+  if (pathname === "/api/company/roles" && method === "GET") {
+    return hasAnyPermission(permissionSet, [
+      "company.roles.view",
+      "planner.schedules.weekly.view",
+      "planner.settings.view",
+    ]);
+  }
+
+  const attendanceRules = [
+    ["/api/planner/attendance/upload/", ["planner.attendance.upload"]],
+    ["/api/planner/attendance/upload", method === "GET"
+      ? ["planner.attendance.view", "planner.attendance.upload"]
+      : ["planner.attendance.upload"]],
+    ["/api/planner/attendance/punches/", method === "GET"
+      ? ["planner.attendance.view", "planner.attendance.review"]
+      : ["planner.attendance.review"]],
+    ["/api/planner/attendance/punches", method === "GET"
+      ? ["planner.attendance.view", "planner.attendance.review"]
+      : ["planner.attendance.review"]],
+    ["/api/planner/attendance/comparison", ["planner.attendance.view"]],
+    ["/api/planner/attendance/decision-history", method === "GET"
+      ? ["planner.attendance.view", "planner.attendance.review"]
+      : ["planner.attendance.review"]],
+    ["/api/planner/attendance/day-decisions", method === "GET"
+      ? ["planner.attendance.view", "planner.attendance.review"]
+      : ["planner.attendance.review"]],
+    ["/api/planner/attendance/monthly-closure", method === "GET"
+      ? ["planner.operations.view", "planner.attendance.view"]
+      : ["planner.operations.manage", "planner.attendance.close"]],
+  ];
+  const attendanceRule = attendanceRules.find(([path]) => pathname === path || pathname.startsWith(path));
+
+  if (attendanceRule) {
+    return hasAnyPermission(permissionSet, attendanceRule[1]);
+  }
+
+  const planningRules = [
+    ["/api/planner/planning/schedule-assignments/export", ["planner.schedules.export"]],
+    ["/api/planner/planning/schedule-assignments", method === "GET"
+      ? ["planner.schedules.weekly.view", "planner.schedules.view"]
+      : ["planner.schedules.manage", "planner.updates.manage"]],
+    ["/api/planner/planning/base-schedules/", ["planner.settings.manage"]],
+    ["/api/planner/planning/base-schedules", method === "GET"
+      ? ["planner.schedules.weekly.view", "planner.settings.view", "planner.attendance.view"]
+      : ["planner.schedules.quickTemplates.create", "planner.settings.manage"]],
+    ["/api/planner/planning/operational-setup", method === "GET"
+      ? ["planner.schedules.weekly.view", "planner.settings.view"]
+      : ["planner.settings.manage"]],
+    ["/api/planner/planning/work-groups", method === "GET"
+      ? ["planner.schedules.weekly.view", "planner.settings.view"]
+      : ["planner.settings.manage"]],
+    ["/api/planner/planning/holidays/", ["planner.holidays.manage"]],
+    ["/api/planner/planning/holidays", method === "GET"
+      ? ["planner.schedules.weekly.view", "planner.holidays.view"]
+      : ["planner.holidays.manage"]],
+    ["/api/planner/planning/vacations/", ["planner.timeOff.manage"]],
+    ["/api/planner/planning/vacations", method === "GET"
+      ? ["planner.schedules.weekly.view", "planner.timeOff.view"]
+      : ["planner.timeOff.manage"]],
+    ["/api/planner/planning/exceptions/", method === "PATCH"
+      ? ["planner.exceptions.approve"]
+      : ["planner.exceptions.deleteOwn", "planner.exceptions.approve", "planner.attendance.review"]],
+    ["/api/planner/planning/exceptions", method === "GET"
+      ? ["planner.exceptions.view", "planner.schedules.weekly.view"]
+      : ["planner.exceptions.create", "planner.attendance.review"]],
+  ];
+  const rule = planningRules.find(([path]) => pathname === path || pathname.startsWith(path));
+
+  return rule ? hasAnyPermission(permissionSet, rule[1]) : false;
 }
 
 function canLimitedUserAccessApi(pathname) {
@@ -49,32 +171,11 @@ function canLimitedUserAccessApi(pathname) {
   );
 }
 
-function canBranchManagerAccessApi(pathname, method) {
-  if (pathname.startsWith("/api/auth/")) return true;
-
-  const readOnlyPaths = [
-    "/api/company/employees",
-    "/api/company/roles",
-    "/api/planner/planning/base-schedules",
-    "/api/planner/planning/operational-setup",
-    "/api/planner/planning/holidays",
-    "/api/planner/planning/vacations",
-  ];
-
-  if (method === "GET" && readOnlyPaths.some((path) => pathname === path || pathname.startsWith(`${path}/`))) {
-    return true;
-  }
-
-  return [
-    "/api/planner/planning/schedule-assignments",
-    "/api/planner/planning/exceptions",
-  ].some((path) => pathname === path || pathname.startsWith(`${path}/`));
-}
-
-export function proxy(request) {
+export async function proxy(request) {
   const pathname = request.nextUrl.pathname;
   const sessionCookie = request.cookies.get(SESSION_COOKIE_NAME)?.value || "";
-  const accessRole = getSignedAccessRole(sessionCookie);
+  const session = getSignedSession(sessionCookie);
+  const accessRole = session?.accessRole || "";
 
   if (
     pathname.startsWith("/api/") &&
@@ -87,16 +188,22 @@ export function proxy(request) {
     );
   }
 
+  if (pathname.startsWith("/api/") && session && !isAdminAccessRole(accessRole)) {
+    try {
+      const permissionSet = new Set(session.permissions || []);
 
-  if (
-    pathname.startsWith("/api/")
-    && accessRole === BRANCH_MANAGER_ACCESS_ROLE
-    && !canBranchManagerAccessApi(pathname, request.method)
-  ) {
-    return NextResponse.json(
-      { error: "El Jefe de sucursal solo puede planificar y gestionar sus propios ajustes y excepciones." },
-      { status: 403 },
-    );
+      if (!permissionSet || !canAccessApi(pathname, request.method, permissionSet)) {
+        return NextResponse.json(
+          { error: "No tienes permiso para usar este recurso." },
+          { status: 403 },
+        );
+      }
+    } catch {
+      return NextResponse.json(
+        { error: "No se pudo validar el acceso a este recurso." },
+        { status: 503 },
+      );
+    }
   }
 
   const requestHeaders = new Headers(request.headers);

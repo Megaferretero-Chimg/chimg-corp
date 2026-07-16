@@ -19,7 +19,6 @@ import ConfirmDialog from "@/components/ui/ConfirmDialog";
 import EmployeeAutocomplete from "@/components/ui/EmployeeAutocomplete";
 import FloatingModal from "@/components/ui/FloatingModal";
 import FloatingNotice from "@/components/ui/FloatingNotice";
-import { PLANNING_EXCEPTIONS_ACCESS_ROLE } from "@/lib/access-roles";
 import styles from "@/modules/planner/styles/components/planning/ExceptionManager.module.scss";
 
 const EXCEPTION_FLOWS = [
@@ -259,7 +258,6 @@ export default function ExceptionManager({
   eyebrow = "Control operativo",
   title = "Ajustes y excepciones",
   description = "Registra novedades reales por empleado y deja trazabilidad de la resolucion tomada.",
-  currentUserAccessRole = "",
   onlyPending = false,
   showCreateButton = true,
   showBulkDeleteButton = true,
@@ -276,6 +274,8 @@ export default function ExceptionManager({
   const [employees, setEmployees] = useState([]);
   const [exceptions, setExceptions] = useState([]);
   const [canApproveExceptions, setCanApproveExceptions] = useState(false);
+  const [canCreateExceptions, setCanCreateExceptions] = useState(false);
+  const [canDeleteOwnExceptions, setCanDeleteOwnExceptions] = useState(false);
   const [form, setForm] = useState(EMPTY_FORM);
   const [employeeQuery, setEmployeeQuery] = useState("");
   const [exceptionSearch, setExceptionSearch] = useState("");
@@ -294,8 +294,7 @@ export default function ExceptionManager({
   const initialDraftAppliedRef = useRef("");
   const monthKey = format(monthDate, "yyyy-MM");
   const monthLabel = format(monthDate, "MMMM yyyy", { locale: es });
-  const isLimitedExceptionUser = currentUserAccessRole === PLANNING_EXCEPTIONS_ACCESS_ROLE;
-  const canResolveExceptions = !isLimitedExceptionUser && canApproveExceptions;
+  const canResolveExceptions = canApproveExceptions;
   const isCompactList = compactListView || compactPendingView;
   const deleteActionLabel = exceptionToDelete?.resolution === "pending" || exceptionToDelete?.status === "open"
     ? "Eliminar"
@@ -424,6 +423,8 @@ export default function ExceptionManager({
 
     setExceptions(payload.exceptions || []);
     setCanApproveExceptions(Boolean(payload.options?.canApproveExceptions));
+    setCanCreateExceptions(Boolean(payload.options?.canCreateExceptions));
+    setCanDeleteOwnExceptions(Boolean(payload.options?.canDeleteOwnExceptions));
   }, [monthKey]);
 
   useEffect(() => {
@@ -454,6 +455,8 @@ export default function ExceptionManager({
           setEmployees(employeesPayload.employees || []);
           setExceptions(exceptionsPayload.exceptions || []);
           setCanApproveExceptions(Boolean(exceptionsPayload.options?.canApproveExceptions));
+          setCanCreateExceptions(Boolean(exceptionsPayload.options?.canCreateExceptions));
+          setCanDeleteOwnExceptions(Boolean(exceptionsPayload.options?.canDeleteOwnExceptions));
         }
       } catch (error) {
         if (!isCancelled) {
@@ -1005,7 +1008,7 @@ export default function ExceptionManager({
                 </button>
               </div>
 
-              {showCreateButton ? (
+              {showCreateButton && canCreateExceptions ? (
                 <button type="button" className={styles.primaryButton} onClick={openCreateEditor}>
                   <Plus size={16} />
                   Nueva justificacion
@@ -1086,7 +1089,7 @@ export default function ExceptionManager({
               disabled={isLoading}
             />
           </div>
-          {isCompactList && showCreateButton ? (
+          {isCompactList && showCreateButton && canCreateExceptions ? (
             <button type="button" className={styles.primaryButton} onClick={openCreateEditor}>
               <Plus size={16} />
               Nueva justificacion
@@ -1154,7 +1157,10 @@ export default function ExceptionManager({
                       <span>{describeExceptionTime(exception)}</span>
                     </td>
                     <td className={styles.optionsColumn}>
-                      {canResolveExceptions ? (
+                      {canResolveExceptions || (
+                        canDeleteOwnExceptions
+                        && (exception.resolution === "pending" || exception.status === "open")
+                      ) ? (
                         <div className={styles.rowActions}>
                           <button type="button" onClick={(event) => {
                             event.stopPropagation();

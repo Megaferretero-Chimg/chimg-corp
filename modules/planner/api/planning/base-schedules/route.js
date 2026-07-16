@@ -17,7 +17,11 @@ export async function GET() {
     return NextResponse.json({ error: "Sesion invalida o expirada." }, { status: 401 });
   }
 
-  if (!hasAccessPermission(user, "planner.settings.view")) {
+  if (
+    !hasAccessPermission(user, "planner.settings.view")
+    && !hasAccessPermission(user, "planner.schedules.weekly.view")
+    && !hasAccessPermission(user, "planner.attendance.view")
+  ) {
     return NextResponse.json({ error: "No tienes permiso para ver la configuracion de planificacion." }, { status: 403 });
   }
 
@@ -39,7 +43,10 @@ export async function POST(request) {
     return NextResponse.json({ error: "Sesion invalida o expirada." }, { status: 401 });
   }
 
-  if (!hasAccessPermission(user, "planner.settings.manage")) {
+  if (
+    !hasAccessPermission(user, "planner.settings.manage")
+    && !hasAccessPermission(user, "planner.schedules.quickTemplates.create")
+  ) {
     return NextResponse.json({ error: "No tienes permiso para gestionar la configuracion de planificacion." }, { status: 403 });
   }
 

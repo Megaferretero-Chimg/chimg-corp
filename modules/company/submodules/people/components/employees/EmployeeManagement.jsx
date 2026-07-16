@@ -11,6 +11,7 @@ import {
   ReceiptText,
   RotateCcw,
   Search,
+  UserCheck,
   UserMinus,
   UserRound,
 } from "lucide-react";
@@ -207,6 +208,8 @@ export default function EmployeeManagement() {
   const [editingEmployeeId, setEditingEmployeeId] = useState("");
   const [selectedEmployee, setSelectedEmployee] = useState(null);
   const [employeeToDismiss, setEmployeeToDismiss] = useState(null);
+  const [employeeToReactivate, setEmployeeToReactivate] = useState(null);
+  const [reactivationReason, setReactivationReason] = useState("");
   const [dismissDate, setDismissDate] = useState("");
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
@@ -728,6 +731,47 @@ export default function EmployeeManagement() {
     });
   }
 
+  function requestReactivation(employee) {
+    setEmployeeToReactivate(employee);
+    setReactivationReason("");
+  }
+
+  function confirmReactivation() {
+    if (!employeeToReactivate) {
+      return;
+    }
+
+    if (reactivationReason.trim().length < 5) {
+      showNotice("error", "Escribe un motivo de al menos 5 caracteres para anular la baja.");
+      return;
+    }
+
+    startTransition(async () => {
+      try {
+        const response = await fetch(`/api/company/employees/${employeeToReactivate.id}/reactivate`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({ reason: reactivationReason.trim() }),
+        });
+        const payload = await response.json();
+
+        if (!response.ok) {
+          throw new Error(payload.error || "No se pudo anular la baja del empleado.");
+        }
+
+        await refreshEmployees();
+        setSelectedEmployee(null);
+        setEmployeeToReactivate(null);
+        setReactivationReason("");
+        showNotice("success", "Baja anulada correctamente. El empleado y sus accesos vinculados están activos nuevamente.");
+      } catch (requestError) {
+        showNotice("error", requestError.message);
+      }
+    });
+  }
+
   if (isLoading) {
     return <CatalogPageLoader formVisible={false} />;
   }
@@ -964,7 +1008,20 @@ export default function EmployeeManagement() {
                             >
                               <UserMinus size={16} />
                             </button>
-                          ) : null}
+                          ) : (
+                            <button
+                              type="button"
+                              onClick={(event) => {
+                                event.stopPropagation();
+                                requestReactivation(employee);
+                              }}
+                              className="catalog-icon-button"
+                              aria-label={`Anular baja de ${employee.fullName}`}
+                              title="Anular baja"
+                            >
+                              <UserCheck size={16} />
+                            </button>
+                          )}
                         </div>
                       </td>
                     </tr>
@@ -1036,6 +1093,7 @@ export default function EmployeeManagement() {
         onClose={() => setSelectedEmployee(null)}
         onEdit={handleEdit}
         onDelete={requestDismiss}
+        onReactivate={requestReactivation}
       />
 
       <ConfirmDialog
@@ -1059,6 +1117,34 @@ export default function EmployeeManagement() {
             onChange={(event) => setDismissDate(event.target.value)}
             disabled={isPending}
           />
+        </label>
+      </ConfirmDialog>
+
+      <ConfirmDialog
+        isOpen={Boolean(employeeToReactivate)}
+        title="Anular baja"
+        message={`¿Deseas anular la baja de "${employeeToReactivate?.fullName || ""}"? Volverá a incluirse en horarios y procesos futuros.`}
+        confirmLabel={isPending ? "Procesando..." : "Anular baja"}
+        tone="neutral"
+        isPending={isPending}
+        confirmDisabled={reactivationReason.trim().length < 5}
+        onCancel={() => {
+          setEmployeeToReactivate(null);
+          setReactivationReason("");
+        }}
+        onConfirm={confirmReactivation}
+      >
+        <label className={styles.dismissField}>
+          <span>Motivo de la anulación (obligatorio)</span>
+          <textarea
+            value={reactivationReason}
+            onChange={(event) => setReactivationReason(event.target.value)}
+            placeholder="Ej.: La baja fue registrada por error y el empleado continúa trabajando."
+            maxLength={500}
+            rows={4}
+            disabled={isPending}
+          />
+          <small>{reactivationReason.trim().length}/500 caracteres</small>
         </label>
       </ConfirmDialog>
     </div>

@@ -46,13 +46,13 @@ export const ACCESS_PERMISSION_CATALOG = [
         permissions: [
           { key: "company.organization.view", label: "Ver organización", type: "page", path: "/modules/company/organization" },
           { key: "company.areas.view", label: "Ver áreas", type: "page", path: "/modules/company/areas" },
-          { key: "company.areas.manage", label: "Gestionar áreas", type: "action" },
+          { key: "company.areas.manage", label: "Gestionar áreas", type: "action", requiresAnyPage: ["company.areas.view"] },
           { key: "company.roles.view", label: "Ver cargos", type: "page", path: "/modules/company/roles" },
-          { key: "company.roles.manage", label: "Gestionar cargos", type: "action" },
+          { key: "company.roles.manage", label: "Gestionar cargos", type: "action", requiresAnyPage: ["company.roles.view"] },
           { key: "company.branches.view", label: "Ver sucursales", type: "page", path: "/modules/company/branches" },
-          { key: "company.branches.manage", label: "Gestionar sucursales", type: "action" },
+          { key: "company.branches.manage", label: "Gestionar sucursales", type: "action", requiresAnyPage: ["company.branches.view"] },
           { key: "company.structure.view", label: "Ver estructura", type: "page", path: "/modules/company/structure" },
-          { key: "company.structure.manage", label: "Editar estructura", type: "action" },
+          { key: "company.structure.manage", label: "Editar estructura", type: "action", requiresAnyPage: ["company.structure.view"] },
         ],
       },
       {
@@ -61,9 +61,9 @@ export const ACCESS_PERMISSION_CATALOG = [
         description: "Empleados vinculados a la estructura empresarial.",
         permissions: [
           { key: "company.employees.view", label: "Ver empleados", type: "page", path: "/modules/company/employees" },
-          { key: "company.employees.create", label: "Crear empleados", type: "action" },
-          { key: "company.employees.update", label: "Editar empleados", type: "action" },
-          { key: "company.employees.delete", label: "Eliminar empleados", type: "action" },
+          { key: "company.employees.create", label: "Crear empleados", type: "action", requiresAnyPage: ["company.employees.view"] },
+          { key: "company.employees.update", label: "Editar empleados", type: "action", requiresAnyPage: ["company.employees.view"] },
+          { key: "company.employees.delete", label: "Eliminar empleados", type: "action", requiresAnyPage: ["company.employees.view"] },
         ],
       },
       {
@@ -73,9 +73,9 @@ export const ACCESS_PERMISSION_CATALOG = [
         permissions: [
           { key: "company.access.view", label: "Ver acceso", type: "page", path: "/modules/company/access" },
           { key: "company.users.view", label: "Ver usuarios", type: "page", path: "/modules/company/users" },
-          { key: "company.users.manage", label: "Gestionar usuarios", type: "action" },
+          { key: "company.users.manage", label: "Gestionar usuarios", type: "action", requiresAnyPage: ["company.users.view"] },
           { key: "company.accessRoles.view", label: "Ver perfiles de acceso", type: "page", path: "/modules/company/permissions" },
-          { key: "company.accessRoles.manage", label: "Gestionar perfiles de acceso", type: "action" },
+          { key: "company.accessRoles.manage", label: "Gestionar perfiles de acceso", type: "action", requiresAnyPage: ["company.accessRoles.view"] },
         ],
       },
     ],
@@ -97,17 +97,28 @@ export const ACCESS_PERMISSION_CATALOG = [
         label: "Planificación",
         description: "Horarios, vacaciones, feriados, novedades y excepciones.",
         permissions: [
-          { key: "planner.schedules.view", label: "Ver planificacion semanal", type: "page", path: "/modules/planning/schedules" },
+          { key: "planner.schedules.weekly.view", label: "Ver planificación semanal", type: "page", path: "/modules/planning/schedules" },
+          { key: "planner.schedules.view", label: "Ver otras vistas de horarios", type: "page" },
           { key: "planner.schedules.summary.view", label: "Ver resumen de planificacion", type: "page", path: "/modules/planning/planning" },
-          { key: "planner.schedules.manage", label: "Gestionar horarios", type: "action" },
+          { key: "planner.schedules.manage", label: "Gestionar horarios", type: "action", requiresAnyPage: ["planner.schedules.weekly.view", "planner.schedules.view"] },
+          { key: "planner.schedules.export", label: "Exportar planificación", type: "action", requiresAnyPage: ["planner.schedules.weekly.view", "planner.schedules.view"] },
+          { key: "planner.schedules.quickTemplates.create", label: "Crear plantillas rápidas", type: "action", requiresAnyPage: ["planner.schedules.weekly.view"] },
+          { key: "planner.schedules.adjustments.create", label: "Crear ajustes desde el horario", type: "action", requiresAnyPage: ["planner.schedules.weekly.view"] },
+          { key: "planner.schedules.details.view", label: "Abrir detalle mensual", type: "action", requiresAnyPage: ["planner.schedules.weekly.view", "planner.schedules.view"] },
+          { key: "planner.schedules.summaries.view", label: "Ver resúmenes semanales", type: "action", requiresAnyPage: ["planner.schedules.weekly.view"] },
+          { key: "planner.schedules.hours.view", label: "Ver horas planificadas", type: "action", requiresAnyPage: ["planner.schedules.weekly.view", "planner.schedules.view"] },
+          { key: "planner.schedules.financial.view", label: "Ver información monetaria", type: "action", requiresAnyPage: ["planner.schedules.weekly.view", "planner.schedules.summary.view", "planner.schedules.view"] },
           { key: "planner.timeOff.view", label: "Ver vacaciones", type: "page", path: "/modules/planning/planning/time-off" },
-          { key: "planner.timeOff.manage", label: "Gestionar vacaciones", type: "action" },
+          { key: "planner.timeOff.manage", label: "Gestionar vacaciones", type: "action", requiresAnyPage: ["planner.timeOff.view"] },
           { key: "planner.holidays.view", label: "Ver feriados", type: "page", path: "/modules/planning/planning/holidays" },
-          { key: "planner.holidays.manage", label: "Gestionar feriados", type: "action" },
+          { key: "planner.holidays.manage", label: "Gestionar feriados", type: "action", requiresAnyPage: ["planner.holidays.view"] },
           { key: "planner.updates.view", label: "Ver pendientes aprobacion", type: "page", path: "/modules/planning/updates" },
-          { key: "planner.updates.manage", label: "Gestionar pendientes", type: "action" },
+          { key: "planner.updates.manage", label: "Gestionar pendientes", type: "action", requiresAnyPage: ["planner.updates.view"] },
           { key: "planner.exceptions.view", label: "Ver todos los ajustes y excepciones", type: "page", path: "/modules/planning/planning/exceptions" },
-          { key: "planner.exceptions.manage", label: "Gestionar ajustes y excepciones", type: "action" },
+          { key: "planner.exceptions.create", label: "Crear ajustes y excepciones", type: "action", requiresAnyPage: ["planner.exceptions.view"] },
+          { key: "planner.exceptions.viewAll", label: "Ver registros creados por otros usuarios", type: "action", requiresAnyPage: ["planner.exceptions.view"] },
+          { key: "planner.exceptions.deleteOwn", label: "Eliminar registros propios pendientes", type: "action", requiresAnyPage: ["planner.exceptions.view"] },
+          { key: "planner.exceptions.approve", label: "Modificar, resolver y anular registros", type: "action", requiresAnyPage: ["planner.exceptions.view"] },
         ],
       },
       {
@@ -116,11 +127,11 @@ export const ACCESS_PERMISSION_CATALOG = [
         description: "Carga, revision y cruce de picadas.",
         permissions: [
           { key: "planner.attendance.view", label: "Ver asistencia", type: "page", path: "/modules/planning/attendance" },
-          { key: "planner.attendance.upload", label: "Cargar picadas", type: "action" },
-          { key: "planner.attendance.review", label: "Revisar picadas", type: "action" },
-          { key: "planner.attendance.close", label: "Cerrar asistencia", type: "action" },
+          { key: "planner.attendance.upload", label: "Cargar picadas", type: "action", requiresAnyPage: ["planner.attendance.view"] },
+          { key: "planner.attendance.review", label: "Revisar picadas", type: "action", requiresAnyPage: ["planner.attendance.view"] },
+          { key: "planner.attendance.close", label: "Cerrar asistencia", type: "action", requiresAnyPage: ["planner.attendance.view"] },
           { key: "planner.operations.view", label: "Ver control operativo", type: "page", path: "/modules/planning/operations" },
-          { key: "planner.operations.manage", label: "Gestionar control operativo", type: "action" },
+          { key: "planner.operations.manage", label: "Gestionar control operativo", type: "action", requiresAnyPage: ["planner.operations.view"] },
         ],
       },
       {
@@ -129,8 +140,8 @@ export const ACCESS_PERMISSION_CATALOG = [
         description: "Costos, estimaciones, pagos y exportables.",
         permissions: [
           { key: "planner.payroll.view", label: "Ver nómina", type: "page", path: "/modules/planning/payroll" },
-          { key: "planner.payroll.manage", label: "Gestionar nómina", type: "action" },
-          { key: "planner.payroll.export", label: "Exportar nómina", type: "action" },
+          { key: "planner.payroll.manage", label: "Gestionar nómina", type: "action", requiresAnyPage: ["planner.payroll.view"] },
+          { key: "planner.payroll.export", label: "Exportar nómina", type: "action", requiresAnyPage: ["planner.payroll.view"] },
         ],
       },
       {
@@ -147,7 +158,7 @@ export const ACCESS_PERMISSION_CATALOG = [
         description: "Reglas laborales, autorizaciones y plantillas.",
         permissions: [
           { key: "planner.settings.view", label: "Ver configuración", type: "page", path: "/modules/planning/settings" },
-          { key: "planner.settings.manage", label: "Gestionar configuración", type: "action" },
+          { key: "planner.settings.manage", label: "Gestionar configuración", type: "action", requiresAnyPage: ["planner.settings.view"] },
         ],
       },
     ],
@@ -193,7 +204,7 @@ export const ACCESS_PAGE_CATALOG = [
     pages: [
       ["Entrada al módulo", "/modules/planning", "planner.home.view"],
       ["Inicio", "/modules/planning/home", "planner.home.view"],
-      ["Planificación semanal", "/modules/planning/schedules", "planner.schedules.view"],
+      ["Planificación semanal", "/modules/planning/schedules", "planner.schedules.weekly.view"],
       ["Resumen de planificación", "/modules/planning/planning", "planner.schedules.summary.view"],
       ["Planificación semanal (ruta auxiliar)", "/modules/planning/planning/weekly", "planner.schedules.view"],
       ["Planificación mensual", "/modules/planning/planning/monthly", "planner.schedules.view"],
@@ -239,6 +250,7 @@ export const ACCESS_PAGE_CATALOG = [
       ["Planificado vs. real", "/modules/planning/reports/plan-vs-real", "planner.history.view"],
       ["Historial operativo", "/modules/planning/history", "planner.history.view"],
       ["Configuración de planificación", "/modules/planning/settings", "planner.settings.view"],
+      ["Grupos de trabajo", "/modules/planning/settings/work-groups", "planner.settings.view"],
       ["Plantillas de horarios", "/modules/planning/settings/base-schedules", "planner.settings.view"],
       ["Horarios por cargo", "/modules/planning/settings/role-schedules", "planner.settings.view"],
       ["Reglas de horario", "/modules/planning/settings/schedule-rules", "planner.settings.view"],
@@ -281,12 +293,6 @@ export function isAdminAccessUser(user = {}) {
 
 export const DEFAULT_ROLE_PERMISSIONS = {
   admin: ALL_ACCESS_PERMISSIONS,
-  branch_manager: [
-    "planner.schedules.view",
-    "planner.schedules.manage",
-    "planner.exceptions.view",
-    "planner.exceptions.manage",
-  ],
   payroll_manager: ALL_ACCESS_PERMISSIONS.filter((permission) => permission.startsWith("planner.")),
   supervisor: [
     "company.home.view",
@@ -346,6 +352,25 @@ export function normalizePermissions(value) {
   )].sort();
 }
 
+export function normalizePermissionDependencies(value) {
+  const normalized = normalizePermissions(value);
+  const permissionsByKey = new Map(ACCESS_PERMISSION_CATALOG.flatMap((module) =>
+    module.groups.flatMap((group) => group.permissions.map((permission) => [permission.key, permission])),
+  ));
+  const selectedPages = new Set(normalized.filter((key) => permissionsByKey.get(key)?.type === "page"));
+
+  return normalized.filter((key) => {
+    const permission = permissionsByKey.get(key);
+
+    if (permission?.type === "page") return true;
+    if (permission?.type !== "action") return false;
+
+    const requiredPages = Array.isArray(permission.requiresAnyPage) ? permission.requiresAnyPage : [];
+
+    return requiredPages.some((pageKey) => selectedPages.has(pageKey));
+  });
+}
+
 export function getDefaultPermissionsForRole(code) {
   return normalizePermissions(DEFAULT_ROLE_PERMISSIONS[normalizeAccessRole(code)] || []);
 }
@@ -355,10 +380,8 @@ export function resolvePermissionsForAccessRole(accessRole, explicitPermissions 
     return ALL_ACCESS_PERMISSIONS;
   }
 
-  const normalizedExplicitPermissions = normalizePermissions(explicitPermissions);
-
-  if (normalizedExplicitPermissions.length) {
-    return normalizedExplicitPermissions;
+  if (Array.isArray(explicitPermissions)) {
+    return normalizePermissions(explicitPermissions);
   }
 
   return getDefaultPermissionsForRole(accessRole);
@@ -374,6 +397,21 @@ export function hasAccessPermission(user, permission) {
   }
 
   return new Set(resolvePermissionsForAccessRole(user?.accessRole, user?.permissions)).has(permission);
+}
+
+export function getAccessibleModuleKeys(user) {
+  const routeModuleKeyByPermissionModule = {
+    company: "company",
+    planner: "planning",
+  };
+
+  return ACCESS_PAGE_CATALOG
+    .filter((module) => module.pages.some((page) => hasAccessPermission(user, page.permission)))
+    .map((module) => routeModuleKeyByPermissionModule[module.moduleKey] || module.moduleKey);
+}
+
+export function canSwitchModules(user) {
+  return getAccessibleModuleKeys(user).length > 1;
 }
 
 export function getRequiredPermissionForPath(pathname) {

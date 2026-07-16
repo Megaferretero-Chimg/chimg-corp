@@ -1,13 +1,14 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState, useTransition } from "react";
-import { Edit3, KeyRound, Mail, Plus, Search, ShieldUser, Trash2, UserRound } from "lucide-react";
+import { Edit3, KeyRound, Mail, Plus, RotateCcw, Search, ShieldUser, Trash2, UserRound } from "lucide-react";
 
 import CatalogDrawer from "@/components/catalog/CatalogDrawer";
 import CatalogPageLoader from "@/components/catalog/CatalogPageLoader";
 import ConfirmDialog from "@/components/ui/ConfirmDialog";
 import FloatingNotice from "@/components/ui/FloatingNotice";
 import HydrationGate from "@/components/ui/HydrationGate";
+import SelectInput from "@/components/ui/SelectInput";
 import { isReservedUsername } from "@/modules/company/submodules/access/lib/users";
 import UserForm from "./UserForm";
 import styles from "@/modules/company/submodules/access/styles/components/UserManagement.module.scss";
@@ -43,8 +44,9 @@ function formatLastLogin(value) {
   }).format(new Date(value));
 }
 
-function UserRow({ user, onEdit, onDelete }) {
+function UserRow({ user, onEdit, onDelete, onReactivate }) {
   const isReserved = isReservedUsername(user.username);
+  const isActive = user.isActive !== false;
 
   return (
     <tr>
@@ -88,26 +90,40 @@ function UserRow({ user, onEdit, onDelete }) {
       </td>
       <td>
         <div className="catalog-row-actions">
-          <button
-            type="button"
-            onClick={() => onEdit(user)}
-            className="catalog-icon-button"
-            title={isReserved ? "El usuario maestro no se puede editar" : "Editar usuario"}
-            aria-label={`Editar ${user.username}`}
-            disabled={isReserved}
-          >
-            <Edit3 size={16} />
-          </button>
-          <button
-            type="button"
-            onClick={() => onDelete(user)}
-            className="catalog-icon-button danger"
-            title={isReserved ? "El usuario maestro no se puede eliminar" : "Eliminar usuario"}
-            aria-label={`Eliminar ${user.username}`}
-            disabled={isReserved}
-          >
-            <Trash2 size={16} />
-          </button>
+          {isActive ? (
+            <>
+              <button
+                type="button"
+                onClick={() => onEdit(user)}
+                className="catalog-icon-button"
+                title={isReserved ? "El usuario maestro no se puede editar" : "Editar usuario"}
+                aria-label={`Editar ${user.username}`}
+                disabled={isReserved}
+              >
+                <Edit3 size={16} />
+              </button>
+              <button
+                type="button"
+                onClick={() => onDelete(user)}
+                className="catalog-icon-button danger"
+                title={isReserved ? "El usuario maestro no se puede desactivar" : "Desactivar usuario"}
+                aria-label={`Desactivar ${user.username}`}
+                disabled={isReserved}
+              >
+                <Trash2 size={16} />
+              </button>
+            </>
+          ) : (
+            <button
+              type="button"
+              onClick={() => onReactivate(user)}
+              className="catalog-icon-button"
+              title="Activar usuario nuevamente"
+              aria-label={`Activar nuevamente ${user.username}`}
+            >
+              <RotateCcw size={16} />
+            </button>
+          )}
         </div>
       </td>
     </tr>
@@ -122,6 +138,8 @@ export default function UserManagement() {
   const [search, setSearch] = useState("");
   const [editingUserId, setEditingUserId] = useState("");
   const [userToDelete, setUserToDelete] = useState(null);
+  const [userToReactivate, setUserToReactivate] = useState(null);
+  const [reactivationRole, setReactivationRole] = useState("");
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
   const [isLoadingUsers, setIsLoadingUsers] = useState(true);
   const [notice, setNotice] = useState(null);
@@ -347,6 +365,39 @@ export default function UserManagement() {
     setUserToDelete(user);
   }
 
+  function requestReactivate(user) {
+    const hasCurrentRole = userTypes.some((type) => type.code === user.accessRole);
+
+    setUserToReactivate(user);
+    setReactivationRole(hasCurrentRole ? user.accessRole : "");
+  }
+
+  function confirmReactivate() {
+    if (!userToReactivate || !reactivationRole) return;
+
+    startSavingTransition(async () => {
+      try {
+        const response = await fetch(`/api/company/users/${userToReactivate.id}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ action: "reactivate", accessRole: reactivationRole }),
+        });
+        const payload = await response.json();
+
+        if (!response.ok) {
+          throw new Error(payload.error || "No se pudo activar el usuario.");
+        }
+
+        await refreshData();
+        showNotice("success", payload.message || "Acceso de usuario activado nuevamente.");
+        setUserToReactivate(null);
+        setReactivationRole("");
+      } catch (requestError) {
+        showNotice("error", requestError.message);
+      }
+    });
+  }
+
   function confirmDelete() {
     if (!userToDelete) {
       return;
@@ -364,7 +415,7 @@ export default function UserManagement() {
         }
 
         await refreshData();
-        showNotice("success", "Usuario eliminado correctamente.");
+        showNotice("success", payload.message || "Acceso de usuario desactivado correctamente.");
 
         if (editingUserId === userToDelete.id) {
           closeDrawer();
@@ -451,6 +502,7 @@ export default function UserManagement() {
                               user={user}
                               onEdit={handleEdit}
                               onDelete={requestDelete}
+                              onReactivate={requestReactivate}
                             />
                           ))}
                         </tbody>
@@ -488,13 +540,41 @@ export default function UserManagement() {
 
           <ConfirmDialog
             isOpen={Boolean(userToDelete)}
-            title="Eliminar usuario"
-            message={`¿Deseas eliminar el acceso de "${userToDelete?.employeeName || userToDelete?.username || ""}"? Esta acción no elimina al empleado vinculado.`}
-            confirmLabel={isSaving ? "Eliminando..." : "Eliminar"}
+            title="Desactivar usuario"
+            message={`¿Deseas desactivar el acceso de "${userToDelete?.employeeName || userToDelete?.username || ""}"? El empleado y el historial de auditoría se conservarán.`}
+            confirmLabel={isSaving ? "Desactivando..." : "Desactivar acceso"}
             isPending={isSaving}
             onCancel={() => setUserToDelete(null)}
             onConfirm={confirmDelete}
           />
+
+          <ConfirmDialog
+            isOpen={Boolean(userToReactivate)}
+            title="Activar usuario nuevamente"
+            message={`Selecciona el perfil que tendrá "${userToReactivate?.employeeName || userToReactivate?.username || ""}" al recuperar el acceso.`}
+            confirmLabel={isSaving ? "Activando..." : "Activar acceso"}
+            tone="default"
+            isPending={isSaving}
+            confirmDisabled={!reactivationRole}
+            onCancel={() => {
+              if (!isSaving) {
+                setUserToReactivate(null);
+                setReactivationRole("");
+              }
+            }}
+            onConfirm={confirmReactivate}
+          >
+            <SelectInput
+              label="Perfil de acceso"
+              value={reactivationRole}
+              onChange={(event) => setReactivationRole(event.target.value)}
+            >
+              <option value="">Seleccionar perfil</option>
+              {userTypes.map((type) => (
+                <option key={type.code} value={type.code}>{type.name}</option>
+              ))}
+            </SelectInput>
+          </ConfirmDialog>
         </div>
       )}
     </HydrationGate>

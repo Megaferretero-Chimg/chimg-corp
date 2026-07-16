@@ -1,7 +1,10 @@
 import { COMPANY_MODULE_NAVIGATION } from "@/modules/company/navigation";
 import { companyModulePath } from "@/modules/company/routes";
 import { isCompanyEmployeeOnlyUser } from "@/lib/access-control";
-import { hasAccessPermission } from "@/modules/company/submodules/access/lib/permissions";
+import {
+  canSwitchModules,
+  hasAccessPermission,
+} from "@/modules/company/submodules/access/lib/permissions";
 
 export const COMPANY_MODULE = {
   key: "company",
@@ -14,15 +17,22 @@ export const COMPANY_MODULE = {
 export function getCompanyModuleForUser(user) {
   if (!isCompanyEmployeeOnlyUser(user)) {
     const navigation = COMPANY_MODULE_NAVIGATION
-      .map((section) => ({
-        ...section,
-        items: section.items.filter((item) => !item.permission || hasAccessPermission(user, item.permission)),
-      }))
+      .map((section) => {
+        const items = section.items.filter((item) => !item.permission || hasAccessPermission(user, item.permission));
+        const sectionHrefIsAllowed = items.some((item) => item.href === section.href);
+
+        return {
+          ...section,
+          href: sectionHrefIsAllowed ? section.href : items[0]?.href || section.href,
+          items,
+        };
+      })
       .filter((section) => section.items.length);
 
     return {
       ...COMPANY_MODULE,
       homeHref: navigation[0]?.items[0]?.href || COMPANY_MODULE.homeHref,
+      canSwitchModules: canSwitchModules(user),
       navigation,
     };
   }
@@ -30,6 +40,7 @@ export function getCompanyModuleForUser(user) {
   return {
     ...COMPANY_MODULE,
     homeHref: companyModulePath("/employees"),
+    canSwitchModules: canSwitchModules(user),
     navigation: [
       {
         title: "Empresa",

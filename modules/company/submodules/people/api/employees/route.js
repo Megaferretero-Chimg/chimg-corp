@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 
-import { isAuthenticated } from "@/lib/auth";
+import { getAuthenticatedUser, isAuthenticated } from "@/lib/auth";
 import connectToDatabase from "@/lib/db/mongodb";
 import {
   buildEmployeeSerializationContext,
@@ -12,6 +12,7 @@ import {
   resolvePlannerEmployeeScope,
 } from "@/modules/planner/lib/planning/accessScope";
 import { Employee, Role } from "@/modules/company/models";
+import { hasAccessPermission } from "@/modules/company/submodules/access/lib/permissions";
 
 export async function GET(request) {
   const authenticated = await isAuthenticated();
@@ -84,12 +85,31 @@ export async function GET(request) {
   const plannerScope = scopeType === "planning"
     ? await resolvePlannerEmployeeScope({ employees, roles })
     : null;
+  const user = plannerScope?.user || await getAuthenticatedUser();
+
+  if (
+    plannerScope
+    && !hasAccessPermission(user, "planner.schedules.weekly.view")
+    && !hasAccessPermission(user, "planner.schedules.view")
+  ) {
+    return NextResponse.json({ error: "No tienes permiso para consultar empleados de planificación." }, { status: 403 });
+  }
+
   const scopedEmployees = plannerScope
     ? filterEmployeesByPlannerScope(employees, plannerScope)
     : employees;
+  const canViewPlanningFinancials = hasAccessPermission(user, "planner.schedules.financial.view");
 
   return NextResponse.json({
-    employees: scopedEmployees.map((employee) => serializeEmployee(employee, serializationContext)),
+    employees: scopedEmployees.map((employee) => {
+      const serialized = serializeEmployee(employee, serializationContext);
+
+      if (plannerScope && !canViewPlanningFinancials) {
+        delete serialized.salary;
+      }
+
+      return serialized;
+    }),
     scope: plannerScope
       ? {
           isCompanyWide: plannerScope.isCompanyWide,

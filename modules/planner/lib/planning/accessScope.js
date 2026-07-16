@@ -1,5 +1,4 @@
 import { getAuthenticatedUser } from "@/lib/auth";
-import { BRANCH_MANAGER_ACCESS_ROLE, PAYROLL_MANAGER_ACCESS_ROLE } from "@/lib/access-roles";
 import { Employee, Role } from "@/modules/company/models";
 import { PlanningWorkGroup } from "@/modules/planner/models";
 import { isAdminAccessUser } from "@/modules/company/submodules/access/lib/permissions";
@@ -14,7 +13,6 @@ function normalizeId(value) {
 
 function isCompanyWidePlannerUser(user) {
   return isAdminAccessUser(user)
-    || user?.accessRole === PAYROLL_MANAGER_ACCESS_ROLE
     || user?.scopeType === "company";
 }
 
@@ -153,7 +151,7 @@ export async function resolvePlannerEmployeeScope({ employees = null, roles = nu
   }
 
 
-  if (user.accessRole === BRANCH_MANAGER_ACCESS_ROLE || user.scopeType === "team") {
+  if (user.scopeType === "team") {
     const workGroups = await PlanningWorkGroup.find({
       ownerEmployee: currentEmployeeId,
       isActive: { $ne: false },

@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 
+import { createAuditLog, resolveAuditActor } from "@/lib/audit";
 import { isAuthenticated } from "@/lib/auth";
 import connectToDatabase from "@/lib/db/mongodb";
 import {
@@ -121,6 +122,20 @@ export async function DELETE(request, context) {
     const { id } = await context.params;
     const body = await request.json().catch(() => ({}));
     const terminationDate = parseTerminationDate(body?.terminationDate);
+    const existingEmployee = await Employee.findById(id).lean();
+
+    if (!existingEmployee) {
+      return NextResponse.json({ error: "Empleado no encontrado." }, { status: 404 });
+    }
+
+    if (existingEmployee.isActive === false) {
+      return NextResponse.json({ error: "El empleado ya se encuentra inactivo." }, { status: 409 });
+    }
+
+    const activeLinkedUsers = await User.find({ employeeId: id, isActive: { $ne: false } })
+      .select("_id")
+      .lean();
+    const actor = await resolveAuditActor();
     const employee = await Employee.findByIdAndUpdate(
       id,
       {
@@ -132,11 +147,27 @@ export async function DELETE(request, context) {
       { new: true },
     );
 
-    if (!employee) {
-      return NextResponse.json({ error: "Empleado no encontrado." }, { status: 404 });
-    }
-
     await User.updateMany({ employeeId: id }, { $set: { isActive: false } });
+
+    await createAuditLog({
+      actor,
+      action: "employee.terminate",
+      entityType: "employee",
+      entityId: employee._id.toString(),
+      entityLabel: employee.fullName,
+      route: `/api/company/employees/${id}`,
+      details: {
+        before: {
+          isActive: existingEmployee.isActive !== false,
+          terminationDate: existingEmployee.terminationDate || null,
+        },
+        after: {
+          isActive: false,
+          terminationDate,
+        },
+        disabledUserIds: activeLinkedUsers.map((user) => user._id.toString()),
+      },
+    });
 
     const serializationContext = await employeeSerializationContext();
 

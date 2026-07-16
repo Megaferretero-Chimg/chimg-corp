@@ -7,36 +7,46 @@ import { ChevronDown, Menu, X } from "lucide-react";
 
 import LogoutButton from "@/components/auth/LogoutButton";
 import TransitionLink from "@/components/navigation/TransitionLink";
-import { PLANNING_MODULE } from "@/modules/planner/module";
+import { useModuleConfig } from "@/components/shell/ModuleConfigProvider";
 import styles from "./ModuleShell.module.scss";
 
-export default function ModuleShell({ title, description, actions = null, children, moduleConfig = PLANNING_MODULE }) {
+const EMPTY_MODULE_CONFIG = Object.freeze({
+  title: "Módulo",
+  modulesHref: "/modules",
+  canSwitchModules: false,
+  navigation: [],
+});
+
+export default function ModuleShell({ title, description, actions = null, children, moduleConfig = null }) {
   const pathname = usePathname();
-  const navigation = moduleConfig.navigation || [];
+  const layoutModuleConfig = useModuleConfig();
+  const resolvedModuleConfig = layoutModuleConfig || moduleConfig || EMPTY_MODULE_CONFIG;
+  const navigation = resolvedModuleConfig.navigation || [];
 
-  function isPathActive(href) {
-    return pathname === href || pathname.startsWith(`${href}/`);
-  }
-
-  function isItemActive(href) {
-    return pathname === href;
-  }
+  const navigationMatches = navigation.flatMap((section) =>
+    section.items.map((item) => ({
+      sectionTitle: section.title,
+      href: item.href,
+    })),
+  );
+  const activeNavigationMatch = navigationMatches.find((match) => pathname === match.href)
+    || navigationMatches
+      .filter((match) => pathname.startsWith(`${match.href}/`))
+      .sort((left, right) => right.href.length - left.href.length)[0]
+    || null;
+  const activeSectionTitle = activeNavigationMatch?.sectionTitle || "";
 
   const [isMobileNavOpen, setIsMobileNavOpen] = useState(false);
-  const [openSection, setOpenSection] = useState(() => {
-    const sectionWithActiveChild = navigation.find((section) =>
-      section.items.some((item) => isPathActive(item.href)),
-    );
-
-    return sectionWithActiveChild?.title || "";
-  });
+  const [manualOpenSection, setManualOpenSection] = useState(() => ({
+    pathname,
+    title: activeSectionTitle,
+  }));
+  const openSection = manualOpenSection.pathname === pathname
+    ? manualOpenSection.title
+    : activeSectionTitle;
 
   function isSectionActive(section) {
-    if (isPathActive(section.href)) {
-      return true;
-    }
-
-    return section.items.some((item) => isPathActive(item.href));
+    return section.title === activeSectionTitle;
   }
 
   function closeMobileNavigation() {
@@ -125,23 +135,25 @@ export default function ModuleShell({ title, description, actions = null, childr
 
             <div>
               <p className={styles.brandEyebrow}>Módulo activo</p>
-              <p className={styles.brandTitle}>{moduleConfig.title}</p>
+              <p className={styles.brandTitle}>{resolvedModuleConfig.title}</p>
             </div>
           </div>
 
-          <TransitionLink
-            href={moduleConfig.modulesHref || "/modules"}
-            className={styles.moduleSwitcher}
-            onClick={closeMobileNavigation}
-          >
-            Cambiar módulo
-          </TransitionLink>
+          {resolvedModuleConfig.canSwitchModules !== false ? (
+            <TransitionLink
+              href={resolvedModuleConfig.modulesHref || "/modules"}
+              className={styles.moduleSwitcher}
+              onClick={closeMobileNavigation}
+            >
+              Cambiar módulo
+            </TransitionLink>
+          ) : null}
 
           <nav className={styles.nav}>
             {navigation.map((section) => {
               const isOpen = openSection === section.title;
               const isActive = isSectionActive(section);
-              const hasChildren = section.items.length > 0 && section.href !== moduleConfig.homeHref;
+              const hasChildren = section.items.length > 1;
 
               return (
                 <div
@@ -162,34 +174,38 @@ export default function ModuleShell({ title, description, actions = null, childr
                         className={styles.navToggle}
                         aria-expanded={isOpen}
                         aria-label={isOpen ? `Ocultar ${section.title}` : `Mostrar ${section.title}`}
-                        onClick={() =>
-                          setOpenSection((current) => (current === section.title ? "" : section.title))
-                        }
+                        onClick={() => setManualOpenSection({
+                          pathname,
+                          title: isOpen ? "" : section.title,
+                        })}
                       >
                         <ChevronDown size={16} className={styles.navChevron} />
                       </button>
                     ) : null}
                   </div>
 
-                  <div className={`${styles.navSectionBody} ${!hasChildren ? styles.navSectionBodyHidden : ""}`}>
-                    <div className={styles.navSectionItems}>
-                      {section.items.map((item) => {
-                        const active = isItemActive(item.href);
+                  {hasChildren && isOpen ? (
+                    <div className={styles.navSectionBody}>
+                      <div className={styles.navSectionItems}>
+                        {section.items.map((item) => {
+                          const active = activeNavigationMatch?.href === item.href;
 
-                        return (
-                          <div key={item.href} className={styles.navItemWrap}>
-                            <TransitionLink
-                              href={item.href}
-                              className={`${styles.navItem} ${active ? styles.navItemActive : ""}`}
-                              onClick={closeMobileNavigation}
-                            >
-                              <span className={styles.navLabel}>{item.label}</span>
-                            </TransitionLink>
-                          </div>
-                        );
-                      })}
+                          return (
+                            <div key={item.href} className={styles.navItemWrap}>
+                              <TransitionLink
+                                href={item.href}
+                                className={`${styles.navItem} ${active ? styles.navItemActive : ""}`}
+                                aria-current={active ? "page" : undefined}
+                                onClick={closeMobileNavigation}
+                              >
+                                <span className={styles.navLabel}>{item.label}</span>
+                              </TransitionLink>
+                            </div>
+                          );
+                        })}
+                      </div>
                     </div>
-                  </div>
+                  ) : null}
                 </div>
               );
             })}

@@ -49,6 +49,8 @@ function formatActionLabel(action) {
     "role.create": "Rol creado",
     "role.update": "Rol actualizado",
     "role.delete": "Rol eliminado",
+    "employee.terminate": "Baja de empleado registrada",
+    "employee.termination.cancel": "Baja de empleado anulada",
   };
 
   return labels[action] || action || "Acción registrada";

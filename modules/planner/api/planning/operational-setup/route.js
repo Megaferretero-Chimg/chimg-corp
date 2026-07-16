@@ -5,7 +5,14 @@ import connectToDatabase from "@/lib/db/mongodb";
 import { hasAccessPermission } from "@/modules/company/submodules/access/lib/permissions";
 import { seedOperationalSetup } from "@/modules/planner/lib/planning/operationalSetup";
 import { resolvePlannerEmployeeScope } from "@/modules/planner/lib/planning/accessScope";
-import { PlanningWorkGroup } from "@/modules/planner/models";
+import {
+  buildEmployeeSerializationContext,
+  serializeEmployee,
+} from "@/modules/company/submodules/people/lib/employees";
+import { serializeRole } from "@/modules/company/submodules/organization/lib/roles";
+import { serializeBaseScheduleTemplate } from "@/modules/planner/lib/planning/baseSchedules";
+import { Employee, Role } from "@/modules/company/models";
+import { BaseScheduleTemplate, PlanningWorkGroup } from "@/modules/planner/models";
 
 function serializeWorkGroup(group = {}) {
   const members = (group.members || []).map((member) => ({
@@ -38,13 +45,19 @@ export async function GET(request) {
     return NextResponse.json({ error: "Sesion invalida o expirada." }, { status: 401 });
   }
 
-  if (!hasAccessPermission(user, "planner.schedules.view") && !hasAccessPermission(user, "planner.settings.view")) {
+  if (
+    !hasAccessPermission(user, "planner.schedules.weekly.view")
+    && !hasAccessPermission(user, "planner.schedules.view")
+    && !hasAccessPermission(user, "planner.settings.view")
+  ) {
     return NextResponse.json({ error: "No tienes permiso para consultar grupos de trabajo." }, { status: 403 });
   }
 
   const { searchParams } = new URL(request.url);
 
-  if (searchParams.get("resource") !== "work-groups") {
+  const resource = searchParams.get("resource");
+
+  if (!["work-groups", "weekly-bootstrap"].includes(resource)) {
     return NextResponse.json({ error: "Recurso no soportado." }, { status: 400 });
   }
 
@@ -52,14 +65,39 @@ export async function GET(request) {
     await connectToDatabase();
     const plannerScope = await resolvePlannerEmployeeScope();
     const groupQuery = { isActive: { $ne: false } };
+    const employeeQuery = {};
 
     if (!plannerScope.isCompanyWide) {
       groupQuery._id = { $in: plannerScope.workGroupIds || [] };
+      employeeQuery._id = { $in: plannerScope.employeeIds || [] };
     }
 
-    const groups = await PlanningWorkGroup.find(groupQuery)
-      .sort({ branchName: 1, name: 1 })
-      .lean();
+    if (resource === "weekly-bootstrap") {
+      const [groups, employees, roles, templates] = await Promise.all([
+        PlanningWorkGroup.find(groupQuery).sort({ branchName: 1, name: 1 }).lean(),
+        Employee.find(employeeQuery).sort({ fullName: 1 }).lean(),
+        Role.find({ isActive: { $ne: false } }).sort({ areaName: 1, name: 1 }).lean(),
+        BaseScheduleTemplate.find({ isActive: { $ne: false } }).sort({ name: 1 }).lean(),
+      ]);
+      const serializationContext = buildEmployeeSerializationContext({ employees, roles });
+      const canViewFinancials = hasAccessPermission(user, "planner.schedules.financial.view");
+
+      return NextResponse.json({
+        employees: employees.map((employee) => {
+          const serialized = serializeEmployee(employee, serializationContext);
+
+          if (!canViewFinancials) delete serialized.salary;
+
+          return serialized;
+        }),
+        roles: roles.map(serializeRole),
+        templates: templates.map(serializeBaseScheduleTemplate),
+        groups: groups.map(serializeWorkGroup),
+        isWorkGroupLocked: Boolean(plannerScope.isWorkGroupLocked),
+      });
+    }
+
+    const groups = await PlanningWorkGroup.find(groupQuery).sort({ branchName: 1, name: 1 }).lean();
 
     return NextResponse.json({
       groups: groups.map(serializeWorkGroup),

@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { CalendarDays, Check, ChevronDown, ClipboardPaste, Download, Info, Plus, RefreshCw, RotateCcw, Save, Trash2, X } from "lucide-react";
+import { CalendarDays, Check, ChevronDown, ClipboardPaste, Download, Info, Plus, RefreshCw, RotateCcw, Save, X } from "lucide-react";
 
 import AutocompleteSelect from "@/components/ui/AutocompleteSelect";
 import FloatingModal from "@/components/ui/FloatingModal";
@@ -228,7 +228,7 @@ function dedupeById(items) {
 async function fetchPlanningOverlays(monthKey, dateKeys = []) {
   const overlayPayloads = await Promise.all(getPlanningOverlayMonthKeys(monthKey, dateKeys).map(async (overlayMonthKey) => {
     const [exceptionsResponse, vacationsResponse, holidaysResponse] = await Promise.all([
-      fetch(`/api/planner/planning/exceptions?month=${overlayMonthKey}`),
+      fetch(`/api/planner/planning/exceptions?month=${overlayMonthKey}&context=weekly`),
       fetch(`/api/planner/planning/vacations?month=${overlayMonthKey}`),
       fetch(`/api/planner/planning/holidays?month=${overlayMonthKey}`),
     ]);
@@ -371,13 +371,13 @@ function normalizeText(value) {
 }
 
 function findEmployeeForImport(name, employees) {
-  const normalizedName = normalizeText(name);
+  const exactName = String(name || "").trim();
 
-  if (!normalizedName) {
+  if (!exactName) {
     return null;
   }
 
-  return employees.find((employee) => normalizeText(employee.fullName) === normalizedName) || null;
+  return employees.find((employee) => String(employee.fullName || "").trim() === exactName) || null;
 }
 
 function normalizeTimePart(hours, minutes = "00") {
@@ -525,11 +525,10 @@ function parseClipboardRows(text) {
   return rows.filter((currentRow) => currentRow.some(Boolean));
 }
 
-function parseStrictScheduleCell(value) {
+function parseStrictScheduleCell(value, allowedShiftKeys = new Set()) {
   const rawValue = String(value || "").trim();
-  const normalizedValue = normalizeText(rawValue);
 
-  if (normalizedValue === "DESCANSO") {
+  if (!rawValue) {
     return {
       rawValue,
       shiftKey: OFF_SHIFT_OPTION.key,
@@ -538,23 +537,14 @@ function parseStrictScheduleCell(value) {
     };
   }
 
-  if (!rawValue) {
-    return {
-      rawValue,
-      shiftKey: OFF_SHIFT_OPTION.key,
-      status: "invalid",
-      label: "Celda vacia",
-    };
-  }
-
   const parsed = parseShiftCell(rawValue);
 
-  if (parsed.status !== "shift") {
+  if (parsed.status !== "shift" || !allowedShiftKeys.has(parsed.shiftKey)) {
     return {
       rawValue,
       shiftKey: OFF_SHIFT_OPTION.key,
-      status: "invalid",
-      label: "Usa solo horarios o la palabra Descanso",
+      status: "rest",
+      label: OFF_SHIFT_OPTION.label,
     };
   }
 
@@ -564,15 +554,17 @@ function parseStrictScheduleCell(value) {
   };
 }
 
-function buildClipboardSchedulePreview(text, employees, weekDateKeys) {
+function buildClipboardSchedulePreview(text, employees, weekDateKeys, getShiftOptionsForEmployee = () => []) {
   const rows = parseClipboardRows(text);
   const errors = [];
+  const warnings = [];
   const seenEmployees = new Set();
 
   if (!rows.length) {
     return {
       rows: [],
       errors: ["No encontre filas en la tabla pegada."],
+      warnings: [],
       stats: { matched: 0, unmatched: 0, shifts: 0, rests: 0, invalid: 0 },
     };
   }
@@ -580,6 +572,9 @@ function buildClipboardSchedulePreview(text, employees, weekDateKeys) {
   const parsedRows = rows.map((row, rowIndex) => {
     const sourceName = row[0] || "";
     const employee = findEmployeeForImport(sourceName, employees);
+    const allowedShiftKeys = new Set(
+      employee ? getShiftOptionsForEmployee(employee).map((shift) => shift.key) : [],
+    );
 
     if (row.length !== 8) {
       errors.push(`Fila ${rowIndex + 1}: debe tener nombre y 7 dias exactos.`);
@@ -588,7 +583,7 @@ function buildClipboardSchedulePreview(text, employees, weekDateKeys) {
     if (!sourceName) {
       errors.push(`Fila ${rowIndex + 1}: falta el nombre del empleado.`);
     } else if (!employee) {
-      errors.push(`Fila ${rowIndex + 1}: empleado no encontrado en el alcance actual (${sourceName}).`);
+      warnings.push(`Fila ${rowIndex + 1}: nombre no idéntico o fuera del grupo (${sourceName}); no se aplicará.`);
     } else if (seenEmployees.has(employee.id)) {
       errors.push(`Fila ${rowIndex + 1}: empleado duplicado (${sourceName}).`);
     } else {
@@ -596,11 +591,7 @@ function buildClipboardSchedulePreview(text, employees, weekDateKeys) {
     }
 
     const cells = weekDateKeys.map((dateKey, index) => {
-      const parsedCell = parseStrictScheduleCell(row[index + 1] || "");
-
-      if (parsedCell.status === "invalid") {
-        errors.push(`Fila ${rowIndex + 1}, ${DAY_LABELS[getDayOfWeek(dateKey)]}: ${parsedCell.label}.`);
-      }
+      const parsedCell = parseStrictScheduleCell(row[index + 1] || "", allowedShiftKeys);
 
       if (employee && !isEmployeeActiveOnDate(employee, dateKey) && parsedCell.status === "shift") {
         errors.push(`Fila ${rowIndex + 1}, ${DAY_LABELS[getDayOfWeek(dateKey)]}: no se puede planificar antes del ingreso del empleado.`);
@@ -621,20 +612,19 @@ function buildClipboardSchedulePreview(text, employees, weekDateKeys) {
   const stats = parsedRows.reduce((result, row) => {
     if (row.employee) {
       result.matched += 1;
+      row.cells.forEach((cell) => {
+        if (cell.status === "shift") result.shifts += 1;
+        if (cell.status === "rest") result.rests += 1;
+        if (cell.status === "invalid") result.invalid += 1;
+      });
     } else {
       result.unmatched += 1;
     }
 
-    row.cells.forEach((cell) => {
-      if (cell.status === "shift") result.shifts += 1;
-      if (cell.status === "rest") result.rests += 1;
-      if (cell.status === "invalid") result.invalid += 1;
-    });
-
     return result;
   }, { matched: 0, unmatched: 0, shifts: 0, rests: 0, invalid: 0 });
 
-  return { rows: parsedRows, errors, stats };
+  return { rows: parsedRows, errors, warnings, stats };
 }
 
 function dayToShiftKey(day, shiftOptions = FALLBACK_SHIFT_OPTIONS) {
@@ -827,20 +817,6 @@ function buildPlannerUrl(filters, basePath = "/schedules") {
   const query = params.toString();
 
   return `${planningModulePath(basePath)}${query ? `?${query}` : ""}`;
-}
-
-function buildScheduleAuditUrl({ monthKey, groupId, employeeIds, weekStartKey, entry }) {
-  const params = new URLSearchParams();
-
-  if (monthKey) params.set("month", monthKey);
-  if (groupId) params.set("groupId", groupId);
-  if (employeeIds) params.set("employeeIds", employeeIds);
-  if (weekStartKey) params.set("weekStartKey", weekStartKey);
-  if (entry?.savedAt) params.set("savedAt", new Date(entry.savedAt).toISOString());
-  if (entry?.savedByUser) params.set("savedByUser", entry.savedByUser);
-  if (entry?.savedBy) params.set("savedBy", entry.savedBy);
-
-  return `${planningModulePath("/schedules")}?${params.toString()}`;
 }
 
 function parseWeekIndex(value) {
@@ -1372,7 +1348,7 @@ function ShiftPicker({ value, options, onChange, disabled = false }) {
   );
 }
 
-export default function SchedulePlanner({ initialFilters = {}, basePath = "/schedules", canApprovePlanning = false }) {
+export default function SchedulePlanner({ initialFilters = {}, basePath = "/schedules", capabilities = {} }) {
   const router = useRouter();
   const [monthKey, setMonthKey] = useState(initialFilters.month || currentMonthKey());
   const [groupId, setGroupId] = useState(initialFilters.groupId || "");
@@ -1421,6 +1397,15 @@ export default function SchedulePlanner({ initialFilters = {}, basePath = "/sche
     [selectedWeek],
   );
   const dailyBaseHours = ECUADOR_DAILY_BASE_HOURS;
+  const canManageSchedules = capabilities.canManageSchedules === true;
+  const canApprovePlanning = capabilities.canApprovePlanning === true;
+  const canExportSchedule = capabilities.canExportSchedule === true;
+  const canCreateQuickTemplates = capabilities.canCreateQuickTemplates === true;
+  const canCreateAdjustments = capabilities.canCreateAdjustments === true;
+  const canOpenMonthlyDetail = capabilities.canOpenMonthlyDetail === true;
+  const showSummaries = capabilities.showSummaries === true;
+  const showHours = capabilities.showHours === true;
+  const showFinancials = capabilities.showFinancials === true;
 
   const baseShiftOptions = useMemo(() => {
     const optionsByKey = new Map([
@@ -1613,8 +1598,13 @@ export default function SchedulePlanner({ initialFilters = {}, basePath = "/sche
   }, [coverageRolesForEmployee, templates]);
 
   const clipboardPreview = useMemo(
-    () => buildClipboardSchedulePreview(clipboardScheduleText, filteredEmployees, weekDateKeys),
-    [clipboardScheduleText, filteredEmployees, weekDateKeys],
+    () => buildClipboardSchedulePreview(
+      clipboardScheduleText,
+      filteredEmployees,
+      weekDateKeys,
+      getShiftOptionsForEmployee,
+    ),
+    [clipboardScheduleText, filteredEmployees, getShiftOptionsForEmployee, weekDateKeys],
   );
   const hasClipboardSchedule = clipboardScheduleText.trim().length > 0;
 
@@ -1685,8 +1675,10 @@ export default function SchedulePlanner({ initialFilters = {}, basePath = "/sche
     ])),
   [effectiveDraftDays, filteredEmployees, weekDateKeys]);
 
-  const planningCostByEmployee = useMemo(() =>
-    new Map(filteredEmployees.map((employee) => [
+  const planningCostByEmployee = useMemo(() => {
+    if (!showHours && !showFinancials && !showSummaries) return new Map();
+
+    return new Map(filteredEmployees.map((employee) => [
       employee.id,
       estimateWeeklyPlanningCost({
         employee,
@@ -1697,8 +1689,8 @@ export default function SchedulePlanner({ initialFilters = {}, basePath = "/sche
         dailyBaseHours,
         regularWorkdayLimit: 5,
       }),
-    ])),
-  [dailyBaseHours, effectiveDraftDays, filteredEmployees, holidayDateKeys, shiftOptionsByKey, weekDateKeys]);
+    ]));
+  }, [dailyBaseHours, effectiveDraftDays, filteredEmployees, holidayDateKeys, shiftOptionsByKey, showFinancials, showHours, showSummaries, weekDateKeys]);
 
   const summary = useMemo(() => {
     let extraDayIndicators = 0;
@@ -1757,10 +1749,10 @@ export default function SchedulePlanner({ initialFilters = {}, basePath = "/sche
 
   const weeklyApprovalState = useMemo(() => {
     const weekStartKey = selectedWeek?.weekStartKey || "";
-    const assignmentsByEmployee = new Map(assignments.map((assignment) => [assignment.employeeId, assignment]));
-    const employeeAssignments = filteredEmployees
-      .map((employee) => assignmentsByEmployee.get(employee.id))
-      .filter(Boolean);
+    const employeeAssignments = assignments.filter((assignment) =>
+      (assignment.scheduleHistory || []).some((entry) => entry.weekStartKey === weekStartKey)
+      || (assignment.planningApprovals || []).some((approval) => approval.weekStartKey === weekStartKey),
+    );
     const approvedAssignments = employeeAssignments.filter((assignment) =>
       (assignment.planningApprovals || []).some((approval) => approval.weekStartKey === weekStartKey),
     );
@@ -1776,6 +1768,7 @@ export default function SchedulePlanner({ initialFilters = {}, basePath = "/sche
         .forEach((approval) => {
           const approvalVersionKey = approval.versionSavedAt
             ? getHistoryVersionKey({
+              groupId: approval.groupId,
               savedAt: approval.versionSavedAt,
               savedBy: approval.versionSavedBy,
               savedByUser: approval.versionSavedByUser,
@@ -1831,7 +1824,7 @@ export default function SchedulePlanner({ initialFilters = {}, basePath = "/sche
         return {
           ...entry,
           approvedCount,
-          isApproved: Boolean(filteredEmployees.length) && approvedCount === filteredEmployees.length,
+          isApproved: Boolean(entry.employeeCount) && approvedCount >= entry.employeeCount,
         };
       })
       .sort((left, right) => new Date(right.savedAt || 0).getTime() - new Date(left.savedAt || 0).getTime());
@@ -1846,7 +1839,7 @@ export default function SchedulePlanner({ initialFilters = {}, basePath = "/sche
       latestHistory,
       approvedVersion,
     };
-  }, [assignments, filteredEmployees, selectedWeek]);
+  }, [assignments, filteredEmployees.length, selectedWeek]);
 
   const hasWeekSchedules = useMemo(() =>
     filteredEmployees.some((employee) =>
@@ -1913,30 +1906,17 @@ export default function SchedulePlanner({ initialFilters = {}, basePath = "/sche
 
     async function loadData() {
       try {
-        const [employeesResponse, rolesResponse, templatesResponse, workGroupsResponse] = await Promise.all([
-          fetch("/api/company/employees?scope=planning"),
-          fetch("/api/company/roles"),
-          fetch("/api/planner/planning/base-schedules"),
-          fetch("/api/planner/planning/operational-setup?resource=work-groups"),
-        ]);
-        const [employeesPayload, rolesPayload, templatesPayload, workGroupsPayload] = await Promise.all([
-          employeesResponse.json(),
-          rolesResponse.json(),
-          templatesResponse.json(),
-          workGroupsResponse.json(),
-        ]);
+        const response = await fetch("/api/planner/planning/operational-setup?resource=weekly-bootstrap");
+        const payload = await response.json();
 
-        if (!employeesResponse.ok) throw new Error(employeesPayload.error || "No se pudieron cargar los empleados.");
-        if (!rolesResponse.ok) throw new Error(rolesPayload.error || "No se pudieron cargar los roles.");
-        if (!templatesResponse.ok) throw new Error(templatesPayload.error || "No se pudieron cargar las plantillas.");
-        if (!workGroupsResponse.ok) throw new Error(workGroupsPayload.error || "No se pudieron cargar los grupos de trabajo.");
+        if (!response.ok) throw new Error(payload.error || "No se pudo cargar la configuración semanal.");
 
         if (!isCancelled) {
-          setEmployees(employeesPayload.employees || []);
-          setRoles(rolesPayload.roles || []);
-          setTemplates(templatesPayload.templates || []);
-          const nextWorkGroups = workGroupsPayload.groups || [];
-          const nextIsWorkGroupLocked = Boolean(workGroupsPayload.isWorkGroupLocked);
+          setEmployees(payload.employees || []);
+          setRoles(payload.roles || []);
+          setTemplates(payload.templates || []);
+          const nextWorkGroups = payload.groups || [];
+          const nextIsWorkGroupLocked = Boolean(payload.isWorkGroupLocked);
 
           setWorkGroups(nextWorkGroups);
           setIsWorkGroupLocked(nextIsWorkGroupLocked);
@@ -1945,7 +1925,6 @@ export default function SchedulePlanner({ initialFilters = {}, basePath = "/sche
             const assignedGroup = nextWorkGroups[0];
             setGroupId(assignedGroup.id);
             setBranchCode(assignedGroup.branchCode || "");
-            replaceFilters({ groupId: assignedGroup.id });
           }
         }
       } catch (error) {
@@ -1961,7 +1940,7 @@ export default function SchedulePlanner({ initialFilters = {}, basePath = "/sche
       isCancelled = true;
       clearNoticeTimers();
     };
-  }, [clearNoticeTimers, replaceFilters, showNotice]);
+  }, [clearNoticeTimers, showNotice]);
 
   useEffect(() => {
     if (isLoading) return;
@@ -2010,6 +1989,7 @@ export default function SchedulePlanner({ initialFilters = {}, basePath = "/sche
           params.set("groupId", selectedWorkGroup.id);
         }
         if (selectedWeek?.weekStartKey) params.set("weekStartKey", selectedWeek.weekStartKey);
+        params.set("includeOverlays", "true");
 
         const response = await fetch(`/api/planner/planning/schedule-assignments?${params.toString()}`);
         const payload = await response.json();
@@ -2018,11 +1998,12 @@ export default function SchedulePlanner({ initialFilters = {}, basePath = "/sche
 
         if (!isCancelled && requestDraftRevision === draftRevisionRef.current) {
           const nextAssignments = payload.assignments || [];
+          const overlaysPayload = payload.overlays || {};
 
           setAssignments(nextAssignments);
-          setExceptions([]);
-          setVacations([]);
-          setHolidays([]);
+          setExceptions(overlaysPayload.exceptions || []);
+          setVacations(overlaysPayload.vacations || []);
+          setHolidays(overlaysPayload.holidays || []);
           setDraftDays(buildDraftDays(nextAssignments, baseShiftOptions));
           setDraftWeekRoles(buildDraftWeekRoles(nextAssignments, employees, weekOptions));
           setDraftDayRoles(buildDraftDayRoles(nextAssignments));
@@ -2032,17 +2013,6 @@ export default function SchedulePlanner({ initialFilters = {}, basePath = "/sche
           setLoadedAssignmentsKey(assignmentsScopeKey);
           setIsAssignmentsLoading(false);
 
-          fetchPlanningOverlays(monthKey, weekDateKeys)
-            .then((overlaysPayload) => {
-              if (isCancelled || requestDraftRevision !== draftRevisionRef.current) return;
-
-              setExceptions(overlaysPayload.exceptions || []);
-              setVacations(overlaysPayload.vacations || []);
-              setHolidays(overlaysPayload.holidays || []);
-            })
-            .catch((overlayError) => {
-              if (!isCancelled) showNotice("error", overlayError.message || "No se pudieron cargar las novedades.");
-            });
         }
       } catch (error) {
         if (!isCancelled) showNotice("error", error.message);
@@ -2445,7 +2415,12 @@ export default function SchedulePlanner({ initialFilters = {}, basePath = "/sche
       }
 
       const text = await navigator.clipboard.readText();
-      const nextPreview = buildClipboardSchedulePreview(text, filteredEmployees, weekDateKeys);
+      const nextPreview = buildClipboardSchedulePreview(
+        text,
+        filteredEmployees,
+        weekDateKeys,
+        getShiftOptionsForEmployee,
+      );
 
       if (!String(text || "").trim() || !nextPreview.rows.length) {
         throw new Error("No encontre una tabla valida en el portapapeles.");
@@ -2456,7 +2431,10 @@ export default function SchedulePlanner({ initialFilters = {}, basePath = "/sche
       }
 
       setClipboardScheduleText(text);
-      showNotice("success", `Tabla detectada: ${nextPreview.stats.matched} empleados, ${nextPreview.stats.shifts} turnos.`);
+      const skippedLabel = nextPreview.stats.unmatched
+        ? ` ${nextPreview.stats.unmatched} fila(s) no coinciden exactamente y se omitirán.`
+        : "";
+      showNotice("success", `Tabla detectada: ${nextPreview.stats.matched} empleados, ${nextPreview.stats.shifts} turnos.${skippedLabel}`);
     } catch (error) {
       showNotice("error", error.message || "No se pudo leer el portapapeles.");
     }
@@ -2480,64 +2458,24 @@ export default function SchedulePlanner({ initialFilters = {}, basePath = "/sche
       return;
     }
 
-    const invalidShiftCells = [];
-
-    rowsToApply.forEach((row) => {
-      const employeeShiftOptions = getShiftOptionsForEmployee(row.employee);
-      const allowedShiftKeys = new Set(employeeShiftOptions.map((shift) => shift.key));
-
-      row.cells.forEach((cell) => {
-        if (cell.status !== "shift" || allowedShiftKeys.has(cell.shiftKey)) return;
-
-        invalidShiftCells.push(`${row.sourceName} ${formatPlannerDay(cell.dateKey, monthKey)}: ${cell.rawValue}`);
-      });
-    });
-
-    if (invalidShiftCells.length) {
-      const sample = invalidShiftCells.slice(0, 3).join(" | ");
-      const rest = invalidShiftCells.length > 3 ? ` y ${invalidShiftCells.length - 3} mas` : "";
-
-      showNotice("error", `Hay horarios que no existen en plantillas del area: ${sample}${rest}.`);
-      return;
-    }
-
     markDraftEdited();
     setDraftDays((current) => {
       const next = { ...current };
 
       rowsToApply.forEach((row) => {
         const employeeDays = { ...(next[row.employee.id] || {}) };
-        const employeeShiftOptions = getShiftOptionsForEmployee(row.employee);
-        const allowedShiftKeys = new Set(employeeShiftOptions.map((shift) => shift.key));
-
         row.cells.forEach((cell) => {
-          if (overlaysByEmployeeDate.has(`${row.employee.id}|${cell.dateKey}`)) {
+          if (
+            overlaysByEmployeeDate.has(`${row.employee.id}|${cell.dateKey}`)
+            || holidayDateKeys.has(cell.dateKey)
+          ) {
             return;
           }
 
-          employeeDays[cell.dateKey] = allowedShiftKeys.has(cell.shiftKey) ? cell.shiftKey : OFF_SHIFT_OPTION.key;
+          employeeDays[cell.dateKey] = cell.status === "shift" ? cell.shiftKey : OFF_SHIFT_OPTION.key;
         });
 
         next[row.employee.id] = employeeDays;
-      });
-
-      return next;
-    });
-    setDraftDayNotes((current) => {
-      const next = { ...current };
-
-      rowsToApply.forEach((row) => {
-        const employeeNotes = { ...(next[row.employee.id] || {}) };
-
-        row.cells.forEach((cell) => {
-          if (overlaysByEmployeeDate.has(`${row.employee.id}|${cell.dateKey}`)) {
-            return;
-          }
-
-          delete employeeNotes[cell.dateKey];
-        });
-
-        next[row.employee.id] = employeeNotes;
       });
 
       return next;
@@ -2685,41 +2623,6 @@ export default function SchedulePlanner({ initialFilters = {}, basePath = "/sche
     });
   }
 
-  function deleteHistoryVersion(entry) {
-    if (!entry?.savedAt || !selectedWeek?.weekStartKey) return;
-
-    const shouldDelete = window.confirm("Eliminar esta version del historial? El horario vigente no se modifica.");
-
-    if (!shouldDelete) return;
-
-    startTransition(async () => {
-      try {
-        const response = await fetch("/api/planner/planning/schedule-assignments/history", {
-          method: "DELETE",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            monthKey,
-            groupId,
-            branchCode,
-            employeeIds: filteredEmployees.map((employee) => employee.id),
-            weekStartKey: selectedWeek.weekStartKey,
-            savedAt: new Date(entry.savedAt).toISOString(),
-            savedBy: entry.savedBy || "",
-            savedByUser: entry.savedByUser || "",
-          }),
-        });
-        const payload = await response.json();
-
-        if (!response.ok) throw new Error(payload.error || "No se pudo eliminar la version.");
-
-        setAssignments(payload.assignments || []);
-        showNotice("success", payload.message || "Version eliminada del historial.");
-      } catch (error) {
-        showNotice("error", error.message || "No se pudo eliminar la version.");
-      }
-    });
-  }
-
   async function downloadScheduleExcel() {
     if (isExportingSchedule || shouldShowScopedLoading || !filteredEmployees.length) return;
 
@@ -2766,6 +2669,7 @@ export default function SchedulePlanner({ initialFilters = {}, basePath = "/sche
   }
 
   function openEmployeeDetail(event, employeeId) {
+    if (!canOpenMonthlyDetail) return;
     if (event.target.closest("select, button, a")) return;
 
     const params = new URLSearchParams({ month: monthKey });
@@ -2823,7 +2727,7 @@ export default function SchedulePlanner({ initialFilters = {}, basePath = "/sche
   return (
     <div className={`${styles.layout} page-entrance`}>
       <FloatingNotice notice={notice} onClose={dismissNotice} />
-      <FloatingModal
+      {showFinancials ? <FloatingModal
         isOpen={isCostModalOpen}
         eyebrow={selectedWeek?.rangeLabel || "Semana"}
         title="Costo variable estimado"
@@ -2859,7 +2763,7 @@ export default function SchedulePlanner({ initialFilters = {}, basePath = "/sche
             )}
           </section>
         </div>
-      </FloatingModal>
+      </FloatingModal> : null}
       <FloatingModal
         isOpen={Boolean(selectedOverlay)}
         eyebrow={selectedOverlay?.dateKey || "Novedad"}
@@ -3146,9 +3050,9 @@ export default function SchedulePlanner({ initialFilters = {}, basePath = "/sche
         </div>
       </section>
 
-      <section className={`${styles.importPanel} page-entrance page-entrance-delay-md`}>
+      {canManageSchedules || canExportSchedule || canCreateQuickTemplates ? <section className={`${styles.importPanel} page-entrance page-entrance-delay-md`}>
         <div className={styles.importActions}>
-            {hasClipboardSchedule ? (
+            {canManageSchedules && hasClipboardSchedule ? (
               <>
                 <button
                   type="button"
@@ -3163,12 +3067,13 @@ export default function SchedulePlanner({ initialFilters = {}, basePath = "/sche
                   Borrar carga
                 </button>
               </>
-            ) : (
+            ) : canManageSchedules ? (
               <button type="button" onClick={pasteClipboardSchedule}>
                 <ClipboardPaste size={16} />
                 Pegar tabla
               </button>
-            )}
+            ) : null}
+          {canManageSchedules ? (
           <button
             type="button"
             className={styles.resetAction}
@@ -3178,6 +3083,8 @@ export default function SchedulePlanner({ initialFilters = {}, basePath = "/sche
             <RotateCcw size={16} />
             Limpiar horarios
           </button>
+          ) : null}
+          {canExportSchedule ? (
           <button
             type="button"
             onClick={downloadScheduleExcel}
@@ -3186,6 +3093,8 @@ export default function SchedulePlanner({ initialFilters = {}, basePath = "/sche
             {isExportingSchedule ? <RefreshCw size={16} /> : <Download size={16} />}
             {isExportingSchedule ? "Descargando..." : "Exportar"}
           </button>
+          ) : null}
+          {canCreateQuickTemplates ? (
           <button
             type="button"
             onClick={openBlankQuickTemplateModal}
@@ -3194,17 +3103,19 @@ export default function SchedulePlanner({ initialFilters = {}, basePath = "/sche
             <Plus size={16} />
             Crear plantilla
           </button>
+          ) : null}
         </div>
         {hasClipboardSchedule ? (
           <div className={styles.importStats} aria-live="polite">
             <span>{clipboardPreview.stats.shifts} turnos</span>
             <span>{clipboardPreview.stats.rests} descansos</span>
-            <span>{clipboardPreview.errors.length || clipboardPreview.stats.invalid} errores</span>
+            <span>{clipboardPreview.stats.unmatched} omitidos</span>
+            <span>{clipboardPreview.errors.length} errores</span>
           </div>
         ) : null}
-      </section>
+      </section> : null}
 
-      <section className={`${styles.summaryGrid} page-entrance page-entrance-delay-md`}>
+      {showSummaries ? <section className={`${styles.summaryGrid} page-entrance page-entrance-delay-md`}>
         <article>
           <span>Suplementarias aprox.</span>
           <strong>{formatDuration(summary.supplementaryMinutes)}</strong>
@@ -3225,7 +3136,7 @@ export default function SchedulePlanner({ initialFilters = {}, basePath = "/sche
           <strong>{formatMoney(summary.extraCostAmount)}</strong>
           <small>{summary.extraDayIndicators ? `${summary.extraDayIndicators} dia extra` : "Sin dias extra"}</small>
         </button>
-      </section>
+      </section> : null}
 
       <section className={`${styles.tablePanel} page-entrance page-entrance-delay-md`}>
         <div className={styles.tableHeader}>
@@ -3255,10 +3166,8 @@ export default function SchedulePlanner({ initialFilters = {}, basePath = "/sche
                   );
                 })}
                 <th>Trabajados</th>
-                <th>Impacto aprox.</th>
-                <th>HL</th>
-                <th>HS</th>
-                <th>HE</th>
+                {showFinancials ? <th>Impacto aprox.</th> : null}
+                {showHours ? <><th>HL</th><th>HS</th><th>HE</th></> : null}
               </tr>
             </thead>
             <tbody>
@@ -3276,9 +3185,9 @@ export default function SchedulePlanner({ initialFilters = {}, basePath = "/sche
                 return (
                   <tr
                     key={employee.id}
-                    className={`${styles.clickableRow} ${isDismissed ? styles.dismissedRow : ""}`}
-                    title={dismissalTitle || "Doble click para abrir el detalle"}
-                    onDoubleClick={(event) => openEmployeeDetail(event, employee.id)}
+                    className={`${canOpenMonthlyDetail ? styles.clickableRow : ""} ${isDismissed ? styles.dismissedRow : ""}`}
+                    title={dismissalTitle || (canOpenMonthlyDetail ? "Doble click para abrir el detalle" : undefined)}
+                    onDoubleClick={canOpenMonthlyDetail ? (event) => openEmployeeDetail(event, employee.id) : undefined}
                   >
                     <td data-label="Empleado">
                       <strong>{employee.fullName}</strong>
@@ -3318,10 +3227,10 @@ export default function SchedulePlanner({ initialFilters = {}, basePath = "/sche
                                 value={shiftKey}
                                 options={cellShiftOptions}
                                 onChange={(nextShiftKey) => setCell(employee.id, dateKey, nextShiftKey)}
-                                disabled={shouldLockSchedulePicker}
+                                disabled={shouldLockSchedulePicker || !canManageSchedules}
                               />
                             ) : null}
-                            {!overlay ? (
+                            {!overlay && canCreateAdjustments ? (
                               <button
                                 type="button"
                                 className={styles.cellAdjustButton}
@@ -3363,12 +3272,12 @@ export default function SchedulePlanner({ initialFilters = {}, basePath = "/sche
                         {workedCount} dias
                       </span>
                     </td>
-                    <td data-label="Impacto aprox.">
+                    {showFinancials ? <td data-label="Impacto aprox.">
                       <div className={styles.costCell}>
                         <strong>{formatMoney(employeeCost?.totalAmount || 0)}</strong>
                       </div>
-                    </td>
-                    <td data-label="HL">
+                    </td> : null}
+                    {showHours ? <><td data-label="HL">
                       <div className={styles.hoursCell}>
                         <strong>{formatDuration(employeeCost?.laborableMinutes || 0)}</strong>
                       </div>
@@ -3382,7 +3291,7 @@ export default function SchedulePlanner({ initialFilters = {}, basePath = "/sche
                       <div className={styles.hoursCell}>
                         <strong>{formatDuration(employeeCost?.extraordinaryMinutes || 0)}</strong>
                       </div>
-                    </td>
+                    </td></> : null}
                   </tr>
                 );
               })}
@@ -3407,12 +3316,12 @@ export default function SchedulePlanner({ initialFilters = {}, basePath = "/sche
                   <strong>{[...activeEmployeesByDay.values()].reduce((total, count) => total + count, 0)}</strong>
                   <span>turnos</span>
                 </td>
-                <td data-label="Impacto aprox.">
+                {showFinancials ? <td data-label="Impacto aprox.">
                   <div className={styles.costCell}>
                     <strong>{formatMoney(summary.extraCostAmount)}</strong>
                   </div>
-                </td>
-                <td data-label="HL">
+                </td> : null}
+                {showHours ? <><td data-label="HL">
                   <div className={styles.hoursCell}>
                     <strong>{formatDuration(summary.laborableMinutes)}</strong>
                   </div>
@@ -3426,7 +3335,7 @@ export default function SchedulePlanner({ initialFilters = {}, basePath = "/sche
                   <div className={styles.hoursCell}>
                     <strong>{formatDuration(summary.extraordinaryMinutes)}</strong>
                   </div>
-                </td>
+                </td></> : null}
               </tr>
             </tfoot>
           </table>
@@ -3434,15 +3343,15 @@ export default function SchedulePlanner({ initialFilters = {}, basePath = "/sche
       </section>
 
       <section className={`${styles.bottomActions} page-entrance page-entrance-delay-md`}>
-        <button type="button" onClick={saveWeek} disabled={isPending || !hasDraftChanges || !filteredEmployees.length}>
+        {canManageSchedules ? <button type="button" onClick={saveWeek} disabled={isPending || !hasDraftChanges || !filteredEmployees.length}>
           {isPending ? <RefreshCw size={16} /> : <Save size={16} />}
           {isPending ? "Guardando..." : "Guardar"}
-        </button>
-        {canApprovePlanning ? (
+        </button> : null}
+        {canApprovePlanning && !weeklyApprovalState.latestHistory?.isApproved ? (
           <button
             type="button"
             onClick={approveWeek}
-            disabled={isPending || hasDraftChanges || !filteredEmployees.length || !weeklyApprovalState.latestHistory || weeklyApprovalState.latestHistory.isApproved}
+            disabled={isPending || hasDraftChanges || !filteredEmployees.length || !weeklyApprovalState.latestHistory}
             title={hasDraftChanges ? "Guarda los cambios antes de aprobar" : "Aprobar planificacion semanal"}
           >
             {isPending ? <RefreshCw size={16} /> : <Check size={16} />}
@@ -3461,27 +3370,6 @@ export default function SchedulePlanner({ initialFilters = {}, basePath = "/sche
             {weeklyApprovalState.historyEntries.slice(0, 8).map((entry, index) => (
               <article
                 key={entry.versionKey || `${entry.savedAt || "sin-fecha"}-${entry.savedBy || "sistema"}-${index}`}
-                className={styles.versionClickable}
-                tabIndex={0}
-                role="button"
-                onClick={() => router.push(buildScheduleAuditUrl({
-                  monthKey,
-                  groupId,
-                  employeeIds: selectedWorkGroupEmployeeIdsParam,
-                  weekStartKey: selectedWeek?.weekStartKey || "",
-                  entry,
-                }))}
-                onKeyDown={(event) => {
-                  if (event.key !== "Enter" && event.key !== " ") return;
-                  event.preventDefault();
-                  router.push(buildScheduleAuditUrl({
-                    monthKey,
-                    groupId,
-                    employeeIds: selectedWorkGroupEmployeeIdsParam,
-                    weekStartKey: selectedWeek?.weekStartKey || "",
-                    entry,
-                  }));
-                }}
               >
                 <div>
                   <strong>Version {weeklyApprovalState.historyEntries.length - index}</strong>
@@ -3491,21 +3379,6 @@ export default function SchedulePlanner({ initialFilters = {}, basePath = "/sche
                   {entry.isApproved ? (
                     <em className={styles.approvedVersionBadge}>Version aprobada</em>
                   ) : null}
-                </div>
-                <div className={styles.versionActions}>
-                  <button
-                    type="button"
-                    className={styles.dangerVersionAction}
-                    onClick={(event) => {
-                      event.stopPropagation();
-                      deleteHistoryVersion(entry);
-                    }}
-                    disabled={isPending}
-                    title="Eliminar version"
-                    aria-label="Eliminar version"
-                  >
-                    <Trash2 size={15} />
-                  </button>
                 </div>
               </article>
             ))}

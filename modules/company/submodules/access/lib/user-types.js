@@ -2,6 +2,7 @@ import {
   ALL_ACCESS_PERMISSIONS,
   getDefaultPermissionsForRole,
   isAdminAccessRole,
+  normalizePermissionDependencies,
   normalizePermissions,
 } from "@/modules/company/submodules/access/lib/permissions";
 
@@ -15,27 +16,9 @@ export const DEFAULT_USER_TYPES = [
     landingPath: "/modules",
     isActive: true,
   },
-  {
-    code: "branch_manager",
-    name: "Jefe de sucursal",
-    description: "Planifica horarios y registra sus propios ajustes y excepciones, únicamente para el grupo de trabajo que dirige.",
-    permissions: getDefaultPermissionsForRole("branch_manager"),
-    scopeType: "team",
-    landingPath: "/modules/planning/schedules",
-    isActive: true,
-  },
-  {
-    code: "payroll_manager",
-    name: "Encargado de nómina",
-    description: "Acceso completo al módulo de planificación para revisar, aprobar y dejar lista la nómina; sin acceso al módulo Empresa y configuración.",
-    permissions: getDefaultPermissionsForRole("payroll_manager"),
-    scopeType: "company",
-    landingPath: "/modules/planning/home",
-    isActive: true,
-  },
 ];
 
-export const PROTECTED_USER_TYPE_CODES = new Set(DEFAULT_USER_TYPES.map((type) => type.code));
+export const PROTECTED_USER_TYPE_CODES = new Set(["admin"]);
 
 function slugifyTypeText(value) {
   return String(value || "")
@@ -71,14 +54,14 @@ export function normalizeUserTypePayload(body) {
   }
 
   if (isProtectedUserTypeCode(code)) {
-    throw new Error("Los tres perfiles del sistema están protegidos y no se pueden modificar.");
+    throw new Error("El perfil Administrador está protegido y no se puede crear ni modificar.");
   }
 
   return {
     code,
     name,
     description,
-    permissions: normalizePermissions(body?.permissions),
+    permissions: normalizePermissionDependencies(body?.permissions),
     scopeType: ["company", "branch", "area", "team", "self"].includes(scopeType) ? scopeType : "company",
     landingPath: landingPath.startsWith("/") ? landingPath : `/${landingPath}`,
     isActive: body?.isActive === undefined ? true : Boolean(body.isActive),
@@ -96,7 +79,7 @@ export function serializeUserType(userType) {
     code: userType.code || "",
     name: userType.name || "",
     description: userType.description || "",
-    permissions: permissions.length ? permissions : getDefaultPermissionsForRole(userType.code),
+    permissions,
     scopeType: isAdmin ? "company" : userType.scopeType || "company",
     landingPath: isAdmin ? "/modules" : userType.landingPath || "/modules",
     isActive: userType.isActive !== false,

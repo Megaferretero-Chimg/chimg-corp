@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import * as XLSX from "xlsx";
 
 import connectToDatabase from "@/lib/db/mongodb";
+import { hasAccessPermission } from "@/modules/company/submodules/access/lib/permissions";
 import {
   applyPlannerScopeToAssignmentQuery,
   resolvePlannerEmployeeScope,
@@ -270,6 +271,10 @@ export async function GET(request) {
 
     if (!plannerScope.isAuthenticated) {
       return NextResponse.json({ error: "Sesion invalida o expirada." }, { status: 401 });
+    }
+
+    if (!hasAccessPermission(plannerScope.user, "planner.schedules.export")) {
+      return NextResponse.json({ error: "No tienes permiso para exportar la planificación." }, { status: 403 });
     }
 
     const { searchParams } = new URL(request.url);

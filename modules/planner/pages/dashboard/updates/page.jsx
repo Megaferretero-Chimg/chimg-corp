@@ -1,7 +1,6 @@
 import ModuleShell from "@/components/shell/ModuleShell";
-import ExceptionManager from "@/modules/planner/components/planning/ExceptionManager";
 import { requireAuthenticatedUser } from "@/lib/access-control";
-import { getPlanningModuleForUser } from "@/modules/planner/module";
+import ExceptionManager from "@/modules/planner/components/planning/ExceptionManager";
 
 export const metadata = {
   title: "Pendientes aprobacion | Control de Asistencia",
@@ -14,7 +13,6 @@ export default async function OperationalUpdatesPage() {
     <ModuleShell
       title="Pendientes aprobacion"
       description=""
-      moduleConfig={getPlanningModuleForUser(user)}
     >
       <ExceptionManager
         eyebrow=""

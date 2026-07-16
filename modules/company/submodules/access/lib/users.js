@@ -1,7 +1,6 @@
 import crypto from "node:crypto";
 
 import { DEFAULT_USER_TYPES } from "@/modules/company/submodules/access/lib/user-types";
-import { BRANCH_MANAGER_ACCESS_ROLE } from "@/lib/access-roles";
 
 export const ACCESS_ROLES = DEFAULT_USER_TYPES.map((type) => ({
   value: type.code,
@@ -90,8 +89,8 @@ export function normalizeUserPayload(body, { employee, userType, isEditing = fal
   }
 
 
-  if (accessRole === BRANCH_MANAGER_ACCESS_ROLE && !employee?._id) {
-    throw new Error("El Jefe de sucursal debe estar vinculado al empleado que dirige el grupo de trabajo.");
+  if (["team", "self"].includes(userType?.scopeType) && !employee?._id) {
+    throw new Error("Los perfiles con alcance de equipo o usuario propio deben vincularse a un empleado.");
   }
 
   if (userType.isActive === false) {

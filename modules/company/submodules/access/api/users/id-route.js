@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 
+import { createAuditLog, resolveAuditActor } from "@/lib/audit";
 import { getAuthenticatedUser } from "@/lib/auth";
 import connectToDatabase from "@/lib/db/mongodb";
 import { hasAccessPermission } from "@/modules/company/submodules/access/lib/permissions";
@@ -32,6 +33,90 @@ export async function PATCH(request, { params }) {
       return NextResponse.json(
         { error: "El usuario maestro del sistema no se puede editar." },
         { status: 403 },
+      );
+    }
+
+    if (body?.action === "reactivate") {
+      if (existingUser.isActive !== false) {
+        return NextResponse.json({
+          success: true,
+          action: "already_active",
+          message: "El acceso ya estaba activo.",
+          user: serializeUser(existingUser),
+        });
+      }
+
+      const linkedEmployee = existingUser.employeeId
+        ? await Employee.findById(existingUser.employeeId).select({ isActive: 1 }).lean()
+        : null;
+
+      if (existingUser.employeeId && (!linkedEmployee || linkedEmployee.isActive === false)) {
+        return NextResponse.json(
+          { error: "No puedes activar el acceso porque el empleado vinculado está inactivo." },
+          { status: 409 },
+        );
+      }
+
+      const requestedAccessRole = String(body?.accessRole || existingUser.accessRole || "").trim().toLowerCase();
+      const activeUserType = await UserType.findOne({
+        code: requestedAccessRole,
+        isActive: { $ne: false },
+      }).select({ code: 1, name: 1 }).lean();
+
+      if (!activeUserType) {
+        return NextResponse.json(
+          { error: "Selecciona un perfil de acceso vigente para activar nuevamente al usuario." },
+          { status: 409 },
+        );
+      }
+
+      const reactivatedUser = await User.findByIdAndUpdate(
+        id,
+        {
+          $set: {
+            isActive: true,
+            accessRole: activeUserType.code,
+            accessRoleLabel: activeUserType.name,
+          },
+        },
+        { new: true, runValidators: true },
+      ).lean();
+      const actor = await resolveAuditActor();
+
+      await createAuditLog({
+        actor,
+        action: "userAccess.reactivate",
+        entityType: "user",
+        entityId: id,
+        entityLabel: existingUser.username || id,
+        route: `/api/company/users/${id}`,
+        details: {
+          employeeId: existingUser.employeeId || "",
+          employeeName: existingUser.employeeName || "",
+          username: existingUser.username || "",
+          before: {
+            isActive: false,
+            accessRole: existingUser.accessRole || "",
+          },
+          after: {
+            isActive: true,
+            accessRole: activeUserType.code,
+          },
+        },
+      });
+
+      return NextResponse.json({
+        success: true,
+        action: "reactivated",
+        message: "Acceso de usuario activado nuevamente.",
+        user: serializeUser(reactivatedUser),
+      });
+    }
+
+    if (existingUser.isActive === false) {
+      return NextResponse.json(
+        { error: "El usuario está inactivo. Actívalo antes de modificar sus datos." },
+        { status: 409 },
       );
     }
 
@@ -83,23 +168,65 @@ export async function DELETE(_request, { params }) {
     return NextResponse.json({ error: "No tienes permiso para administrar usuarios." }, { status: 403 });
   }
 
-  await connectToDatabase();
+  try {
+    await connectToDatabase();
 
-  const { id } = await params;
-  const existingUser = await User.findById(id).lean();
+    const { id } = await params;
+    const existingUser = await User.findById(id).lean();
 
-  if (!existingUser) {
-    return NextResponse.json({ error: "Usuario no encontrado." }, { status: 404 });
-  }
+    if (!existingUser) {
+      return NextResponse.json({ error: "Usuario no encontrado." }, { status: 404 });
+    }
 
-  if (isReservedUsername(existingUser.username)) {
+    if (isReservedUsername(existingUser.username)) {
+      return NextResponse.json(
+        { error: "El usuario maestro del sistema no se puede desactivar." },
+        { status: 403 },
+      );
+    }
+
+    if (existingUser.isActive === false) {
+      return NextResponse.json({
+        success: true,
+        action: "already_inactive",
+        message: "El acceso ya estaba desactivado.",
+      });
+    }
+
+    const deactivatedUser = await User.findByIdAndUpdate(
+      id,
+      { $set: { isActive: false } },
+      { new: true, runValidators: true },
+    ).lean();
+    const actor = await resolveAuditActor();
+
+    await createAuditLog({
+      actor,
+      action: "userAccess.deactivate",
+      entityType: "user",
+      entityId: id,
+      entityLabel: existingUser.username || id,
+      route: `/api/company/users/${id}`,
+      details: {
+        employeeId: existingUser.employeeId || "",
+        employeeName: existingUser.employeeName || "",
+        username: existingUser.username || "",
+        accessRole: existingUser.accessRole || "",
+        before: { isActive: true },
+        after: { isActive: false },
+      },
+    });
+
+    return NextResponse.json({
+      success: true,
+      action: "deactivated",
+      message: "Acceso de usuario desactivado correctamente.",
+      user: serializeUser(deactivatedUser),
+    });
+  } catch (error) {
     return NextResponse.json(
-      { error: "El usuario maestro del sistema no se puede eliminar." },
-      { status: 403 },
+      { error: error.message || "No se pudo desactivar el usuario." },
+      { status: 400 },
     );
   }
-
-  await User.findByIdAndDelete(id);
-
-  return NextResponse.json({ success: true });
 }

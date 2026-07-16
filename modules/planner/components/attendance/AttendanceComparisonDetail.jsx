@@ -9,7 +9,6 @@ import {
   History,
   RefreshCw,
   ShieldCheck,
-  Trash2,
 } from "lucide-react";
 
 import CatalogDrawer from "@/components/catalog/CatalogDrawer";
@@ -2354,7 +2353,6 @@ export default function AttendanceComparisonDetail({ employeeId, initialFilters 
     if (!pendingHistoryDelete || !selectedDay) return;
 
     const item = pendingHistoryDelete.item;
-    const isPermanent = pendingHistoryDelete.mode === "permanent";
 
     try {
       setDeletingHistoryId(item.id);
@@ -2362,47 +2360,29 @@ export default function AttendanceComparisonDetail({ employeeId, initialFilters 
       clearNotice();
 
       const isException = item.kind === "operational_exception";
-      const response = isPermanent
-        ? await fetch("/api/planner/attendance/decision-history", {
+      const response = await fetch(
+        isException
+          ? `/api/planner/planning/exceptions/${item.sourceId}`
+          : "/api/planner/attendance/day-decisions",
+        {
           method: "DELETE",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            employeeId,
-            dateKey: selectedDay.dateKey,
-            targetType: item.purgeTarget?.type,
-            targetId: item.purgeTarget?.id,
-          }),
-        })
-        : await fetch(
-          isException
-            ? `/api/planner/planning/exceptions/${item.sourceId}`
-            : "/api/planner/attendance/day-decisions",
-          {
-            method: "DELETE",
-            headers: isException ? undefined : { "Content-Type": "application/json" },
-            body: isException
-              ? undefined
-              : JSON.stringify({ employeeId, dateKey: selectedDay.dateKey }),
-          },
-        );
+          headers: isException ? undefined : { "Content-Type": "application/json" },
+          body: isException
+            ? undefined
+            : JSON.stringify({ employeeId, dateKey: selectedDay.dateKey }),
+        },
+      );
       const payload = await response.json();
 
       if (!response.ok) {
-        throw new Error(payload.error || (isPermanent
-          ? "No se pudo eliminar la decisión definitivamente."
-          : "No se pudo desactivar la decisión."));
+        throw new Error(payload.error || "No se pudo desactivar la decisión.");
       }
 
       const dateKey = selectedDay.dateKey;
       setPendingHistoryDelete(null);
       await loadReport(month, { background: true });
       await loadDecisionHistory(dateKey);
-      showNotice(
-        "success",
-        isPermanent
-          ? "Decisión eliminada definitivamente."
-          : "Decisión desactivada correctamente. El antecedente permanece en el historial.",
-      );
+      showNotice("success", "Decisión desactivada correctamente. El antecedente permanece en el historial.");
     } catch (requestError) {
       setError(requestError.message);
     } finally {
@@ -3073,7 +3053,7 @@ export default function AttendanceComparisonDetail({ employeeId, initialFilters 
                       <History size={17} aria-hidden="true" />
                       <strong id="decision-history-title">Historial de decisiones</strong>
                     </div>
-                    <small>Las decisiones eliminadas se conservan para auditoría.</small>
+                    <small>Las decisiones desactivadas se conservan de forma inmutable para auditoría.</small>
                   </div>
 
                   {isLoadingDecisionHistory ? (
@@ -3106,18 +3086,6 @@ export default function AttendanceComparisonDetail({ employeeId, initialFilters 
                                   <Ban size={15} aria-hidden="true" />
                                 </button>
                               ) : null}
-                              {item.canPurge ? (
-                                <button
-                                  type="button"
-                                  className={styles.decisionHistoryPurge}
-                                  onClick={() => setPendingHistoryDelete({ item, mode: "permanent" })}
-                                  disabled={Boolean(deletingHistoryId)}
-                                  aria-label={`Eliminar definitivamente ${item.title}`}
-                                  title="Eliminar definitivamente"
-                                >
-                                  <Trash2 size={15} aria-hidden="true" />
-                                </button>
-                              ) : null}
                             </div>
                           </div>
                           <p>{item.summary}</p>
@@ -3137,17 +3105,11 @@ export default function AttendanceComparisonDetail({ employeeId, initialFilters 
 
           <ConfirmDialog
             isOpen={Boolean(pendingHistoryDelete)}
-            title={pendingHistoryDelete?.mode === "permanent"
-              ? "Eliminar definitivamente"
-              : "Desactivar esta decisión"}
+            title="Desactivar esta decisión"
             message={pendingHistoryDelete
-              ? pendingHistoryDelete.mode === "permanent"
-                ? `${pendingHistoryDelete.item.title}. Esta acción es exclusiva de administración, borrará el registro permanentemente y no se podrá recuperar.`
-                : `${pendingHistoryDelete.item.title}. La decisión dejará de estar activa y permanecerá visible en el historial para auditoría.`
+              ? `${pendingHistoryDelete.item.title}. La decisión dejará de estar activa y permanecerá visible en el historial para auditoría.`
               : ""}
-            confirmLabel={pendingHistoryDelete?.mode === "permanent"
-              ? "Eliminar definitivamente"
-              : "Desactivar decisión"}
+            confirmLabel="Desactivar decisión"
             cancelLabel="Cancelar"
             tone="danger"
             isPending={Boolean(deletingHistoryId)}
