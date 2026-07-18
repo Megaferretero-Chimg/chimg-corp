@@ -61,7 +61,16 @@ export async function GET(request) {
       .lean();
 
     return NextResponse.json({
-      exceptions: exceptions.map(serializeOperationalException),
+      exceptions: exceptions.map((exception) => {
+        const serializedException = serializeOperationalException(exception);
+        const isOwner = String(exception.createdByUser || "").trim() === String(user?.id || "").trim();
+        const isPending = exception.resolution === "pending" && exception.status !== "void";
+
+        return {
+          ...serializedException,
+          canDelete: isPending && (canApproveExceptions || (canDeleteOwnExceptions && isOwner)),
+        };
+      }),
       options: {
         types: EXCEPTION_TYPES,
         resolutions: EXCEPTION_RESOLUTIONS,
@@ -92,6 +101,9 @@ export async function POST(request) {
 
     const body = await request.json();
     const planningSource = String(body?.planningSource || "").trim();
+    const requestKey = planningSource === "schedule_planner"
+      ? String(body?.requestKey || "").trim().slice(0, 160)
+      : "";
     const canCreateFromAttendance = planningSource === "attendance_comparison"
       && hasAccessPermission(plannerScope.user, "planner.attendance.review");
 
@@ -148,8 +160,44 @@ export async function POST(request) {
     const payload = {
       ...normalizeExceptionPayload({ ...normalizedBody, registeredBy }, employee),
       createdByUser: String(user?.id || user?.username || "").trim(),
+      requestKey,
     };
-    const exception = await OperationalException.create(payload);
+    const idempotencyQuery = requestKey
+      ? {
+        requestKey,
+        employee: employee._id,
+        createdByUser: payload.createdByUser,
+      }
+      : null;
+    const existingException = requestKey
+      ? await OperationalException.findOne(idempotencyQuery).lean()
+      : null;
+
+    if (existingException) {
+      return NextResponse.json({
+        message: "La excepcion ya habia sido registrada.",
+        exception: serializeOperationalException(existingException),
+      });
+    }
+
+    let exception;
+
+    try {
+      exception = await OperationalException.create(payload);
+    } catch (createError) {
+      if (requestKey && createError?.code === 11000) {
+        const concurrentException = await OperationalException.findOne(idempotencyQuery).lean();
+
+        if (concurrentException) {
+          return NextResponse.json({
+            message: "La excepcion ya habia sido registrada.",
+            exception: serializeOperationalException(concurrentException),
+          });
+        }
+      }
+
+      throw createError;
+    }
 
     try {
       await syncExceptionManualPunch(exception);

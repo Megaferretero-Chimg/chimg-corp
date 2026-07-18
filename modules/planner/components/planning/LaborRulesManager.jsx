@@ -5,6 +5,7 @@ import { Clock3, Plus, Save, Trash2 } from "lucide-react";
 
 import ConfirmDialog from "@/components/ui/ConfirmDialog";
 import FloatingNotice from "@/components/ui/FloatingNotice";
+import TimeInput24 from "@/components/ui/TimeInput24";
 import styles from "@/modules/planner/styles/components/planning/LaborRulesManager.module.scss";
 
 const DEFAULT_RULES = {
@@ -412,11 +413,11 @@ export default function LaborRulesManager() {
         <div className={styles.grid}>
           <label className={styles.field}>
             <span>Inicio cobertura empresa</span>
-            <input type="time" value={rules.companyStartTime} onChange={(event) => updateField("companyStartTime", event.target.value)} />
+            <TimeInput24 value={rules.companyStartTime} onChange={(event) => updateField("companyStartTime", event.target.value)} />
           </label>
           <label className={styles.field}>
             <span>Fin cobertura empresa</span>
-            <input type="time" value={rules.companyEndTime} onChange={(event) => updateField("companyEndTime", event.target.value)} />
+            <TimeInput24 value={rules.companyEndTime} onChange={(event) => updateField("companyEndTime", event.target.value)} />
           </label>
           <label className={styles.field}>
             <span>Horas base por dia</span>

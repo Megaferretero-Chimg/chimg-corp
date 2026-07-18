@@ -1,6 +1,6 @@
 import { endOfDay, isValid, parseISO, startOfDay } from "date-fns";
 
-import { makeEcuadorDate } from "@/lib/datetime/ecuador";
+import { isValidTime24, makeEcuadorDate } from "@/lib/datetime/ecuador";
 
 export function parsePunchDateTime(value) {
   const normalizedValue = String(value || "").trim();
@@ -15,6 +15,14 @@ export function parsePunchDateTime(value) {
 
   if (match) {
     const [, year, month, day, hours, minutes, seconds = "0"] = match;
+
+    if (
+      !isValidTime24(`${hours}:${minutes}`)
+      || Number(seconds) > 59
+      || (hours === "24" && Number(seconds) !== 0)
+    ) {
+      return null;
+    }
 
     return makeEcuadorDate(
       Number(year),

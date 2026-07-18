@@ -8,7 +8,7 @@ import {
   getMonthWeekOptions,
   getWeekStartKey,
 } from "@/modules/planner/lib/planning/scheduleAssignments";
-import { formatEcuadorMonthKey } from "@/lib/datetime/ecuador";
+import { formatEcuadorMonthKey, formatTime24 } from "@/lib/datetime/ecuador";
 import {
   ECUADOR_DAILY_BASE_HOURS,
   EXTRAORDINARY_SURCHARGE_MULTIPLIER,
@@ -26,7 +26,7 @@ function currentMonthKey() {
 }
 
 function formatClock(value) {
-  return String(value || "").replace(":", "H");
+  return formatTime24(value);
 }
 
 function formatHourRange(startTime, endTime) {

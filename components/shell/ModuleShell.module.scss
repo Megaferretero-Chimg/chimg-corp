@@ -429,10 +429,73 @@
   padding: 1rem 0.45rem 0.25rem 0.25rem;
   border-top: 1px solid rgba(16, 33, 62, 0.08);
   background: linear-gradient(180deg, rgba(245, 248, 254, 0), rgba(245, 248, 254, 0.98) 24%);
+  display: grid;
+  gap: 0.7rem;
 
   @media (max-width: 1079px) {
     padding: 0.9rem 0.2rem calc(0.2rem + env(safe-area-inset-bottom));
   }
+}
+
+.userCard {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 0.7rem;
+  align-items: center;
+  padding: 0.2rem 0.25rem;
+  cursor: default;
+}
+
+.userCardIcon {
+  width: 2.35rem;
+  height: 2.35rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  background: linear-gradient(145deg, #17428c, #0d2b63);
+  color: #ffffff;
+  font-size: var(--font-size-sm);
+  font-weight: 800;
+  box-shadow: 0 7px 16px rgba(13, 43, 99, 0.18);
+}
+
+.userCardContent {
+  min-width: 0;
+  display: grid;
+  gap: 0.18rem;
+}
+
+.userCardContent strong {
+  overflow: hidden;
+  color: #1b3155;
+  font-size: var(--font-size-sm);
+  font-weight: 750;
+  line-height: 1.25;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.userCardContent span {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 0.28rem;
+  overflow: hidden;
+  color: #7a879c;
+  font-size: var(--font-size-xs);
+  line-height: 1.25;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.userCardContent span svg {
+  flex: 0 0 auto;
+}
+
+.sidebarFooter :global(button) {
+  width: 100%;
 }
 
 .content {

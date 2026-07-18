@@ -8,6 +8,7 @@ import {
   WEEK_DAYS,
 } from "@/modules/planner/lib/schedules";
 import connectToDatabase from "@/lib/db/mongodb";
+import { isValidTime24 } from "@/lib/datetime/ecuador";
 import { Employee } from "@/modules/company/models";
 import { WorkSchedule } from "@/modules/planner/models";
 
@@ -37,7 +38,7 @@ async function ensureWorkScheduleIndexes() {
 }
 
 function isValidTimeString(value) {
-  return value === "" || /^\d{2}:\d{2}$/.test(value);
+  return isValidTime24(value, { allowEmpty: true });
 }
 
 function normalizeScheduleRow(row) {
@@ -59,7 +60,7 @@ function normalizeScheduleRow(row) {
   }
 
   if (!isValidTimeString(startTime) || !isValidTimeString(endTime)) {
-    throw new Error("Las horas deben tener formato HH:mm.");
+    throw new Error("Las horas deben estar entre 00:00 y 24:00.");
   }
 
   if (![0, 30, 60, 90].includes(lunchDurationMinutes)) {

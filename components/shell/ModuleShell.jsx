@@ -3,7 +3,7 @@
 import Image from "next/image";
 import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
-import { ChevronDown, Menu, X } from "lucide-react";
+import { ChevronDown, Mail, Menu, X } from "lucide-react";
 
 import LogoutButton from "@/components/auth/LogoutButton";
 import TransitionLink from "@/components/navigation/TransitionLink";
@@ -14,6 +14,7 @@ const EMPTY_MODULE_CONFIG = Object.freeze({
   title: "Módulo",
   modulesHref: "/modules",
   canSwitchModules: false,
+  currentUser: null,
   navigation: [],
 });
 
@@ -213,6 +214,22 @@ export default function ModuleShell({ title, description, actions = null, childr
         </div>
 
         <div className={styles.sidebarFooter}>
+          {resolvedModuleConfig.currentUser?.name ? (
+            <section className={styles.userCard} aria-label="Usuario actual">
+              <span className={styles.userCardIcon} aria-hidden="true">
+                {resolvedModuleConfig.currentUser.name.trim().charAt(0).toUpperCase()}
+              </span>
+              <div className={styles.userCardContent}>
+                <strong>{resolvedModuleConfig.currentUser.name}</strong>
+                {resolvedModuleConfig.currentUser.email ? (
+                  <span title={resolvedModuleConfig.currentUser.email}>
+                    <Mail size={13} aria-hidden="true" />
+                    {resolvedModuleConfig.currentUser.email}
+                  </span>
+                ) : null}
+              </div>
+            </section>
+          ) : null}
           <LogoutButton />
         </div>
       </aside>

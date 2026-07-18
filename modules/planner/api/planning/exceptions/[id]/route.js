@@ -149,11 +149,18 @@ export async function DELETE(_request, context) {
     const canApproveExceptions = await canUserApproveExceptions(user);
     const canDeleteOwn = hasAccessPermission(user, "planner.exceptions.deleteOwn");
     const isOwner = String(currentException.createdByUser || "").trim() === String(user?.id || "").trim();
-    const isPending = currentException.resolution === "pending" || currentException.status === "open";
+    const isPending = currentException.resolution === "pending" && currentException.status !== "void";
     const canResetAttendanceExecution = currentException.planningSource === "attendance_comparison"
       && hasAccessPermission(user, "planner.attendance.review");
 
-    if (!canApproveExceptions && !canResetAttendanceExecution && !(canDeleteOwn && isOwner && isPending)) {
+    if (!isPending) {
+      return NextResponse.json(
+        { error: "Las excepciones aprobadas o resueltas no se pueden eliminar." },
+        { status: 409 },
+      );
+    }
+
+    if (!canApproveExceptions && !canResetAttendanceExecution && !(canDeleteOwn && isOwner)) {
       return NextResponse.json(
         { error: "Solo puedes eliminar tus propios registros mientras estén pendientes." },
         { status: 403 },
@@ -186,9 +193,7 @@ export async function DELETE(_request, context) {
         $set: {
           status: "void",
           resolution: "no_action",
-          resolutionNotes: currentException.resolutionNotes || (currentException.resolution === "pending"
-            ? "Registro pendiente anulado por el usuario."
-            : "Anulada manualmente."),
+          resolutionNotes: currentException.resolutionNotes || "Registro pendiente anulado por el usuario.",
           manualPunch: null,
           manualPunchTime: "",
         },
@@ -216,7 +221,7 @@ export async function DELETE(_request, context) {
     return NextResponse.json({
       success: true,
       action: "voided",
-      message: "Justificacion anulada correctamente.",
+      message: "Excepcion pendiente eliminada correctamente.",
     });
   } catch (error) {
     return NextResponse.json(

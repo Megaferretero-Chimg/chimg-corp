@@ -5,7 +5,6 @@ import { addMonths, format, subMonths } from "date-fns";
 import { es } from "date-fns/locale";
 import {
   AlertTriangle,
-  CalendarDays,
   ChevronLeft,
   ChevronRight,
   Plus,
@@ -19,6 +18,7 @@ import ConfirmDialog from "@/components/ui/ConfirmDialog";
 import EmployeeAutocomplete from "@/components/ui/EmployeeAutocomplete";
 import FloatingModal from "@/components/ui/FloatingModal";
 import FloatingNotice from "@/components/ui/FloatingNotice";
+import TimeInput24 from "@/components/ui/TimeInput24";
 import styles from "@/modules/planner/styles/components/planning/ExceptionManager.module.scss";
 
 const EXCEPTION_FLOWS = [
@@ -275,7 +275,6 @@ export default function ExceptionManager({
   const [exceptions, setExceptions] = useState([]);
   const [canApproveExceptions, setCanApproveExceptions] = useState(false);
   const [canCreateExceptions, setCanCreateExceptions] = useState(false);
-  const [canDeleteOwnExceptions, setCanDeleteOwnExceptions] = useState(false);
   const [form, setForm] = useState(EMPTY_FORM);
   const [employeeQuery, setEmployeeQuery] = useState("");
   const [exceptionSearch, setExceptionSearch] = useState("");
@@ -296,16 +295,24 @@ export default function ExceptionManager({
   const monthLabel = format(monthDate, "MMMM yyyy", { locale: es });
   const canResolveExceptions = canApproveExceptions;
   const isCompactList = compactListView || compactPendingView;
-  const deleteActionLabel = exceptionToDelete?.resolution === "pending" || exceptionToDelete?.status === "open"
-    ? "Eliminar"
-    : "Anular";
-  const deleteActionMessage = exceptionToDelete?.resolution === "pending" || exceptionToDelete?.status === "open"
-    ? `Deseas eliminar la justificacion de ${exceptionToDelete?.employeeName || ""}? Como esta pendiente, se quitara del sistema.`
-    : `Deseas anular la justificacion de ${exceptionToDelete?.employeeName || ""}? Quedara archivada para auditoria y no contara para el control operativo.`;
+  const deleteActionMessage = `Deseas eliminar la justificacion pendiente de ${exceptionToDelete?.employeeName || ""}?`;
 
   const activeEmployees = useMemo(
     () => employees.filter((employee) => employee.isActive !== false),
     [employees],
+  );
+  const employeeFilterOptions = useMemo(
+    () => activeEmployees.map((employee) => ({
+      value: employee.id,
+      label: employee.fullName,
+      searchText: [
+        employee.dni,
+        employee.branchName || employee.branch,
+        employee.areaName,
+        employee.roleName,
+      ].filter(Boolean).join(" "),
+    })),
+    [activeEmployees],
   );
   const selectedEmployee = useMemo(
     () => activeEmployees.find((employee) => employee.id === form.employeeId),
@@ -350,6 +357,13 @@ export default function ExceptionManager({
         return String(left.employeeName || "").localeCompare(String(right.employeeName || ""), "es");
       }),
     [filteredExceptions],
+  );
+  const deletablePendingExceptions = useMemo(
+    () => orderedExceptions.filter((exception) =>
+      exception.canDelete === true
+      && exception.resolution === "pending"
+      && exception.status !== "void"),
+    [orderedExceptions],
   );
   const totalPages = Math.max(1, Math.ceil(orderedExceptions.length / EXCEPTIONS_PAGE_SIZE));
   const safeCurrentPage = Math.min(currentPage, totalPages);
@@ -424,7 +438,6 @@ export default function ExceptionManager({
     setExceptions(payload.exceptions || []);
     setCanApproveExceptions(Boolean(payload.options?.canApproveExceptions));
     setCanCreateExceptions(Boolean(payload.options?.canCreateExceptions));
-    setCanDeleteOwnExceptions(Boolean(payload.options?.canDeleteOwnExceptions));
   }, [monthKey]);
 
   useEffect(() => {
@@ -456,7 +469,6 @@ export default function ExceptionManager({
           setExceptions(exceptionsPayload.exceptions || []);
           setCanApproveExceptions(Boolean(exceptionsPayload.options?.canApproveExceptions));
           setCanCreateExceptions(Boolean(exceptionsPayload.options?.canCreateExceptions));
-          setCanDeleteOwnExceptions(Boolean(exceptionsPayload.options?.canDeleteOwnExceptions));
         }
       } catch (error) {
         if (!isCancelled) {
@@ -813,6 +825,12 @@ export default function ExceptionManager({
       return;
     }
 
+    if (exceptionToDelete.resolution !== "pending" || exceptionToDelete.status === "void") {
+      setExceptionToDelete(null);
+      showNotice("error", "Las excepciones aprobadas o resueltas no se pueden eliminar.");
+      return;
+    }
+
     startTransition(async () => {
       try {
         const response = await fetch(`/api/planner/planning/exceptions/${exceptionToDelete.id}`, {
@@ -834,13 +852,13 @@ export default function ExceptionManager({
   }
 
   function confirmBulkDeleteExceptions() {
-    if (!orderedExceptions.length) {
+    if (!deletablePendingExceptions.length) {
       return;
     }
 
     startTransition(async () => {
       try {
-        for (const exception of orderedExceptions) {
+        for (const exception of deletablePendingExceptions) {
           const response = await fetch(`/api/planner/planning/exceptions/${exception.id}`, {
             method: "DELETE",
           });
@@ -853,7 +871,7 @@ export default function ExceptionManager({
 
         setIsBulkDeleteOpen(false);
         await loadExceptions();
-        showNotice("success", "Justificaciones filtradas procesadas correctamente.");
+        showNotice("success", "Excepciones pendientes eliminadas correctamente.");
       } catch (error) {
         showNotice("error", error.message);
       }
@@ -865,18 +883,18 @@ export default function ExceptionManager({
       <FloatingNotice notice={notice} onClose={dismissNotice} />
       <ConfirmDialog
         isOpen={Boolean(exceptionToDelete)}
-        title={`${deleteActionLabel} justificacion`}
+        title="Eliminar justificacion pendiente"
         message={deleteActionMessage}
-        confirmLabel={isPending ? "Procesando..." : deleteActionLabel}
+        confirmLabel={isPending ? "Procesando..." : "Eliminar"}
         isPending={isPending}
         onCancel={() => setExceptionToDelete(null)}
         onConfirm={confirmDeleteException}
       />
       <ConfirmDialog
         isOpen={isBulkDeleteOpen}
-        title="Procesar justificaciones filtradas"
-        message={`Se procesaran ${orderedExceptions.length} registros del filtro actual. Las pendientes se eliminaran y las resueltas se anularan con auditoria.`}
-        confirmLabel={isPending ? "Procesando..." : "Procesar filtradas"}
+        title="Eliminar excepciones pendientes"
+        message={`Se eliminaran ${deletablePendingExceptions.length} excepciones pendientes del filtro actual.`}
+        confirmLabel={isPending ? "Procesando..." : "Eliminar pendientes"}
         isPending={isPending}
         onCancel={() => setIsBulkDeleteOpen(false)}
         onConfirm={confirmBulkDeleteExceptions}
@@ -995,25 +1013,42 @@ export default function ExceptionManager({
             </div>
 
             <div className={styles.actionsGroup}>
-              <div className={styles.monthControls}>
-                <button type="button" onClick={() => moveMonth((current) => subMonths(current, 1))} aria-label="Mes anterior">
-                  <ChevronLeft size={16} />
-                </button>
-                <div className={styles.monthPill}>
-                  <CalendarDays size={16} />
-                  <span>{monthLabel}</span>
-                </div>
-                <button type="button" onClick={() => moveMonth((current) => addMonths(current, 1))} aria-label="Mes siguiente">
-                  <ChevronRight size={16} />
-                </button>
-              </div>
-
               {showCreateButton && canCreateExceptions ? (
                 <button type="button" className={styles.primaryButton} onClick={openCreateEditor}>
                   <Plus size={16} />
                   Nueva justificacion
                 </button>
               ) : null}
+            </div>
+          </div>
+
+          <div className={styles.filtersBar}>
+            <div className={styles.monthFilter}>
+              <span className={styles.filterLabel}>Mes</span>
+              <div className={styles.monthSlider}>
+                <button type="button" onClick={() => moveMonth((current) => subMonths(current, 1))} aria-label={`Mes anterior desde ${monthLabel}`}>
+                  <ChevronLeft size={18} aria-hidden="true" />
+                </button>
+                <output aria-live="polite" aria-label={`Mes seleccionado: ${monthLabel}`}>
+                  {monthLabel}
+                </output>
+                <button type="button" onClick={() => moveMonth((current) => addMonths(current, 1))} aria-label={`Mes siguiente desde ${monthLabel}`}>
+                  <ChevronRight size={18} aria-hidden="true" />
+                </button>
+              </div>
+            </div>
+            <div className={`${styles.employeeFilter} ${styles.employeeFilterLinear}`}>
+              <EmployeeAutocomplete
+                employees={activeEmployees}
+                value={exceptionEmployeeId}
+                query={exceptionSearch}
+                onQueryChange={updateExceptionSearch}
+                onSelect={selectExceptionEmployee}
+                onClearSelection={clearExceptionEmployee}
+                label="Empleado"
+                placeholder="Seleccionar empleado"
+                disabled={isLoading}
+              />
             </div>
           </div>
 
@@ -1050,21 +1085,83 @@ export default function ExceptionManager({
       ) : null}
 
       <section className={styles.panel}>
-        <div className={styles.listHeader}>
-          {isCompactList ? (
-            <div className={styles.monthControls}>
-              <button type="button" onClick={() => moveMonth((current) => subMonths(current, 1))} aria-label="Mes anterior">
-                <ChevronLeft size={16} />
-              </button>
-              <div className={styles.monthPill}>
-                <CalendarDays size={16} />
-                <span>{monthLabel}</span>
+        {isCompactList ? (
+          <div className={styles.compactFiltersToolbar}>
+            <div className={`${styles.filtersBar} ${styles.compactFiltersBar}`}>
+              <div className={styles.monthFilter}>
+                <span className={styles.filterLabel}>Mes</span>
+                <div className={styles.monthSlider}>
+                  <button type="button" onClick={() => moveMonth((current) => subMonths(current, 1))} aria-label={`Mes anterior desde ${monthLabel}`}>
+                    <ChevronLeft size={18} aria-hidden="true" />
+                  </button>
+                  <output aria-live="polite" aria-label={`Mes seleccionado: ${monthLabel}`}>
+                    {monthLabel}
+                  </output>
+                  <button type="button" onClick={() => moveMonth((current) => addMonths(current, 1))} aria-label={`Mes siguiente desde ${monthLabel}`}>
+                    <ChevronRight size={18} aria-hidden="true" />
+                  </button>
+                </div>
               </div>
-              <button type="button" onClick={() => moveMonth((current) => addMonths(current, 1))} aria-label="Mes siguiente">
-                <ChevronRight size={16} />
-              </button>
+              {compactPendingView ? (
+                <AutocompleteSelect
+                  className={styles.pendingEmployeeSelect}
+                  controlClassName={styles.pendingEmployeeSelectControl}
+                  options={employeeFilterOptions}
+                  value={exceptionEmployeeId}
+                  onChange={(employeeId) => {
+                    const employee = activeEmployees.find((entry) => entry.id === employeeId);
+
+                    if (employee) {
+                      selectExceptionEmployee(employee);
+                      return;
+                    }
+
+                    updateExceptionSearch("");
+                    clearExceptionEmployee();
+                  }}
+                  label="Empleado"
+                  placeholder="Seleccionar empleado"
+                  searchPlaceholder="Buscar empleado"
+                  emptyText="No encontramos empleados relacionados."
+                  disabled={isLoading}
+                />
+              ) : (
+                <div className={`${styles.employeeFilter} ${styles.employeeFilterLinear}`}>
+                  <EmployeeAutocomplete
+                    employees={activeEmployees}
+                    value={exceptionEmployeeId}
+                    query={exceptionSearch}
+                    onQueryChange={updateExceptionSearch}
+                    onSelect={selectExceptionEmployee}
+                    onClearSelection={clearExceptionEmployee}
+                    label="Empleado"
+                    placeholder="Seleccionar empleado"
+                    disabled={isLoading}
+                  />
+                </div>
+              )}
             </div>
-          ) : (
+            <div className={styles.compactFilterActions}>
+              {showCreateButton && canCreateExceptions ? (
+                <button type="button" className={styles.primaryButton} onClick={openCreateEditor}>
+                  <Plus size={16} />
+                  Nueva justificacion
+                </button>
+              ) : null}
+              {showBulkDeleteButton && canResolveExceptions && (exceptionEmployeeId || exceptionSearch.trim()) && deletablePendingExceptions.length ? (
+                <button
+                  type="button"
+                  className={styles.dangerButton}
+                  onClick={() => setIsBulkDeleteOpen(true)}
+                  disabled={isPending}
+                >
+                  Eliminar pendientes
+                </button>
+              ) : null}
+            </div>
+          </div>
+        ) : (
+          <div className={styles.listHeader}>
             <div>
               <h3>{listTitle}</h3>
               <p>
@@ -1075,37 +1172,18 @@ export default function ExceptionManager({
                     : `Periodo ${monthLabel} · mas recientes primero`}
               </p>
             </div>
-          )}
-          <div className={styles.employeeFilter}>
-            <EmployeeAutocomplete
-              employees={activeEmployees}
-              value={exceptionEmployeeId}
-              query={exceptionSearch}
-              onQueryChange={updateExceptionSearch}
-              onSelect={selectExceptionEmployee}
-              onClearSelection={clearExceptionEmployee}
-              label="Empleado"
-              placeholder="Filtrar por empleado"
-              disabled={isLoading}
-            />
+            {showBulkDeleteButton && canResolveExceptions && (exceptionEmployeeId || exceptionSearch.trim()) && deletablePendingExceptions.length ? (
+              <button
+                type="button"
+                className={styles.dangerButton}
+                onClick={() => setIsBulkDeleteOpen(true)}
+                disabled={isPending}
+              >
+                Eliminar pendientes
+              </button>
+            ) : null}
           </div>
-          {isCompactList && showCreateButton && canCreateExceptions ? (
-            <button type="button" className={styles.primaryButton} onClick={openCreateEditor}>
-              <Plus size={16} />
-              Nueva justificacion
-            </button>
-          ) : null}
-          {showBulkDeleteButton && canResolveExceptions && (exceptionEmployeeId || exceptionSearch.trim()) && orderedExceptions.length ? (
-            <button
-              type="button"
-              className={styles.dangerButton}
-              onClick={() => setIsBulkDeleteOpen(true)}
-              disabled={isPending}
-            >
-              Anular filtradas
-            </button>
-          ) : null}
-        </div>
+        )}
 
         {!isLoading && (exceptionEmployeeId || exceptionSearch.trim()) && !orderedExceptions.length && scopedExceptions.length ? (
           <div className={styles.filterNotice}>
@@ -1157,15 +1235,14 @@ export default function ExceptionManager({
                       <span>{describeExceptionTime(exception)}</span>
                     </td>
                     <td className={styles.optionsColumn}>
-                      {canResolveExceptions || (
-                        canDeleteOwnExceptions
-                        && (exception.resolution === "pending" || exception.status === "open")
-                      ) ? (
+                      {exception.canDelete === true
+                        && exception.resolution === "pending"
+                        && exception.status !== "void" ? (
                         <div className={styles.rowActions}>
                           <button type="button" onClick={(event) => {
                             event.stopPropagation();
                             setExceptionToDelete(exception);
-                          }} aria-label="Eliminar o anular justificacion">
+                          }} aria-label="Eliminar justificacion pendiente">
                             <XCircle size={15} />
                           </button>
                         </div>
@@ -1303,8 +1380,7 @@ export default function ExceptionManager({
           {createsManualPunch ? (
             <label className={styles.field}>
               <span>Hora a registrar</span>
-              <input
-                type="time"
+              <TimeInput24
                 value={form.manualPunchTime}
                 onChange={(event) => updateForm("manualPunchTime", event.target.value)}
               />
@@ -1315,11 +1391,11 @@ export default function ExceptionManager({
             <div className={styles.twoColumnGrid}>
               <label className={styles.field}>
                 <span>Hora inicio permiso</span>
-                <input type="time" value={form.startTime} onChange={(event) => updateForm("startTime", event.target.value)} />
+                <TimeInput24 value={form.startTime} onChange={(event) => updateForm("startTime", event.target.value)} />
               </label>
               <label className={styles.field}>
                 <span>Hora fin permiso</span>
-                <input type="time" value={form.endTime} onChange={(event) => updateForm("endTime", event.target.value)} />
+                <TimeInput24 value={form.endTime} onChange={(event) => updateForm("endTime", event.target.value)} />
               </label>
             </div>
           ) : null}
@@ -1339,21 +1415,21 @@ export default function ExceptionManager({
                   <div className={styles.twoColumnGrid}>
                     <label className={styles.field}>
                       <span>Entrada</span>
-                      <input type="time" value={form.plannedStartTime} onChange={(event) => updateForm("plannedStartTime", event.target.value)} />
+                      <TimeInput24 value={form.plannedStartTime} onChange={(event) => updateForm("plannedStartTime", event.target.value)} />
                     </label>
                     <label className={styles.field}>
                       <span>Salida</span>
-                      <input type="time" value={form.plannedEndTime} onChange={(event) => updateForm("plannedEndTime", event.target.value)} />
+                      <TimeInput24 value={form.plannedEndTime} onChange={(event) => updateForm("plannedEndTime", event.target.value)} />
                     </label>
                   </div>
                   <div className={styles.twoColumnGrid}>
                     <label className={styles.field}>
                       <span>Inicio almuerzo</span>
-                      <input type="time" value={form.plannedLunchStartTime} onChange={(event) => updateForm("plannedLunchStartTime", event.target.value)} />
+                      <TimeInput24 value={form.plannedLunchStartTime} onChange={(event) => updateForm("plannedLunchStartTime", event.target.value)} />
                     </label>
                     <label className={styles.field}>
                       <span>Fin almuerzo</span>
-                      <input type="time" value={form.plannedLunchEndTime} onChange={(event) => updateForm("plannedLunchEndTime", event.target.value)} />
+                      <TimeInput24 value={form.plannedLunchEndTime} onChange={(event) => updateForm("plannedLunchEndTime", event.target.value)} />
                     </label>
                   </div>
                 </>

@@ -3,7 +3,7 @@ import { Activity, CalendarCheck2, CheckCircle2, Clock3, FileClock, UserRound } 
 
 import ModuleShell from "@/components/shell/ModuleShell";
 import connectToDatabase from "@/lib/db/mongodb";
-import { formatEcuadorMonthKey } from "@/lib/datetime/ecuador";
+import { formatEcuadorDateTimeLabel, formatEcuadorMonthKey } from "@/lib/datetime/ecuador";
 import AuditLog from "@/models/AuditLog";
 import styles from "@/modules/planner/styles/pages/dashboard/home/page.module.scss";
 
@@ -172,12 +172,7 @@ function entityTypeLabel(entityType) {
 }
 
 function formatDateTime(value) {
-  if (!value) return "Sin fecha";
-
-  return new Intl.DateTimeFormat("es-EC", {
-    dateStyle: "medium",
-    timeStyle: "short",
-  }).format(new Date(value));
+  return formatEcuadorDateTimeLabel(value, { fallback: "Sin fecha" });
 }
 
 function formatDateOnly(value) {

@@ -6,6 +6,7 @@ import { Plus, RotateCcw, Search, Trash2 } from "lucide-react";
 import ConfirmDialog from "@/components/ui/ConfirmDialog";
 import FloatingNotice from "@/components/ui/FloatingNotice";
 import TextInput from "@/components/ui/TextInput";
+import { formatTime24 } from "@/lib/datetime/ecuador";
 import { DEFAULT_TEMPLATE_ROWS } from "@/modules/planner/lib/planning/baseSchedules";
 import styles from "@/modules/planner/styles/components/planning/BaseSchedulesManager.module.scss";
 
@@ -45,11 +46,7 @@ function minutesLabel(minutes) {
 }
 
 function formatClockLabel(value) {
-  const minutes = parseTimeToMinutes(value);
-
-  if (minutes === null) return "--";
-
-  return `${String(Math.floor(minutes / 60)).padStart(2, "0")}H${String(minutes % 60).padStart(2, "0")}`;
+  return formatTime24(value, "--");
 }
 
 function calculateLunchMinutes(row) {

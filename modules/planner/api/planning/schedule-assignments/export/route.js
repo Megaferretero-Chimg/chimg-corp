@@ -2,9 +2,11 @@ import { NextResponse } from "next/server";
 import * as XLSX from "xlsx";
 
 import connectToDatabase from "@/lib/db/mongodb";
+import { formatTime24 } from "@/lib/datetime/ecuador";
 import { hasAccessPermission } from "@/modules/company/submodules/access/lib/permissions";
 import {
   applyPlannerScopeToAssignmentQuery,
+  assertWorkGroupInPlannerScope,
   resolvePlannerEmployeeScope,
 } from "@/modules/planner/lib/planning/accessScope";
 import { parseMonthKey } from "@/modules/planner/lib/planning/holidays";
@@ -61,11 +63,7 @@ function uniqueSheetName(workbook, baseName) {
 }
 
 function formatClockTime(value) {
-  const match = String(value || "").match(/^(\d{2}):(\d{2})$/);
-
-  if (!match) return "";
-
-  return `${match[1]}H${match[2]}`;
+  return formatTime24(value);
 }
 
 function formatHourRange(startTime, endTime) {
@@ -78,10 +76,12 @@ function formatHourRange(startTime, endTime) {
 }
 
 function formatDaySchedule(day) {
+  if (!day) return "";
+
   const note = String(day?.operationalNote || "").trim();
 
   if (note) return note.toUpperCase();
-  if (!day || day.dayType === "off_day") return "Descanso";
+  if (day.dayType === "off_day") return "Descanso";
   if (day.dayType === "holiday") return "Feriado";
   if (day.dayType === "vacation") return "Vacaciones";
 
@@ -92,7 +92,41 @@ function formatDaySchedule(day) {
   return formatHourRange(day.startTime, day.endTime) || "Descanso";
 }
 
-function mergeAssignmentsByEmployee(assignments, requestedMonthKey) {
+function normalizeId(value) {
+  return value?.toString?.() || String(value || "");
+}
+
+function findApprovedHistory(assignment, weekStartKey, groupId) {
+  const approval = (assignment.planningApprovals || [])
+    .filter((entry) =>
+      entry.weekStartKey === weekStartKey
+      && !entry.unlockedAt
+      && (!groupId || normalizeId(entry.groupId) === groupId),
+    )
+    .sort((left, right) => new Date(right.approvedAt || 0) - new Date(left.approvedAt || 0))[0];
+
+  if (!approval?.versionSavedAt) return null;
+
+  const approvedSavedAt = new Date(approval.versionSavedAt).getTime();
+
+  return (assignment.scheduleHistory || []).find((entry) => {
+    if (entry.weekStartKey !== weekStartKey) return false;
+    if (groupId && normalizeId(entry.groupId) !== groupId) return false;
+    if (new Date(entry.savedAt || 0).getTime() !== approvedSavedAt) return false;
+
+    if (approval.versionSavedByUser) {
+      return entry.savedByUser === approval.versionSavedByUser;
+    }
+
+    if (approval.versionSavedBy) {
+      return entry.savedBy === approval.versionSavedBy;
+    }
+
+    return true;
+  }) || null;
+}
+
+function mergeApprovedAssignmentsByEmployee(assignments, requestedMonthKey, weekOptions, groupId) {
   const grouped = new Map();
 
   assignments.forEach((assignment) => {
@@ -107,20 +141,26 @@ function mergeAssignmentsByEmployee(assignments, requestedMonthKey) {
     const primary =
       employeeAssignments.find((assignment) => assignment.monthKey === requestedMonthKey)
       || employeeAssignments[0];
-    const generatedDaysByDate = new Map();
+    const approvedDaysByDate = new Map();
 
-    employeeAssignments
-      .sort((left, right) => String(left.monthKey || "").localeCompare(String(right.monthKey || "")))
-      .forEach((assignment) => {
-        (assignment.generatedDays || []).forEach((day) => {
-          if (day?.dateKey) generatedDaysByDate.set(day.dateKey, day);
+    weekOptions.forEach((week) => {
+      const weekDateKeySet = new Set(getWeekDateKeys(week.weekStartKey));
+
+      employeeAssignments.forEach((assignment) => {
+        const approvedHistory = findApprovedHistory(assignment, week.weekStartKey, groupId);
+
+        (approvedHistory?.generatedDays || []).forEach((day) => {
+          if (weekDateKeySet.has(day?.dateKey)) {
+            approvedDaysByDate.set(day.dateKey, day);
+          }
         });
       });
+    });
 
     return {
       ...primary,
       monthKey: requestedMonthKey || primary.monthKey,
-      generatedDays: [...generatedDaysByDate.values()]
+      generatedDays: [...approvedDaysByDate.values()]
         .sort((left, right) => String(left.dateKey).localeCompare(String(right.dateKey))),
     };
   });
@@ -211,7 +251,7 @@ function applyWorksheetLayout(worksheet, weekDateKeys) {
   worksheet["!freeze"] = { xSplit: 1, ySplit: 1 };
 }
 
-async function buildScheduleWorkbook({ monthKey, branchCode, areaCode, roleCode, employeeIds = [], plannerScope }) {
+async function buildScheduleWorkbook({ monthKey, branchCode, areaCode, roleCode, groupId, employeeIds = [], plannerScope }) {
   const monthKeys = [getPreviousMonthKey(monthKey), monthKey, getNextMonthKey(monthKey)];
   const query = { monthKey: { $in: monthKeys } };
 
@@ -225,9 +265,9 @@ async function buildScheduleWorkbook({ monthKey, branchCode, areaCode, roleCode,
   const assignments = await ScheduleAssignment.find(query)
     .sort({ areaName: 1, employeeName: 1 })
     .lean();
-  const mergedAssignments = mergeAssignmentsByEmployee(assignments, monthKey);
-  const areaGroups = buildAreaGroups(mergedAssignments, areaCode);
   const weekOptions = getMonthWeekOptions(monthKey);
+  const mergedAssignments = mergeApprovedAssignmentsByEmployee(assignments, monthKey, weekOptions, groupId);
+  const areaGroups = buildAreaGroups(mergedAssignments, areaCode);
   const workbook = XLSX.utils.book_new();
 
   if (!areaGroups.length) {
@@ -282,11 +322,17 @@ export async function GET(request) {
     const branchCode = String(searchParams.get("branchCode") || "").trim().toUpperCase();
     const areaCode = String(searchParams.get("areaCode") || "").trim();
     const roleCode = String(searchParams.get("roleCode") || "").trim();
+    const groupId = String(searchParams.get("groupId") || "").trim();
     const employeeIds = String(searchParams.get("employeeIds") || "")
       .split(",")
       .map((employeeId) => employeeId.trim())
       .filter(Boolean);
-    const excel = await buildScheduleWorkbook({ monthKey, branchCode, areaCode, roleCode, employeeIds, plannerScope });
+
+    if (groupId) {
+      assertWorkGroupInPlannerScope(groupId, plannerScope);
+    }
+
+    const excel = await buildScheduleWorkbook({ monthKey, branchCode, areaCode, roleCode, groupId, employeeIds, plannerScope });
 
     return new Response(excel, {
       headers: {

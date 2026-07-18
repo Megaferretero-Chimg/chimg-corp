@@ -14,7 +14,7 @@ import {
 
 import ModuleShell from "@/components/shell/ModuleShell";
 import connectToDatabase from "@/lib/db/mongodb";
-import { formatEcuadorMonthKey, makeEcuadorDate } from "@/lib/datetime/ecuador";
+import { formatEcuadorDateTimeLabel, formatEcuadorMonthKey, makeEcuadorDate } from "@/lib/datetime/ecuador";
 import { buildEmployeeActiveInMonthQuery } from "@/modules/company/submodules/people/lib/employees";
 import { planningModulePath } from "@/modules/planner/routes";
 import AuditLog from "@/models/AuditLog";
@@ -69,12 +69,7 @@ function numberOrNull(value) {
 }
 
 function formatDateTime(value) {
-  if (!value) return "Sin fecha";
-
-  return new Intl.DateTimeFormat("es-EC", {
-    dateStyle: "medium",
-    timeStyle: "short",
-  }).format(new Date(value));
+  return formatEcuadorDateTimeLabel(value, { fallback: "Sin fecha" });
 }
 
 function formatHours(minutes) {
@@ -282,7 +277,7 @@ async function loadHomeSummary() {
 
       (assignment.planningApprovals || []).forEach((entry) => {
         const groupId = entry.groupId?.toString?.() || "";
-        if (groupId && entry.weekStartKey) {
+        if (groupId && entry.weekStartKey && !entry.unlockedAt) {
           approvedGroupWeeks.add(`${groupId}|${entry.weekStartKey}`);
         }
       });

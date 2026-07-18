@@ -14,6 +14,7 @@ export default function ConfirmDialog({
   confirmLabel = "Aceptar",
   cancelLabel = "Cancelar",
   tone = "danger",
+  layout = "default",
   isPending = false,
   confirmDisabled = false,
   children,
@@ -22,6 +23,8 @@ export default function ConfirmDialog({
 }) {
   const canRenderPortal = useClientReady();
   const titleId = useId();
+  const messageId = useId();
+  const usesFormLayout = layout === "form";
 
   useEffect(() => {
     if (!isOpen) {
@@ -59,11 +62,12 @@ export default function ConfirmDialog({
       }}
     >
       <section
-        className={`${styles.dialog} ${isPending ? styles.dialogPending : ""}`}
+        className={`${styles.dialog} ${usesFormLayout ? styles.formDialog : ""} ${isPending ? styles.dialogPending : ""}`}
         role="dialog"
         aria-modal="true"
         aria-busy={isPending}
         aria-labelledby={titleId}
+        aria-describedby={message ? messageId : undefined}
       >
         <div className={styles.header}>
           <span className={`${styles.icon} ${tone === "danger" ? styles.iconDanger : ""}`}>
@@ -73,7 +77,7 @@ export default function ConfirmDialog({
             <h3 id={titleId} className={styles.title}>
               {title}
             </h3>
-            <p className={styles.message}>{message}</p>
+            {!usesFormLayout ? <p id={messageId} className={styles.message}>{message}</p> : null}
           </div>
           <button
             type="button"
@@ -85,6 +89,12 @@ export default function ConfirmDialog({
             <X size={16} />
           </button>
         </div>
+
+        {usesFormLayout && message ? (
+          <div className={styles.formMessage}>
+            <p id={messageId}>{message}</p>
+          </div>
+        ) : null}
 
         {children ? <div className={styles.body}>{children}</div> : null}
 

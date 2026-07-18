@@ -17,6 +17,7 @@ import {
 } from "lucide-react";
 import { addMonths, addWeeks, format } from "date-fns";
 import { es } from "date-fns/locale";
+import TimeInput24 from "@/components/ui/TimeInput24";
 import {
   buildDefaultWeeklySchedule,
   DAY_TYPES,
@@ -782,8 +783,7 @@ export default function WeeklyScheduleManager() {
                         <td>
                           <div className={styles.timeField}>
                             <Clock3 size={14} />
-                            <input
-                              type="time"
+                            <TimeInput24
                               value={row.startTime}
                               disabled={disableTimeFields}
                               onChange={(event) =>
@@ -814,8 +814,7 @@ export default function WeeklyScheduleManager() {
                         <td>
                           <div className={styles.timeField}>
                             <Clock3 size={14} />
-                            <input
-                              type="time"
+                            <TimeInput24
                               value={row.endTime}
                               disabled={disableTimeFields}
                               onChange={(event) =>

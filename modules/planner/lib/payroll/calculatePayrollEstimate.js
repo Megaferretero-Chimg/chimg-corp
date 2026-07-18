@@ -10,6 +10,7 @@ import {
 } from "date-fns";
 import { es } from "date-fns/locale";
 
+import { formatTime24 } from "@/lib/datetime/ecuador";
 import comparePayrollPunches from "@/modules/planner/lib/payroll/comparePayrollPunches";
 import { attendancePayrollPolicy, isPlannedAttendanceExempt, plannedAttendanceExemptionLabel } from "@/modules/planner/lib/attendance/exemptions";
 import {
@@ -74,12 +75,7 @@ function formatDailyDiscount(absenceHours, lateMinutes, regularShortfallMinutes 
 }
 
 function formatHourForSchedule(value) {
-  if (!value) {
-    return "--";
-  }
-
-  const [hours, minutes] = String(value).split(":");
-  return `${Number(hours)}h${minutes}`;
+  return formatTime24(value, "--");
 }
 
 function formatLunchDuration(minutes) {

@@ -166,7 +166,8 @@ function combineDateAndTime(dateKey, timeValue) {
     Number.isNaN(hours) ||
     Number.isNaN(minutes) ||
     hours < 0 ||
-    hours > 23 ||
+    hours > 24 ||
+    (hours === 24 && minutes !== 0) ||
     minutes < 0 ||
     minutes > 59
   ) {
@@ -208,7 +209,8 @@ function parseScheduleTimeToMinutes(value) {
     Number.isNaN(hours) ||
     Number.isNaN(minutes) ||
     hours < 0 ||
-    hours > 23 ||
+    hours > 24 ||
+    (hours === 24 && minutes !== 0) ||
     minutes < 0 ||
     minutes > 59
   ) {

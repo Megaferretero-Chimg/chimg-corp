@@ -12,7 +12,6 @@
   padding: 1.2rem;
 }
 
-.toolbar,
 .editorHeader {
   display: flex;
   align-items: flex-start;
@@ -21,65 +20,85 @@
   flex-wrap: wrap;
 }
 
-.eyebrow {
-  margin: 0;
-  font-size: var(--font-size-micro);
-  letter-spacing: 0.18em;
-  text-transform: uppercase;
-  color: var(--primary);
-}
-
-.title,
 .editorTitle {
   margin: 0.38rem 0 0;
   color: #10213e;
-}
-
-.title {
-  font-size: var(--font-size-title-lg);
 }
 
 .editorTitle {
   font-size: var(--font-size-title-sm);
 }
 
-.description {
-  margin: 0.55rem 0 0;
-  color: var(--text-muted);
-  line-height: 1.6;
+.filtersBar {
+  position: relative;
+  z-index: 25;
+  display: grid;
+  grid-template-columns: minmax(15rem, 18rem);
+  justify-content: start;
+  min-width: 0;
+  padding: 0.1rem 0.15rem;
 }
 
-.monthControls {
-  display: inline-flex;
-  align-items: center;
+.monthFilter {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
   gap: 0.55rem;
+  align-items: center;
+  min-width: 0;
 }
 
-.monthControls button,
-.iconButton {
-  width: 2.45rem;
-  height: 2.45rem;
+.filterLabel {
+  color: #718096;
+  font-size: 0.68rem;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  line-height: normal;
+  text-transform: uppercase;
+}
+
+.monthSlider {
+  display: grid;
+  height: 2.35rem;
+  min-height: 2.35rem;
+  grid-template-columns: 2.2rem minmax(0, 1fr) 2.2rem;
+  align-items: stretch;
+  border-bottom: 1px solid rgba(16, 33, 62, 0.14);
+}
+
+.monthSlider button {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  border: 1px solid rgba(16, 33, 62, 0.12);
-  border-radius: 999px;
-  background: white;
-  color: #16325f;
+  border: 0;
+  border-radius: 0.5rem;
+  background: transparent;
+  color: #60708b;
   cursor: pointer;
+  transition: background-color 150ms ease, color 150ms ease;
 }
 
-.monthPill {
-  min-height: 2.45rem;
-  display: inline-flex;
+.monthSlider button:hover {
+  background: rgba(37, 99, 235, 0.07);
+  color: var(--primary);
+}
+
+.monthSlider button:focus-visible {
+  outline: 2px solid rgba(37, 99, 235, 0.25);
+  outline-offset: -2px;
+}
+
+.monthSlider output {
+  display: flex;
+  min-width: 0;
   align-items: center;
-  gap: 0.5rem;
-  border-radius: 999px;
-  background: #eef5ff;
-  color: #17428c;
-  padding: 0.55rem 0.85rem;
+  justify-content: center;
+  color: #10213e;
+  padding: 0.25rem 0.4rem;
+  font-size: var(--font-size-sm);
   font-weight: 700;
+  text-align: center;
   text-transform: capitalize;
+  white-space: nowrap;
 }
 
 .calendar {
@@ -243,6 +262,11 @@
 }
 
 @media (max-width: 820px) {
+  .filtersBar {
+    grid-template-columns: 1fr;
+    padding-inline: 0;
+  }
+
   .calendar {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }

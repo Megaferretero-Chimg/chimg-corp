@@ -9,6 +9,7 @@ import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import {
   formatEcuadorDateKey,
   formatEcuadorDateTime,
+  formatTime24,
   getEcuadorParts,
 } from "@/lib/datetime/ecuador";
 import { planningModulePath } from "@/modules/planner/routes";
@@ -101,17 +102,7 @@ function formatCompactDateLabel(value) {
 }
 
 function formatHourForSchedule(value) {
-  if (!value) {
-    return "--";
-  }
-
-  const [hours, minutes] = String(value).split(":");
-
-  if (typeof hours === "undefined" || typeof minutes === "undefined") {
-    return value;
-  }
-
-  return `${Number(hours)}h${minutes}`;
+  return formatTime24(value, "--");
 }
 
 function formatLunchDuration(minutes) {

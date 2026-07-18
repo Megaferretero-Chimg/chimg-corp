@@ -166,6 +166,11 @@ const operationalExceptionSchema = new Schema(
       enum: ["", "schedule_planner", "attendance_comparison"],
       default: "",
     },
+    requestKey: {
+      type: String,
+      trim: true,
+      default: "",
+    },
     registeredBy: {
       type: String,
       trim: true,
@@ -216,6 +221,13 @@ operationalExceptionSchema.index({ effect: 1, status: 1 });
 operationalExceptionSchema.index({ createdByUser: 1, date: 1 });
 operationalExceptionSchema.index({ employee: 1, dateKey: 1, endDateKey: 1, status: 1 });
 operationalExceptionSchema.index({ employee: 1, planningSource: 1, dateKey: 1, endDateKey: 1, updatedAt: -1 });
+operationalExceptionSchema.index(
+  { requestKey: 1 },
+  {
+    unique: true,
+    partialFilterExpression: { requestKey: { $type: "string", $gt: "" } },
+  },
+);
 
 if (process.env.NODE_ENV !== "production" && mongoose.models.OperationalException) {
   delete mongoose.models.OperationalException;

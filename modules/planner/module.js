@@ -13,6 +13,13 @@ export const PLANNING_MODULE = {
   navigation: DASHBOARD_NAVIGATION,
 };
 
+function currentUserSummary(user = {}) {
+  return {
+    name: user.employeeName || user.username || "Usuario",
+    email: user.email || "",
+  };
+}
+
 export function getPlanningModuleForUser(user) {
   const baseNavigation = getDashboardNavigationForAccessRole(user?.accessRole);
   const navigation = baseNavigation
@@ -32,6 +39,7 @@ export function getPlanningModuleForUser(user) {
     ...PLANNING_MODULE,
     homeHref: navigation[0]?.items[0]?.href || PLANNING_MODULE.homeHref,
     canSwitchModules: canSwitchModules(user),
+    currentUser: currentUserSummary(user),
     navigation,
   };
 }

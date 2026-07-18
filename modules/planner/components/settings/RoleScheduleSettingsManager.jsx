@@ -6,6 +6,7 @@ import { Save, Search } from "lucide-react";
 import AutocompleteSelect from "@/components/ui/AutocompleteSelect";
 import FloatingNotice from "@/components/ui/FloatingNotice";
 import TextInput from "@/components/ui/TextInput";
+import { formatTime24 } from "@/lib/datetime/ecuador";
 import styles from "@/modules/planner/styles/components/settings/RoleScheduleSettingsManager.module.scss";
 
 const ALLOWED_DAY_TYPES = new Set(["workday", "vacation", "holiday", "weekend_overtime", "off_day"]);
@@ -20,7 +21,7 @@ function normalizeSearch(value) {
 }
 
 function formatScheduleHour(value) {
-  return String(value || "").replace(":", "H");
+  return formatTime24(value);
 }
 
 function templateScheduleLabel(template) {

@@ -14,6 +14,13 @@ export const COMPANY_MODULE = {
   navigation: COMPANY_MODULE_NAVIGATION,
 };
 
+function currentUserSummary(user = {}) {
+  return {
+    name: user.employeeName || user.username || "Usuario",
+    email: user.email || "",
+  };
+}
+
 export function getCompanyModuleForUser(user) {
   if (!isCompanyEmployeeOnlyUser(user)) {
     const navigation = COMPANY_MODULE_NAVIGATION
@@ -33,6 +40,7 @@ export function getCompanyModuleForUser(user) {
       ...COMPANY_MODULE,
       homeHref: navigation[0]?.items[0]?.href || COMPANY_MODULE.homeHref,
       canSwitchModules: canSwitchModules(user),
+      currentUser: currentUserSummary(user),
       navigation,
     };
   }
@@ -41,6 +49,7 @@ export function getCompanyModuleForUser(user) {
     ...COMPANY_MODULE,
     homeHref: companyModulePath("/employees"),
     canSwitchModules: canSwitchModules(user),
+    currentUser: currentUserSummary(user),
     navigation: [
       {
         title: "Empresa",

@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AlertTriangle, Download, RefreshCw, Save } from "lucide-react";
 
 import ConfirmDialog from "@/components/ui/ConfirmDialog";
-import { formatEcuadorMonthKey } from "@/lib/datetime/ecuador";
+import { formatEcuadorDateTimeLabel, formatEcuadorMonthKey } from "@/lib/datetime/ecuador";
 import { employeeDismissalLabel, isEmployeeDismissedInMonth } from "@/modules/company/submodules/people/lib/employees";
 import styles from "@/modules/planner/styles/components/attendance/MonthlyClosureView.module.scss";
 
@@ -321,7 +321,7 @@ export default function MonthlyClosureView({ view = "summary", fixedMonth = "" }
               <select value={selectedClosureValue} onChange={(event) => handleClosureVersionChange(event.target.value)} disabled={isSaving || isLoading}>
                 {closures.map((closure) => (
                   <option key={closure.id} value={closure.id}>
-                    v{closure.version}{closure.isLatest ? " · última" : ""} · {new Date(closure.closedAt).toLocaleString("es-EC")}
+                    v{closure.version}{closure.isLatest ? " · última" : ""} · {formatEcuadorDateTimeLabel(closure.closedAt)}
                   </option>
                 ))}
               </select>

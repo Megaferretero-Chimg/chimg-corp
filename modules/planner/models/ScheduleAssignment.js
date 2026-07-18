@@ -1,191 +1,5 @@
 import mongoose, { Schema } from "mongoose";
 
-const exceptionSnapshotSchema = new Schema(
-  {
-    id: {
-      type: String,
-      trim: true,
-      default: "",
-    },
-    title: {
-      type: String,
-      trim: true,
-      default: "",
-    },
-    employeeId: {
-      type: String,
-      trim: true,
-      default: "",
-    },
-    type: {
-      type: String,
-      trim: true,
-      default: "",
-    },
-    typeLabel: {
-      type: String,
-      trim: true,
-      default: "",
-    },
-    scope: {
-      type: String,
-      trim: true,
-      default: "",
-    },
-    scopeLabel: {
-      type: String,
-      trim: true,
-      default: "",
-    },
-    effect: {
-      type: String,
-      trim: true,
-      default: "",
-    },
-    effectLabel: {
-      type: String,
-      trim: true,
-      default: "",
-    },
-    attendanceMode: {
-      type: String,
-      trim: true,
-      default: "",
-    },
-    attendanceModeLabel: {
-      type: String,
-      trim: true,
-      default: "",
-    },
-    payMode: {
-      type: String,
-      trim: true,
-      default: "",
-    },
-    payModeLabel: {
-      type: String,
-      trim: true,
-      default: "",
-    },
-    dateKey: {
-      type: String,
-      trim: true,
-      default: "",
-    },
-    endDateKey: {
-      type: String,
-      trim: true,
-      default: "",
-    },
-    startTime: {
-      type: String,
-      trim: true,
-      default: "",
-    },
-    endTime: {
-      type: String,
-      trim: true,
-      default: "",
-    },
-    plannedStartTime: {
-      type: String,
-      trim: true,
-      default: "",
-    },
-    plannedEndTime: {
-      type: String,
-      trim: true,
-      default: "",
-    },
-    plannedLunchStartTime: {
-      type: String,
-      trim: true,
-      default: "",
-    },
-    plannedLunchEndTime: {
-      type: String,
-      trim: true,
-      default: "",
-    },
-    plannedLunchDurationMinutes: {
-      type: Number,
-      min: 0,
-      default: 0,
-    },
-    applicableWeekdays: {
-      type: [Number],
-      default: undefined,
-    },
-    manualPunchTime: {
-      type: String,
-      trim: true,
-      default: "",
-    },
-    destination: {
-      type: String,
-      trim: true,
-      default: "",
-    },
-    countsAsWorkedTime: {
-      type: Boolean,
-      default: false,
-    },
-    allowSupplementaryTime: {
-      type: Boolean,
-      default: false,
-    },
-    registeredBy: {
-      type: String,
-      trim: true,
-      default: "",
-    },
-    authorizedBy: {
-      type: String,
-      trim: true,
-      default: "",
-    },
-    resolution: {
-      type: String,
-      trim: true,
-      default: "",
-    },
-    resolutionLabel: {
-      type: String,
-      trim: true,
-      default: "",
-    },
-    resolutionNotes: {
-      type: String,
-      trim: true,
-      default: "",
-    },
-    notes: {
-      type: String,
-      trim: true,
-      default: "",
-    },
-    status: {
-      type: String,
-      trim: true,
-      default: "",
-    },
-    statusLabel: {
-      type: String,
-      trim: true,
-      default: "",
-    },
-    createdAt: {
-      type: Date,
-      default: null,
-    },
-    updatedAt: {
-      type: Date,
-      default: null,
-    },
-  },
-  { _id: false },
-);
-
 const generatedDaySchema = new Schema(
   {
     dateKey: {
@@ -280,10 +94,6 @@ const generatedDaySchema = new Schema(
     operationalJustification: {
       type: Boolean,
       default: false,
-    },
-    exceptionSnapshot: {
-      type: [exceptionSnapshotSchema],
-      default: [],
     },
     source: {
       type: String,
@@ -426,6 +236,25 @@ const planningApprovalSchema = new Schema(
       default: "",
     },
     versionSavedByUser: {
+      type: String,
+      trim: true,
+      default: "",
+    },
+    unlockedAt: {
+      type: Date,
+      default: null,
+    },
+    unlockedBy: {
+      type: String,
+      trim: true,
+      default: "",
+    },
+    unlockedByUser: {
+      type: String,
+      trim: true,
+      default: "",
+    },
+    unlockReason: {
       type: String,
       trim: true,
       default: "",

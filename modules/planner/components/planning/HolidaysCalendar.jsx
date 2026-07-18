@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, useTransition } from "react";
 import { addMonths, endOfMonth, format, getDay, startOfMonth, subMonths } from "date-fns";
 import { es } from "date-fns/locale";
-import { CalendarDays, ChevronLeft, ChevronRight, Plus, Save, Trash2 } from "lucide-react";
+import { ChevronLeft, ChevronRight, Plus, Save, Trash2 } from "lucide-react";
 
 import ConfirmDialog from "@/components/ui/ConfirmDialog";
 import FloatingModal from "@/components/ui/FloatingModal";
@@ -217,26 +217,20 @@ export default function HolidaysCalendar() {
       />
 
       <section className={styles.panel}>
-        <div className={styles.toolbar}>
-          <div>
-            <p className={styles.eyebrow}>Calendario laboral</p>
-            <h2 className={styles.title}>Feriados por mes</h2>
-            <p className={styles.description}>
-              Registra la fecha real anunciada para cada feriado. Cada dia permite un solo feriado.
-            </p>
-          </div>
-
-          <div className={styles.monthControls}>
-            <button type="button" onClick={() => setMonthDate((current) => subMonths(current, 1))} aria-label="Mes anterior">
-              <ChevronLeft size={16} />
-            </button>
-            <div className={styles.monthPill}>
-              <CalendarDays size={16} />
-              <span>{monthLabel}</span>
+        <div className={styles.filtersBar}>
+          <div className={styles.monthFilter}>
+            <span className={styles.filterLabel}>Mes</span>
+            <div className={styles.monthSlider}>
+              <button type="button" onClick={() => setMonthDate((current) => subMonths(current, 1))} aria-label={`Mes anterior desde ${monthLabel}`}>
+                <ChevronLeft size={18} aria-hidden="true" />
+              </button>
+              <output aria-live="polite" aria-label={`Mes seleccionado: ${monthLabel}`}>
+                {monthLabel}
+              </output>
+              <button type="button" onClick={() => setMonthDate((current) => addMonths(current, 1))} aria-label={`Mes siguiente desde ${monthLabel}`}>
+                <ChevronRight size={18} aria-hidden="true" />
+              </button>
             </div>
-            <button type="button" onClick={() => setMonthDate((current) => addMonths(current, 1))} aria-label="Mes siguiente">
-              <ChevronRight size={16} />
-            </button>
           </div>
         </div>
 

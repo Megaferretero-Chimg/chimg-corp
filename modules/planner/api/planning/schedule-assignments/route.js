@@ -4,6 +4,7 @@ import mongoose from "mongoose";
 import { getAuthenticatedUser } from "@/lib/auth";
 import { createAuditLog } from "@/lib/audit";
 import connectToDatabase from "@/lib/db/mongodb";
+import { isValidTime24 } from "@/lib/datetime/ecuador";
 import { buildEmployeeActiveInMonthQuery, isEmployeeActiveOnDate } from "@/modules/company/submodules/people/lib/employees";
 import { hasAccessPermission } from "@/modules/company/submodules/access/lib/permissions";
 import {
@@ -42,11 +43,6 @@ const DAY_LABELS = new Map([
   [4, "Jueves"],
   [5, "Viernes"],
   [6, "Sabado"],
-]);
-const EXCEPTION_STATUS_LABELS = new Map([
-  ["open", "Abierta"],
-  ["resolved", "Resuelta"],
-  ["void", "Anulada"],
 ]);
 
 function getDayOfWeek(dateKey) {
@@ -145,6 +141,10 @@ function normalizeEmployeeIdList(value) {
   return [...new Set(rawIds
     .map((employeeId) => String(employeeId || "").trim())
     .filter(Boolean))];
+}
+
+function isActivePlanningApproval(approval) {
+  return Boolean(approval) && !approval.unlockedAt;
 }
 
 function normalizeGroupId(value) {
@@ -313,6 +313,9 @@ function serializeScheduleAssignmentForWeek(assignment, weekStartKey, groupId = 
       savedAt: entry.savedAt,
       savedBy: entry.savedBy || "",
       savedByUser: entry.savedByUser || "",
+      generatedDays: (entry.generatedDays || [])
+        .filter((day) => weekDateKeys.has(day.dateKey))
+        .sort((left, right) => String(left.dateKey).localeCompare(String(right.dateKey))),
       daysCount: (entry.generatedDays || []).length,
     })),
     planningApprovals: (assignment.planningApprovals || [])
@@ -330,6 +333,10 @@ function serializeScheduleAssignmentForWeek(assignment, weekStartKey, groupId = 
         versionSavedAt: approval.versionSavedAt || null,
         versionSavedBy: approval.versionSavedBy || "",
         versionSavedByUser: approval.versionSavedByUser || "",
+        unlockedAt: approval.unlockedAt || null,
+        unlockedBy: approval.unlockedBy || "",
+        unlockedByUser: approval.unlockedByUser || "",
+        unlockReason: approval.unlockReason || "",
       })),
   };
 }
@@ -348,6 +355,19 @@ function normalizeOperationalDay(day, holidayNamesByDate, isVacationDate = false
   const isVacation = requestedType === "vacation";
   const operationalNote = String(day?.operationalNote || "").trim().toUpperCase();
   const operationalJustification = Boolean(day?.operationalJustification && operationalNote);
+
+  if (isWorkday) {
+    const timeValues = [
+      day?.startTime,
+      day?.endTime,
+      day?.lunchStartTime,
+      day?.lunchEndTime,
+    ];
+
+    if (timeValues.some((value) => !isValidTime24(value, { allowEmpty: true }))) {
+      throw new Error(`Las horas del ${dateKey} deben estar entre 00:00 y 24:00.`);
+    }
+  }
 
   if (holidayName && isWorkday && day?.startTime && day?.endTime) {
     return {
@@ -436,120 +456,6 @@ function normalizeOperationalDay(day, holidayNamesByDate, isVacationDate = false
   };
 }
 
-function buildAutoExceptionPayload({ employee, day }) {
-  const note = String(day?.operationalNote || "").trim().toUpperCase();
-
-  if (!note || day?.operationalJustification !== true) {
-    return null;
-  }
-
-  const basePayload = {
-    employee: employee._id,
-    employeeName: employee.fullName || "",
-    employeeDni: employee.dni || "",
-    branchName: employee.branchName || employee.branch || "",
-    areaName: employee.areaName || "",
-    roleName: day.roleName || employee.roleName || "",
-    date: new Date(`${day.dateKey}T12:00:00.000Z`),
-    dateKey: day.dateKey,
-    endDate: null,
-    endDateKey: "",
-    startTime: "",
-    endTime: "",
-    registeredBy: "IMPORTACION HORARIOS",
-    authorizedBy: "",
-    resolution: "pending",
-    resolutionNotes: "",
-    notes: `IMPORTADO DESDE HORARIO: ${note}`,
-    status: "open",
-  };
-
-  if (note === "PERMISO") {
-    return {
-      ...basePayload,
-      type: "permission",
-      scope: "full_day",
-      destination: "",
-      countsAsWorkedTime: false,
-      allowSupplementaryTime: false,
-    };
-  }
-
-  return {
-    ...basePayload,
-    type: "other",
-    scope: "other",
-    destination: note,
-    countsAsWorkedTime: false,
-    allowSupplementaryTime: false,
-  };
-}
-
-function serializeExceptionSnapshot(exception = {}) {
-  const serialized = exception._id
-    ? serializeOperationalException(exception)
-    : serializeOperationalException({
-      ...exception,
-      _id: {
-        toString: () => "",
-      },
-      createdAt: exception.createdAt || null,
-      updatedAt: exception.updatedAt || null,
-    });
-  const title = [
-    serialized.typeLabel || serialized.type || "Excepcion",
-    serialized.destination,
-  ].filter(Boolean).join(" - ");
-
-  return {
-    ...serialized,
-    title,
-    statusLabel: EXCEPTION_STATUS_LABELS.get(serialized.status) || serialized.status || "Sin estado",
-  };
-}
-
-function doesExceptionCoverDate(exception = {}, dateKey = "") {
-  const startKey = String(exception.dateKey || "").trim();
-  const endKey = String(exception.endDateKey || "").trim() || startKey;
-
-  return startKey && dateKey >= startKey && dateKey <= endKey;
-}
-
-function buildExceptionSnapshotKey(employeeId, dateKey) {
-  return `${employeeId}|${dateKey}`;
-}
-
-function addExceptionSnapshot(snapshotMap, employeeId, dateKey, exception) {
-  if (!employeeId || !dateKey || !exception) return;
-
-  const key = buildExceptionSnapshotKey(employeeId, dateKey);
-
-  if (!snapshotMap.has(key)) {
-    snapshotMap.set(key, []);
-  }
-
-  snapshotMap.get(key).push(serializeExceptionSnapshot(exception));
-}
-
-function buildExceptionSnapshotsByEmployeeDate(exceptions = [], employeeIds = [], dateKeys = []) {
-  const employeeIdSet = new Set(employeeIds.map((employeeId) => String(employeeId || "").trim()).filter(Boolean));
-  const snapshotMap = new Map();
-
-  exceptions.forEach((exception) => {
-    const employeeId = exception.employee?.toString?.() || String(exception.employee || "");
-
-    if (!employeeIdSet.has(employeeId)) return;
-
-    dateKeys.forEach((dateKey) => {
-      if (doesExceptionCoverDate(exception, dateKey)) {
-        addExceptionSnapshot(snapshotMap, employeeId, dateKey, exception);
-      }
-    });
-  });
-
-  return snapshotMap;
-}
-
 function buildVacationDateKeysByEmployee(vacations = [], dateKeys = []) {
   const dateKeySet = new Set(dateKeys);
   const byEmployee = new Map();
@@ -572,91 +478,6 @@ function buildVacationDateKeysByEmployee(vacations = [], dateKeys = []) {
   });
 
   return byEmployee;
-}
-
-function buildAutoExceptionSignature(payload) {
-  return [
-    payload.employee?.toString?.() || "",
-    payload.type,
-    payload.scope,
-    payload.destination || "",
-    payload.plannedStartTime || "",
-    payload.plannedLunchStartTime || "",
-    payload.plannedLunchEndTime || "",
-    payload.plannedEndTime || "",
-    Number(payload.plannedLunchDurationMinutes) || 0,
-    payload.attendanceMode || "",
-    payload.payMode || "",
-    payload.countsAsWorkedTime ? "worked" : "not_worked",
-    payload.allowSupplementaryTime ? "supplementary" : "regular",
-    payload.notes || "",
-  ].join("|");
-}
-
-function buildGroupedAutoExceptionOperations(candidates = []) {
-  const groupsByEmployeeSignature = new Map();
-
-  candidates.forEach((candidate) => {
-    const payload = candidate?.payload;
-
-    if (!payload?.employee || !payload.dateKey) return;
-
-    const key = buildAutoExceptionSignature(payload);
-
-    if (!groupsByEmployeeSignature.has(key)) {
-      groupsByEmployeeSignature.set(key, []);
-    }
-
-    groupsByEmployeeSignature.get(key).push(payload);
-  });
-
-  const operations = [];
-
-  groupsByEmployeeSignature.forEach((payloads) => {
-    const orderedPayloads = [...payloads].sort((left, right) =>
-      String(left.dateKey).localeCompare(String(right.dateKey)),
-    );
-    const ranges = [];
-
-    orderedPayloads.forEach((payload) => {
-      const currentRange = ranges.at(-1);
-
-      if (!currentRange || payload.dateKey !== addDaysToDateKey(currentRange.endDateKey, 1)) {
-        ranges.push({
-          startPayload: payload,
-          endDateKey: payload.dateKey,
-        });
-        return;
-      }
-
-      currentRange.endDateKey = payload.dateKey;
-    });
-
-    ranges.forEach((range) => {
-      const isDateRange = range.endDateKey !== range.startPayload.dateKey;
-      const payload = {
-        ...range.startPayload,
-        scope: isDateRange ? "date_range" : range.startPayload.scope,
-        endDate: isDateRange ? new Date(`${range.endDateKey}T12:00:00.000Z`) : null,
-        endDateKey: isDateRange ? range.endDateKey : "",
-      };
-
-      operations.push({
-        updateOne: {
-          filter: {
-            employee: payload.employee,
-            dateKey: payload.dateKey,
-            registeredBy: "IMPORTACION HORARIOS",
-            status: { $ne: "void" },
-          },
-          update: { $set: payload },
-          upsert: true,
-        },
-      });
-    });
-  });
-
-  return operations;
 }
 
 function employeeCanUseTemplate(employee, template) {
@@ -981,7 +802,7 @@ export async function POST(request) {
     const action = String(body?.action || "").trim();
 
     if (
-      action !== "approve-week"
+      !["approve-week", "unlock-week"].includes(action)
       && !hasAccessPermission(plannerScope.user, "planner.schedules.manage")
     ) {
       return NextResponse.json({ error: "No tienes permiso para modificar horarios." }, { status: 403 });
@@ -1122,14 +943,7 @@ export async function POST(request) {
 
       applyPlannerScopeToEmployeeQuery(employeeQuery, plannerScope);
 
-      const exceptionDateConditions = submittedDateKeys.flatMap((dateKey) => [
-        { dateKey },
-        {
-          dateKey: { $lte: dateKey },
-          endDateKey: { $gte: dateKey },
-        },
-      ]);
-      const [employees, holidays, vacations, currentAssignments, workGroup, existingExceptions] = await Promise.all([
+      const [employees, holidays, vacations, currentAssignments, workGroup] = await Promise.all([
         Employee.find(employeeQuery).lean(),
         Holiday.find({ dateKey: { $in: submittedDateKeys } }).lean(),
         VacationRequest.find({
@@ -1139,15 +953,21 @@ export async function POST(request) {
         }).lean(),
         ScheduleAssignment.find({ monthKey: { $in: targetMonthKeys }, employee: { $in: employeeIds } }).lean(),
         PlanningWorkGroup.findById(groupId).lean(),
-        exceptionDateConditions.length
-          ? OperationalException.find({
-            employee: { $in: employeeIds },
-            status: { $ne: "void" },
-            $or: exceptionDateConditions,
-          }).lean()
-          : [],
       ]);
       assertEmployeesBelongToGroup(employeeIds, workGroup);
+
+      const hasApprovedWeek = currentAssignments.some((assignment) =>
+        (assignment.planningApprovals || []).some((approval) =>
+          approval.weekStartKey === weekStartKey
+          && normalizeGroupId(approval.groupId) === groupId
+          && isActivePlanningApproval(approval),
+        ),
+      );
+
+      if (hasApprovedWeek) {
+        throw new Error("La planificacion aprobada esta disponible unicamente en modo de consulta.");
+      }
+
       const groupName = String(workGroup?.name || "").trim().toUpperCase();
       const employeesById = new Map(employees.map((employee) => [employee._id.toString(), employee]));
       const currentByEmployee = new Map(
@@ -1158,14 +978,6 @@ export async function POST(request) {
       );
       const holidayNamesByDate = new Map(holidays.map((holiday) => [holiday.dateKey, holiday.name]));
       const operations = [];
-      const exceptionOperations = [];
-      const autoExceptionCandidates = [];
-      const exceptionCleanupKeys = new Set();
-      const exceptionSnapshotsByEmployeeDate = buildExceptionSnapshotsByEmployeeDate(
-        existingExceptions,
-        employeeIds,
-        submittedDateKeys,
-      );
       const savedEmployeeIds = new Set();
       const savedAt = new Date();
       const vacationDateKeysByEmployee = buildVacationDateKeysByEmployee(vacations, submittedDateKeys);
@@ -1187,33 +999,10 @@ export async function POST(request) {
 
           if (normalized && isEmployeeActiveOnDate(employee, normalized.dateKey)) {
             const dayMonthKey = normalized.dateKey.slice(0, 7);
-            const autoException = buildAutoExceptionPayload({ employee, day: normalized });
-            const clearKey = `${employee._id.toString()}|${normalized.dateKey}`;
-            const snapshotKey = buildExceptionSnapshotKey(employee._id.toString(), normalized.dateKey);
-            const shouldReplaceScheduleDay = clearScheduleTargetKeys.has(`${employeeId}|${normalized.dateKey}`);
-            const shouldClearScheduleDay = shouldReplaceScheduleDay
-              && normalized.dayType === "off_day"
-              && normalized.operationalJustification !== true;
 
             if (!daysByMonth.has(dayMonthKey)) daysByMonth.set(dayMonthKey, []);
 
-            if (shouldReplaceScheduleDay) {
-              exceptionCleanupKeys.add(clearKey);
-            }
-
-            if (autoException) {
-              const preservedSnapshots = (exceptionSnapshotsByEmployeeDate.get(snapshotKey) || [])
-                .filter((snapshot) => snapshot.registeredBy !== "IMPORTACION HORARIOS");
-
-              exceptionSnapshotsByEmployeeDate.set(snapshotKey, preservedSnapshots);
-              addExceptionSnapshot(exceptionSnapshotsByEmployeeDate, employeeId, normalized.dateKey, autoException);
-              autoExceptionCandidates.push({ employeeId, dateKey: normalized.dateKey, payload: autoException });
-            }
-
-            daysByMonth.get(dayMonthKey).push({
-              ...normalized,
-              exceptionSnapshot: exceptionSnapshotsByEmployeeDate.get(snapshotKey) || [],
-            });
+            daysByMonth.get(dayMonthKey).push(normalized);
           }
         });
 
@@ -1278,7 +1067,7 @@ export async function POST(request) {
                   },
                 },
                 $pull: {
-                  planningApprovals: { weekStartKey, groupId },
+                  planningApprovals: { weekStartKey, groupId, unlockedAt: null },
                 },
               },
               upsert: true,
@@ -1287,88 +1076,9 @@ export async function POST(request) {
         });
       });
 
-      if (autoExceptionCandidates.length) {
-        const importedExceptionDatesByEmployee = new Map();
-
-        autoExceptionCandidates.forEach((candidate) => {
-          if (!importedExceptionDatesByEmployee.has(candidate.employeeId)) {
-            importedExceptionDatesByEmployee.set(candidate.employeeId, new Set());
-          }
-
-          importedExceptionDatesByEmployee.get(candidate.employeeId).add(candidate.dateKey);
-        });
-
-        importedExceptionDatesByEmployee.forEach((dateKeys, employeeIdForCleanup) => {
-          const employee = employeesById.get(employeeIdForCleanup);
-
-          if (!employee) return;
-
-          const dateConditions = [...dateKeys].flatMap((dateKey) => [
-            { dateKey },
-            {
-              dateKey: { $lte: dateKey },
-              endDateKey: { $gte: dateKey },
-            },
-          ]);
-
-          exceptionOperations.push({
-            updateMany: {
-              filter: {
-                employee: employee._id,
-                registeredBy: "IMPORTACION HORARIOS",
-                status: { $ne: "void" },
-                $or: dateConditions,
-              },
-              update: {
-                $set: {
-                  status: "void",
-                  resolution: "no_action",
-                  resolutionNotes: "Reemplazada por excepcion agrupada desde horarios.",
-                },
-              },
-            },
-          });
-        });
-
-        exceptionOperations.push(...buildGroupedAutoExceptionOperations(autoExceptionCandidates));
-      }
-
-      exceptionCleanupKeys.forEach((key) => {
-        const [employeeIdForCleanup, dateKey] = key.split("|");
-        const employee = employeesById.get(employeeIdForCleanup);
-
-        if (!employee || !dateKey) return;
-
-        exceptionOperations.unshift({
-          updateMany: {
-            filter: {
-              employee: employee._id,
-              status: { $ne: "void" },
-              $or: [
-                { dateKey },
-                {
-                  dateKey: { $lte: dateKey },
-                  endDateKey: { $gte: dateKey },
-                },
-              ],
-            },
-            update: {
-              $set: {
-                status: "void",
-                resolution: "no_action",
-                resolutionNotes: "Anulada por limpieza de horarios semanal.",
-              },
-            },
-          },
-        });
-      });
-
       if (operations.length) {
         await ScheduleAssignment.bulkWrite(operations);
       }
-
-      // Los efectos derivados se conservan dentro de la versión pendiente; guardar no puede
-      // crear excepciones ni limpiar registros operativos vigentes antes de su aprobación.
 
       const assignmentQuery = { monthKey: { $in: targetMonthKeys }, employee: { $in: employeeIds } };
 
@@ -1394,6 +1104,153 @@ export async function POST(request) {
 
       return NextResponse.json({
         message: `Programacion de horarios guardada para ${savedEmployeeIds.size} empleados.`,
+        assignments: mergeAssignmentsByEmployee(assignments, monthKey)
+          .map((assignment) => serializeScheduleAssignmentForWeek(assignment, weekStartKey, groupId)),
+      });
+    }
+
+    if (action === "unlock-week") {
+      const weekStartKey = String(body?.weekStartKey || "").trim();
+      const groupId = normalizeGroupId(body?.groupId);
+      const employeeIds = normalizeEmployeeIdList(body?.employeeIds);
+      const unlockReason = String(body?.reason || "").trim();
+
+      if (!groupId) {
+        throw new Error("Debes seleccionar un grupo de trabajo para desbloquear la planificacion.");
+      }
+
+      if (!weekStartKey || !/^\d{4}-\d{2}-\d{2}$/.test(weekStartKey)) {
+        throw new Error("Debes indicar la semana que deseas desbloquear.");
+      }
+
+      if (!employeeIds.length) {
+        throw new Error("No hay empleados en la planificacion que deseas desbloquear.");
+      }
+
+      if (unlockReason.length < 10) {
+        throw new Error("Describe el motivo del desbloqueo con al menos 10 caracteres.");
+      }
+
+      if (unlockReason.length > 500) {
+        throw new Error("El motivo del desbloqueo no puede superar los 500 caracteres.");
+      }
+
+      assertWorkGroupInPlannerScope(groupId, plannerScope);
+      assertEmployeesInPlannerScope(employeeIds, plannerScope);
+
+      const unlockUser = await getAuthenticatedUser();
+
+      if (!hasAccessPermission(unlockUser, "planner.updates.manage")) {
+        return NextResponse.json(
+          { error: "Solo el Administrador o el Encargado de nómina puede desbloquear la planificación." },
+          { status: 403 },
+        );
+      }
+
+      const employeeQuery = { _id: { $in: employeeIds } };
+
+      applyPlannerScopeToEmployeeQuery(employeeQuery, plannerScope);
+
+      const [employees, workGroup] = await Promise.all([
+        Employee.find(employeeQuery).lean(),
+        PlanningWorkGroup.findById(groupId).lean(),
+      ]);
+
+      assertEmployeesBelongToGroup(employeeIds, workGroup);
+
+      const employeeObjectIds = employees.map((employee) => employee._id);
+      const assignmentMonthKeys = getWeekMonthKeys(weekStartKey);
+      const targetMonthKeys = assignmentMonthKeys.length
+        ? assignmentMonthKeys
+        : [getPreviousMonthKey(monthKey), monthKey, getNextMonthKey(monthKey)];
+      const assignmentsForUnlock = await ScheduleAssignment.find({
+        monthKey: { $in: targetMonthKeys },
+        employee: { $in: employeeObjectIds },
+      }).lean();
+      const assignmentsWithActiveApproval = assignmentsForUnlock.filter((assignment) =>
+        (assignment.planningApprovals || []).some((approval) =>
+          approval.weekStartKey === weekStartKey
+          && normalizeGroupId(approval.groupId) === groupId
+          && isActivePlanningApproval(approval),
+        ),
+      );
+
+      if (!assignmentsWithActiveApproval.length) {
+        return NextResponse.json(
+          { error: "Esta planificación ya está desbloqueada." },
+          { status: 409 },
+        );
+      }
+
+      const unlockedAt = new Date();
+      const unlockedBy = String(
+        unlockUser?.employeeName || unlockUser?.username || unlockUser?.id || "SISTEMA",
+      ).trim();
+      const unlockedByUser = String(unlockUser?.id || unlockUser?.username || "").trim();
+      const groupObjectId = new mongoose.Types.ObjectId(groupId);
+
+      await ScheduleAssignment.updateMany(
+        { _id: { $in: assignmentsWithActiveApproval.map((assignment) => assignment._id) } },
+        {
+          $set: {
+            "planningApprovals.$[approval].unlockedAt": unlockedAt,
+            "planningApprovals.$[approval].unlockedBy": unlockedBy,
+            "planningApprovals.$[approval].unlockedByUser": unlockedByUser,
+            "planningApprovals.$[approval].unlockReason": unlockReason,
+          },
+        },
+        {
+          arrayFilters: [{
+            "approval.weekStartKey": weekStartKey,
+            "approval.groupId": groupObjectId,
+            "approval.unlockedAt": null,
+          }],
+        },
+      );
+
+      const groupName = String(workGroup?.name || "").trim().toUpperCase();
+      const unlockedVersionKeys = [...new Set(assignmentsWithActiveApproval.flatMap((assignment) =>
+        (assignment.planningApprovals || [])
+          .filter((approval) =>
+            approval.weekStartKey === weekStartKey
+            && normalizeGroupId(approval.groupId) === groupId
+            && isActivePlanningApproval(approval),
+          )
+          .map((approval) => buildHistoryVersionKey({
+            groupId: approval.groupId,
+            savedAt: approval.versionSavedAt,
+            savedBy: approval.versionSavedBy,
+            savedByUser: approval.versionSavedByUser,
+          })),
+      ))];
+
+      await createAuditLog({
+        actor: unlockedBy,
+        action: "planningSchedule.version.unlock",
+        entityType: "planningWorkGroup",
+        entityId: groupId,
+        entityLabel: `${groupName} ${weekStartKey}`,
+        route: "/api/planner/planning/schedule-assignments",
+        details: {
+          weekStartKey,
+          groupId,
+          groupName,
+          unlockedAt,
+          unlockedByUser,
+          unlockReason,
+          employeeIds,
+          unlockedVersionKeys,
+        },
+      });
+
+      const assignmentQuery = {
+        monthKey: { $in: targetMonthKeys },
+        employee: { $in: employeeObjectIds },
+      };
+      const assignments = await findScheduleAssignmentsForWeek(assignmentQuery, weekStartKey, groupId);
+
+      return NextResponse.json({
+        message: "Planificación desbloqueada. Ya puedes modificar los horarios y guardar una nueva versión.",
         assignments: mergeAssignmentsByEmployee(assignments, monthKey)
           .map((assignment) => serializeScheduleAssignmentForWeek(assignment, weekStartKey, groupId)),
       });
@@ -1472,6 +1329,25 @@ export async function POST(request) {
       const approvedVersionSavedAt = new Date(targetVersion.savedAt || targetVersion.versionSavedAt);
       const approvedVersionSavedBy = String(targetVersion.savedBy || targetVersion.versionSavedBy || "").trim();
       const approvedVersionSavedByUser = String(targetVersion.savedByUser || targetVersion.versionSavedByUser || "").trim();
+      const latestUnlockAt = assignmentsForApproval.reduce((latestTimestamp, assignment) => {
+        const assignmentLatestTimestamp = (assignment.planningApprovals || [])
+          .filter((approval) =>
+            approval.weekStartKey === weekStartKey
+            && normalizeGroupId(approval.groupId) === groupId
+            && approval.unlockedAt,
+          )
+          .reduce(
+            (latest, approval) => Math.max(latest, new Date(approval.unlockedAt).getTime() || 0),
+            0,
+          );
+
+        return Math.max(latestTimestamp, assignmentLatestTimestamp);
+      }, 0);
+
+      if (latestUnlockAt && approvedVersionSavedAt.getTime() <= latestUnlockAt) {
+        throw new Error("Modifica un horario y guarda una nueva versión antes de aprobar nuevamente.");
+      }
+
       const matchingVersionCount = assignmentsForApproval.filter((assignment) =>
         (assignment.scheduleHistory || []).some((entry) =>
           buildHistoryVersionKey(entry) === buildHistoryVersionKey({
@@ -1505,6 +1381,7 @@ export async function POST(request) {
           (assignment.planningApprovals || []).some((approval) =>
             approval.weekStartKey === weekStartKey
             && normalizeGroupId(approval.groupId) === groupId
+            && isActivePlanningApproval(approval)
             && buildHistoryVersionKey({
               groupId: approval.groupId,
               savedAt: approval.versionSavedAt,
@@ -1523,7 +1400,7 @@ export async function POST(request) {
 
       await ScheduleAssignment.updateMany(
         { monthKey: { $in: targetMonthKeys }, employee: { $in: employeeObjectIds } },
-        { $pull: { planningApprovals: { weekStartKey, groupId } } },
+        { $pull: { planningApprovals: { weekStartKey, groupId, unlockedAt: null } } },
       );
       const weekDateKeys = getWeekDateKeySet(weekStartKey);
       const approvalOperations = assignmentsForApproval.flatMap((assignment) => {

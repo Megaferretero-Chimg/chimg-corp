@@ -1,3 +1,4 @@
+import { formatTime24, isValidTime24 } from "@/lib/datetime/ecuador";
 import { DAY_TYPES, WEEK_DAYS } from "@/modules/planner/lib/schedules";
 
 const DAY_TYPE_MAP = new Map(DAY_TYPES.map((item) => [item.value, item]));
@@ -17,7 +18,7 @@ export const DEFAULT_TEMPLATE_ROWS = [{
 }];
 
 function isValidTimeString(value) {
-  return value === "" || /^\d{2}:\d{2}$/.test(String(value || ""));
+  return isValidTime24(value, { allowEmpty: true });
 }
 
 function normalizeNumber(value, fallback, { min = 0, max = Number.POSITIVE_INFINITY } = {}) {
@@ -58,11 +59,7 @@ function minutesToTime(totalMinutes) {
 }
 
 function formatTimeLabel(value) {
-  if (!/^\d{2}:\d{2}$/.test(String(value || ""))) {
-    return "--";
-  }
-
-  return String(value).replace(":", "H");
+  return formatTime24(value, "--");
 }
 
 function calculateLunchDurationMinutes(lunchStartTime, lunchEndTime) {
@@ -134,7 +131,7 @@ export function normalizeTemplateRow(row) {
   }
 
   if (!isValidTimeString(startTime) || !isValidTimeString(endTime) || !isValidTimeString(lunchStartInput) || !isValidTimeString(lunchEndInput)) {
-    throw new Error("Las horas deben tener formato HH:mm.");
+    throw new Error("Las horas deben estar entre 00:00 y 24:00.");
   }
 
   if (typeConfig.isWorkingDay && (!startTime || !endTime)) {

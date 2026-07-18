@@ -13,6 +13,7 @@ export default function FloatingModal({
   eyebrow = "",
   children,
   isPending = false,
+  isFullscreen = false,
   onClose,
 }) {
   const canRenderPortal = useClientReady();
@@ -53,7 +54,7 @@ export default function FloatingModal({
         }
       }}
     >
-      <section className={styles.modal} role="dialog" aria-modal="true" aria-labelledby={titleId}>
+      <section className={`${styles.modal} ${isFullscreen ? styles.fullscreenModal : ""}`} role="dialog" aria-modal="true" aria-labelledby={titleId}>
         <div className={styles.header}>
           <div>
             {eyebrow ? <p className={styles.eyebrow}>{eyebrow}</p> : null}

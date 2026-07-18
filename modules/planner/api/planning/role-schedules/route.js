@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 
 import { getAuthenticatedUser } from "@/lib/auth";
 import connectToDatabase from "@/lib/db/mongodb";
+import { isValidTime24 } from "@/lib/datetime/ecuador";
 import { hasAccessPermission } from "@/modules/company/submodules/access/lib/permissions";
 import { Role } from "@/modules/company/models";
 import { BaseScheduleTemplate } from "@/modules/planner/models";
@@ -38,16 +39,27 @@ function normalizeScheduleRow(row = {}) {
   const lunchStartTime = hasLunch ? String(row.lunchStartTime || "").trim() : "";
   const lunchEndTime = hasLunch ? String(row.lunchEndTime || "").trim() : "";
   const lunchDurationMinutes = calculateLunchDurationMinutes(lunchStartTime, lunchEndTime);
+  const startTime = isWorkingDay ? String(row.startTime || "").trim() : "";
+  const endTime = isWorkingDay ? String(row.endTime || "").trim() : "";
+
+  if (
+    !isValidTime24(startTime, { allowEmpty: true })
+    || !isValidTime24(endTime, { allowEmpty: true })
+    || !isValidTime24(lunchStartTime, { allowEmpty: true })
+    || !isValidTime24(lunchEndTime, { allowEmpty: true })
+  ) {
+    throw new Error("Las horas del horario fijo deben estar entre 00:00 y 24:00.");
+  }
 
   return {
     dayOfWeek: Number.isFinite(dayOfWeek) ? Math.min(Math.max(Math.round(dayOfWeek), 0), 6) : 1,
     dayType,
-    startTime: isWorkingDay ? String(row.startTime || "").trim() : "",
+    startTime,
     lunchDurationMinutes,
     lunchStartTime,
     lunchEndTime,
     hasLunch,
-    endTime: isWorkingDay ? String(row.endTime || "").trim() : "",
+    endTime,
     authorizedExtraMinutes: Math.max(0, Number(row.authorizedExtraMinutes) || 0),
     graceMinutes: Math.max(0, Number(row.graceMinutes) || 0),
   };

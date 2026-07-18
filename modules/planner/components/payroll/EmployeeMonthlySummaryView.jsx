@@ -5,7 +5,7 @@ import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useMemo, useState, useTransition } from "react";
 import { AlertTriangle, ArrowRight, CalendarDays, CheckCircle2, FileSearch, RefreshCw, Save, UserRound } from "lucide-react";
 
-import { formatEcuadorMonthKey } from "@/lib/datetime/ecuador";
+import { formatEcuadorDateTimeLabel, formatEcuadorMonthKey } from "@/lib/datetime/ecuador";
 import { isEmployeeActiveInMonth } from "@/modules/company/submodules/people/lib/employees";
 import { planningModulePath } from "@/modules/planner/routes";
 import styles from "@/modules/planner/styles/components/payroll/EmployeeMonthlySummaryView.module.scss";
@@ -24,14 +24,7 @@ function buildMonthLabel(value) {
 }
 
 function buildDateTimeLabel(value) {
-  if (!value) {
-    return "";
-  }
-
-  return new Intl.DateTimeFormat("es-EC", {
-    dateStyle: "medium",
-    timeStyle: "short",
-  }).format(new Date(value));
+  return formatEcuadorDateTimeLabel(value, { fallback: "" });
 }
 
 const PAYMENT_METHODS = [

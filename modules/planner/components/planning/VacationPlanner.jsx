@@ -4,7 +4,6 @@ import { useCallback, useEffect, useMemo, useRef, useState, useTransition } from
 import { addMonths, differenceInCalendarDays, format, parseISO, subMonths } from "date-fns";
 import { es } from "date-fns/locale";
 import {
-  CalendarDays,
   ChevronLeft,
   ChevronRight,
   Edit3,
@@ -40,12 +39,22 @@ function calculateDays(startDateKey, endDateKey) {
   return Number.isFinite(total) && total > 0 ? total : 0;
 }
 
+function normalizeSearch(value) {
+  return String(value || "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .trim();
+}
+
 export default function VacationPlanner() {
   const [monthDate, setMonthDate] = useState(() => new Date());
   const [employees, setEmployees] = useState([]);
   const [vacations, setVacations] = useState([]);
   const [form, setForm] = useState(EMPTY_FORM);
   const [employeeQuery, setEmployeeQuery] = useState("");
+  const [vacationEmployeeQuery, setVacationEmployeeQuery] = useState("");
+  const [vacationEmployeeId, setVacationEmployeeId] = useState("");
   const [isEditorOpen, setIsEditorOpen] = useState(false);
   const [vacationToDelete, setVacationToDelete] = useState(null);
   const [notice, setNotice] = useState(null);
@@ -64,6 +73,23 @@ export default function VacationPlanner() {
     () => activeEmployees.find((employee) => employee.id === form.employeeId),
     [activeEmployees, form.employeeId],
   );
+  const filteredVacations = useMemo(() => {
+    if (vacationEmployeeId) {
+      return vacations.filter((vacation) => vacation.employeeId === vacationEmployeeId);
+    }
+
+    const query = normalizeSearch(vacationEmployeeQuery);
+
+    if (!query) return vacations;
+
+    return vacations.filter((vacation) => normalizeSearch([
+      vacation.employeeName,
+      vacation.employeeDni,
+      vacation.branchName,
+      vacation.areaName,
+      vacation.roleName,
+    ].filter(Boolean).join(" ")).includes(query));
+  }, [vacationEmployeeId, vacationEmployeeQuery, vacations]);
   const requestedDays = calculateDays(form.startDateKey, form.endDateKey);
   const canSave = Boolean(form.employeeId && form.startDateKey && form.endDateKey && requestedDays > 0);
 
@@ -167,6 +193,15 @@ export default function VacationPlanner() {
     setEmployeeQuery(value);
   }
 
+  function selectVacationEmployee(employee) {
+    setVacationEmployeeId(employee?.id || "");
+    setVacationEmployeeQuery(employee?.fullName || "");
+  }
+
+  function clearVacationEmployee() {
+    setVacationEmployeeId("");
+  }
+
   function openCreateEditor() {
     setForm(EMPTY_FORM);
     setEmployeeQuery("");
@@ -265,34 +300,40 @@ export default function VacationPlanner() {
       />
 
       <section className={styles.panel}>
-        <div className={styles.toolbar}>
-          <div>
-            <p className={styles.eyebrow}>Planificacion previa</p>
-            <h2 className={styles.title}>Vacaciones del periodo</h2>
-            <p className={styles.description}>
-              Registra vacaciones por empleado antes de generar el horario mensual. Los imprevistos se manejaran en otro apartado.
-            </p>
-          </div>
-
-          <div className={styles.actionsGroup}>
-            <div className={styles.monthControls}>
-              <button type="button" onClick={() => setMonthDate((current) => subMonths(current, 1))} aria-label="Mes anterior">
-                <ChevronLeft size={16} />
-              </button>
-              <div className={styles.monthPill}>
-                <CalendarDays size={16} />
-                <span>{monthLabel}</span>
+        <div className={styles.filtersToolbar}>
+          <div className={styles.filtersBar}>
+            <div className={styles.monthFilter}>
+              <span className={styles.filterLabel}>Mes</span>
+              <div className={styles.monthSlider}>
+                <button type="button" onClick={() => setMonthDate((current) => subMonths(current, 1))} aria-label={`Mes anterior desde ${monthLabel}`}>
+                  <ChevronLeft size={18} aria-hidden="true" />
+                </button>
+                <output aria-live="polite" aria-label={`Mes seleccionado: ${monthLabel}`}>
+                  {monthLabel}
+                </output>
+                <button type="button" onClick={() => setMonthDate((current) => addMonths(current, 1))} aria-label={`Mes siguiente desde ${monthLabel}`}>
+                  <ChevronRight size={18} aria-hidden="true" />
+                </button>
               </div>
-              <button type="button" onClick={() => setMonthDate((current) => addMonths(current, 1))} aria-label="Mes siguiente">
-                <ChevronRight size={16} />
-              </button>
             </div>
-
-            <button type="button" className={styles.primaryButton} onClick={openCreateEditor}>
-              <Plus size={16} />
-              Nueva vacacion
-            </button>
+            <div className={styles.employeeFilterLinear}>
+              <EmployeeAutocomplete
+                employees={activeEmployees}
+                value={vacationEmployeeId}
+                query={vacationEmployeeQuery}
+                onQueryChange={setVacationEmployeeQuery}
+                onSelect={selectVacationEmployee}
+                onClearSelection={clearVacationEmployee}
+                label="Empleado"
+                placeholder="Seleccionar empleado"
+                disabled={isLoading}
+              />
+            </div>
           </div>
+          <button type="button" className={styles.primaryButton} onClick={openCreateEditor}>
+            <Plus size={16} />
+            Nueva vacacion
+          </button>
         </div>
 
         {isLoading ? (
@@ -326,7 +367,13 @@ export default function VacationPlanner() {
         <div className={styles.listHeader}>
           <div>
             <h3>Vacaciones registradas</h3>
-            <p>{isLoading ? "Cargando..." : `Periodo ${monthLabel}`}</p>
+            <p>
+              {isLoading
+                ? "Cargando..."
+                : vacationEmployeeId || vacationEmployeeQuery.trim()
+                  ? `${filteredVacations.length} de ${vacations.length} registros · Periodo ${monthLabel}`
+                  : `Periodo ${monthLabel}`}
+            </p>
           </div>
         </div>
 
@@ -342,7 +389,7 @@ export default function VacationPlanner() {
               </div>
             ))}
           </div>
-        ) : vacations.length ? (
+        ) : filteredVacations.length ? (
           <div className={styles.tableWrap}>
             <table className={styles.table}>
               <thead>
@@ -355,7 +402,7 @@ export default function VacationPlanner() {
                 </tr>
               </thead>
               <tbody>
-                {vacations.map((vacation) => (
+                {filteredVacations.map((vacation) => (
                   <tr key={vacation.id}>
                     <td>
                       <strong>{vacation.employeeName}</strong>
@@ -388,8 +435,16 @@ export default function VacationPlanner() {
         ) : (
           <div className={styles.emptyState}>
             <Plane size={26} />
-            <strong>No hay vacaciones registradas para este mes.</strong>
-            <span>Agrega los registros de vacaciones antes de armar el horario.</span>
+            <strong>
+              {vacationEmployeeId || vacationEmployeeQuery.trim()
+                ? "No hay vacaciones para el empleado seleccionado."
+                : "No hay vacaciones registradas para este mes."}
+            </strong>
+            <span>
+              {vacationEmployeeId || vacationEmployeeQuery.trim()
+                ? "Selecciona otro empleado o limpia el filtro."
+                : "Agrega los registros de vacaciones antes de armar el horario."}
+            </span>
           </div>
         )}
       </section>

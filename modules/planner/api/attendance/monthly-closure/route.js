@@ -4,7 +4,7 @@ import * as XLSX from "xlsx";
 import { createAuditLog, resolveAuditActor } from "@/lib/audit";
 import { isAuthenticated } from "@/lib/auth";
 import connectToDatabase from "@/lib/db/mongodb";
-import { formatEcuadorMonthKey } from "@/lib/datetime/ecuador";
+import { formatEcuadorDateTimeLabel, formatEcuadorMonthKey } from "@/lib/datetime/ecuador";
 import { calculatePayrollAdditionalRate } from "@/modules/planner/lib/payroll/rates";
 import { parseMonthKey } from "@/modules/planner/lib/planning/holidays";
 import { Employee } from "@/modules/company/models";
@@ -561,7 +561,7 @@ async function buildDetailedExcel(rows, monthKey, closure = null) {
   const summaryRows = [
     ["Cierre mensual", monthKey],
     ["Copia", closure ? `v${Number(closure.version) || 1}` : "Cálculo actual"],
-    ["Fecha de cierre", closure?.closedAt ? new Date(closure.closedAt).toLocaleString("es-EC") : ""],
+    ["Fecha de cierre", closure?.closedAt ? formatEcuadorDateTimeLabel(closure.closedAt) : ""],
     [],
     ["Métrica", "Horas", "Valor"],
     ["Laborables", decimalHours(totals.regularWorkedMinutes), ""],

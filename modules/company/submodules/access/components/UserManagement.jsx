@@ -9,6 +9,7 @@ import ConfirmDialog from "@/components/ui/ConfirmDialog";
 import FloatingNotice from "@/components/ui/FloatingNotice";
 import HydrationGate from "@/components/ui/HydrationGate";
 import SelectInput from "@/components/ui/SelectInput";
+import { formatEcuadorDateTimeLabel } from "@/lib/datetime/ecuador";
 import { isReservedUsername } from "@/modules/company/submodules/access/lib/users";
 import UserForm from "./UserForm";
 import styles from "@/modules/company/submodules/access/styles/components/UserManagement.module.scss";
@@ -34,14 +35,7 @@ function mapUserToForm(user) {
 }
 
 function formatLastLogin(value) {
-  if (!value) {
-    return "Sin ingresos";
-  }
-
-  return new Intl.DateTimeFormat("es-EC", {
-    dateStyle: "medium",
-    timeStyle: "short",
-  }).format(new Date(value));
+  return formatEcuadorDateTimeLabel(value, { fallback: "Sin ingresos" });
 }
 
 function UserRow({ user, onEdit, onDelete, onReactivate }) {

@@ -1,7 +1,7 @@
 "use client";
 
-import { useMemo } from "react";
-import { KeyRound, Plus } from "lucide-react";
+import { useMemo, useState } from "react";
+import { Eye, EyeOff, KeyRound, Plus } from "lucide-react";
 
 import AutocompleteSelect from "@/components/ui/AutocompleteSelect";
 import SelectInput from "@/components/ui/SelectInput";
@@ -19,6 +19,7 @@ export default function UserForm({
   onFieldChange,
   onSubmit,
 }) {
+  const [isPasswordVisible, setIsPasswordVisible] = useState(false);
   const employeeOptions = useMemo(() => employees
     .filter((employee) => {
       const isCurrentEmployee = employee.id === form.employeeId;
@@ -88,17 +89,34 @@ export default function UserForm({
         </SelectInput>
       </div>
 
-      <label className="catalog-field">
-        <span className="catalog-label">{isEditing ? "Nueva clave" : "Clave temporal"}</span>
-        <input
-          type="password"
-          value={form.password}
-          onChange={(event) => onFieldChange("password", event.target.value)}
-          className="catalog-input"
-          placeholder={isEditing ? "Dejar en blanco para conservar" : "Mínimo 6 caracteres"}
-          required={!isEditing}
-        />
-      </label>
+      <div className="catalog-field">
+        <label htmlFor="user-password" className="catalog-label">
+          {isEditing ? "Nueva clave" : "Clave temporal"}
+        </label>
+        <div className={styles.passwordControl}>
+          <input
+            id="user-password"
+            type={isPasswordVisible ? "text" : "password"}
+            value={form.password}
+            onChange={(event) => onFieldChange("password", event.target.value)}
+            className={`catalog-input ${styles.passwordInput}`}
+            placeholder={isEditing ? "Dejar en blanco para conservar" : "Mínimo 6 caracteres"}
+            autoComplete="new-password"
+            required={!isEditing}
+          />
+          <button
+            type="button"
+            className={styles.visibilityToggle}
+            onClick={() => setIsPasswordVisible((visible) => !visible)}
+            aria-label={isPasswordVisible ? "Ocultar clave" : "Mostrar clave"}
+            aria-pressed={isPasswordVisible}
+          >
+            {isPasswordVisible
+              ? <EyeOff size={18} aria-hidden="true" />
+              : <Eye size={18} aria-hidden="true" />}
+          </button>
+        </div>
+      </div>
 
       <label className={`catalog-field ${styles.statusField}`}>
         <span className="catalog-label">Estado</span>

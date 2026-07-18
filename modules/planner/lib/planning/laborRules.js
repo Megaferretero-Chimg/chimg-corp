@@ -1,3 +1,5 @@
+import { isValidTime24 } from "@/lib/datetime/ecuador";
+
 export const LABOR_RULE_CONFIG_KEY = "default";
 
 export const DEFAULT_LABOR_RULE_CONFIG = {
@@ -20,17 +22,6 @@ export const DEFAULT_LABOR_RULE_CONFIG = {
   payrollNeutralRoleRules: [],
   notes: "",
 };
-
-function isValidTimeString(value) {
-  const match = String(value || "").match(/^(\d{2}):(\d{2})$/);
-
-  if (!match) return false;
-
-  const hours = Number(match[1]);
-  const minutes = Number(match[2]);
-
-  return hours >= 0 && hours <= 23 && minutes >= 0 && minutes <= 59;
-}
 
 function normalizeNumber(value, fallback, { min = 0, max = Number.POSITIVE_INFINITY } = {}) {
   const parsed = Number(value);
@@ -139,8 +130,8 @@ export function normalizeLaborRuleConfigPayload(body) {
   const companyStartTime = String(body?.companyStartTime || DEFAULT_LABOR_RULE_CONFIG.companyStartTime).trim();
   const companyEndTime = String(body?.companyEndTime || DEFAULT_LABOR_RULE_CONFIG.companyEndTime).trim();
 
-  if (!isValidTimeString(companyStartTime) || !isValidTimeString(companyEndTime)) {
-    throw new Error("El horario de cobertura debe tener formato HH:mm.");
+  if (!isValidTime24(companyStartTime) || !isValidTime24(companyEndTime)) {
+    throw new Error("El horario de cobertura debe estar entre 00:00 y 24:00.");
   }
 
   const areaLunchRules = (Array.isArray(body?.areaLunchRules) ? body.areaLunchRules : [])

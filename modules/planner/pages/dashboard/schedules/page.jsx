@@ -25,10 +25,12 @@ export default async function DashboardSchedulesPage({ searchParams }) {
         initialFilters={{ month, groupId, week }}
         capabilities={{
           canManageSchedules: hasAccessPermission(user, "planner.schedules.manage"),
+          canPasteSchedules: hasAccessPermission(user, "planner.schedules.weekly.view"),
           canApprovePlanning: hasAccessPermission(user, "planner.updates.manage"),
           canExportSchedule: hasAccessPermission(user, "planner.schedules.export"),
           canCreateQuickTemplates: hasAccessPermission(user, "planner.schedules.quickTemplates.create"),
           canCreateAdjustments: hasAccessPermission(user, "planner.schedules.adjustments.create"),
+          canDeleteAnyPendingExceptions: hasAccessPermission(user, "planner.exceptions.approve"),
           canOpenMonthlyDetail: hasAccessPermission(user, "planner.schedules.details.view"),
           showSummaries: hasAccessPermission(user, "planner.schedules.summaries.view"),
           showHours: hasAccessPermission(user, "planner.schedules.hours.view"),

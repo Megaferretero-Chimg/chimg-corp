@@ -1,5 +1,6 @@
 import { forwardRef, useId } from "react";
 
+import TimeInput24 from "./TimeInput24";
 import styles from "./TextInput.module.scss";
 
 const TextInput = forwardRef(function TextInput(
@@ -21,13 +22,14 @@ const TextInput = forwardRef(function TextInput(
     hint ? `${inputId}-hint` : "",
     error ? `${inputId}-error` : "",
   ].filter(Boolean).join(" ") || undefined;
+  const InputControl = props.type === "time" ? TimeInput24 : "input";
 
   return (
     <label className={`${styles.field} ${className}`}>
       {label ? <span className={styles.label}>{label}</span> : null}
       <span className={`${styles.control} ${Icon ? styles.controlWithIcon : ""} ${error ? styles.controlError : ""}`}>
         {Icon ? <Icon size={15} aria-hidden="true" className={styles.icon} /> : null}
-        <input
+        <InputControl
           ref={ref}
           id={inputId}
           className={`${styles.input} ${inputClassName}`}

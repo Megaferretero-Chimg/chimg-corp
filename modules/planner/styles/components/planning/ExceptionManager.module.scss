@@ -47,6 +47,172 @@
   gap: 0.28rem;
 }
 
+.filtersBar {
+  display: grid;
+  grid-template-columns: minmax(15rem, 18rem) minmax(18rem, 28rem);
+  gap: 1rem;
+  align-items: center;
+  justify-content: start;
+  margin-top: 1.15rem;
+  min-width: 0;
+  padding: 0.1rem 0.15rem;
+  position: relative;
+  z-index: 25;
+}
+
+.monthFilter,
+.employeeFilterLinear > label {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 0.55rem;
+  align-items: center;
+  min-width: 0;
+}
+
+.filterLabel,
+.employeeFilterLinear > label > span {
+  color: #718096;
+  font-size: 0.68rem;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  line-height: normal;
+  text-transform: uppercase;
+}
+
+.monthSlider {
+  display: grid;
+  height: 2.35rem;
+  min-height: 2.35rem;
+  grid-template-columns: 2.2rem minmax(0, 1fr) 2.2rem;
+  align-items: stretch;
+  border-bottom: 1px solid rgba(16, 33, 62, 0.14);
+}
+
+.monthSlider button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  border-radius: 0.5rem;
+  background: transparent;
+  color: #60708b;
+  cursor: pointer;
+  transition: background-color 150ms ease, color 150ms ease;
+}
+
+.monthSlider button:hover {
+  background: rgba(37, 99, 235, 0.07);
+  color: var(--primary);
+}
+
+.monthSlider button:focus-visible {
+  outline: 2px solid rgba(37, 99, 235, 0.25);
+  outline-offset: -2px;
+}
+
+.monthSlider output {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  justify-content: center;
+  color: #10213e;
+  padding: 0.25rem 0.4rem;
+  font-size: var(--font-size-sm);
+  font-weight: 700;
+  text-align: center;
+  text-transform: capitalize;
+  white-space: nowrap;
+}
+
+.employeeFilterLinear {
+  width: 100%;
+  max-width: none;
+  z-index: 30;
+}
+
+.employeeFilterLinear > label {
+  width: 100%;
+  max-width: none;
+}
+
+.employeeFilterLinear input {
+  min-height: 2.35rem;
+  border-width: 0 0 1px;
+  border-color: rgba(16, 33, 62, 0.14);
+  border-radius: 0;
+  background: transparent;
+  padding: 0.25rem 2rem 0.25rem 0.45rem;
+  font-size: var(--font-size-sm);
+  font-weight: 600;
+}
+
+.employeeFilterLinear input:focus {
+  border-color: var(--primary);
+  box-shadow: 0 1px 0 rgba(37, 99, 235, 0.2);
+}
+
+.pendingEmployeeSelect {
+  position: relative;
+  z-index: 90;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 0.55rem;
+  align-items: center;
+  min-width: 0;
+}
+
+.pendingEmployeeSelect > span:first-child {
+  color: #718096;
+  font-size: 0.68rem;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  line-height: normal;
+  text-transform: uppercase;
+}
+
+.pendingEmployeeSelectControl {
+  height: 2.35rem;
+  min-height: 2.35rem;
+  border-width: 0 0 1px;
+  border-color: rgba(16, 33, 62, 0.14);
+  border-radius: 0;
+  background: transparent;
+}
+
+.pendingEmployeeSelectControl > svg:first-child {
+  display: none;
+}
+
+.pendingEmployeeSelectControl input {
+  min-height: 2.35rem;
+  padding: 0.25rem 0.35rem 0.25rem 0.45rem;
+  font-size: var(--font-size-sm);
+  font-weight: 600;
+  line-height: normal;
+}
+
+.compactFiltersToolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  min-width: 0;
+}
+
+.compactFiltersBar {
+  flex: 1 1 auto;
+  margin-top: 0;
+}
+
+.compactFilterActions {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
 .filterNotice {
   display: flex;
   align-items: center;
@@ -711,6 +877,29 @@
   .formActions {
     align-items: stretch;
     flex-direction: column;
+  }
+
+  .filtersBar {
+    grid-template-columns: 1fr;
+    gap: 0.6rem;
+    padding-inline: 0;
+  }
+
+  .pendingEmployeeSelect {
+    grid-template-columns: 3.5rem minmax(0, 1fr);
+  }
+
+  .compactFiltersToolbar {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .compactFilterActions {
+    justify-content: stretch;
+  }
+
+  .compactFilterActions button {
+    flex: 1 1 12rem;
   }
 
   .primaryButton,

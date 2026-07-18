@@ -10,6 +10,7 @@ import {
 import ModuleShell from "@/components/shell/ModuleShell";
 import TransitionLink from "@/components/navigation/TransitionLink";
 import { requireAuthenticatedUser } from "@/lib/access-control";
+import { formatEcuadorDateTimeLabel } from "@/lib/datetime/ecuador";
 import connectToDatabase from "@/lib/db/mongodb";
 import { getCompanyModuleForUser } from "@/modules/company/module";
 import { companyModulePath } from "@/modules/company/routes";
@@ -28,14 +29,7 @@ function formatNumber(value) {
 }
 
 function formatDateTime(value) {
-  if (!value) {
-    return "Sin registro";
-  }
-
-  return new Intl.DateTimeFormat("es-EC", {
-    dateStyle: "medium",
-    timeStyle: "short",
-  }).format(new Date(value));
+  return formatEcuadorDateTimeLabel(value, { fallback: "Sin registro" });
 }
 
 function formatActionLabel(action) {

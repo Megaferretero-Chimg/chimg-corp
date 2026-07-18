@@ -2,14 +2,15 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { CalendarDays, Check, ChevronDown, ClipboardPaste, Download, Info, Plus, RefreshCw, RotateCcw, Save, X } from "lucide-react";
+import { AlertTriangle, CalendarDays, Check, ChevronDown, ChevronLeft, ChevronRight, ClipboardPaste, Download, Eye, LockKeyhole, LockOpen, Plus, RefreshCw, Save, Trash2 } from "lucide-react";
 
 import AutocompleteSelect from "@/components/ui/AutocompleteSelect";
+import ConfirmDialog from "@/components/ui/ConfirmDialog";
 import FloatingModal from "@/components/ui/FloatingModal";
 import FloatingNotice from "@/components/ui/FloatingNotice";
 import SelectInput from "@/components/ui/SelectInput";
 import TextInput from "@/components/ui/TextInput";
-import { formatEcuadorMonthKey } from "@/lib/datetime/ecuador";
+import { formatEcuadorDateTimeLabel, formatEcuadorMonthKey, formatTime24 } from "@/lib/datetime/ecuador";
 import { dateKeyFromValue, employeeDismissalLabel, isEmployeeActiveOnDate, isEmployeeDismissedInMonth } from "@/modules/company/submodules/people/lib/employees";
 import { planningModulePath } from "@/modules/planner/routes";
 import { ECUADOR_DAILY_BASE_HOURS } from "@/modules/planner/lib/payroll/laborConstants";
@@ -48,13 +49,7 @@ function buildShiftKey(shift) {
 }
 
 function formatClockTime(value) {
-  const minutes = parseTimeToMinutes(value);
-
-  if (minutes === null) {
-    return "";
-  }
-
-  return `${String(Math.floor(minutes / 60)).padStart(2, "0")}H${String(minutes % 60).padStart(2, "0")}`;
+  return formatTime24(value);
 }
 
 function formatMinutesAsTime(totalMinutes) {
@@ -195,6 +190,17 @@ function shiftMonthKey(monthKey, offset) {
   return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`;
 }
 
+function formatMonthLabel(monthKey) {
+  const [year, month] = String(monthKey || currentMonthKey()).split("-").map(Number);
+  const date = new Date(year, (month || 1) - 1, 1, 12);
+  const label = new Intl.DateTimeFormat("es-EC", {
+    month: "long",
+    year: "numeric",
+  }).format(date);
+
+  return label.charAt(0).toUpperCase() + label.slice(1);
+}
+
 function getPlanningOverlayMonthKeys(monthKey, dateKeys = []) {
   const dateMonthKeys = dateKeys
     .map((dateKey) => String(dateKey || "").slice(0, 7))
@@ -228,7 +234,7 @@ function dedupeById(items) {
 async function fetchPlanningOverlays(monthKey, dateKeys = []) {
   const overlayPayloads = await Promise.all(getPlanningOverlayMonthKeys(monthKey, dateKeys).map(async (overlayMonthKey) => {
     const [exceptionsResponse, vacationsResponse, holidaysResponse] = await Promise.all([
-      fetch(`/api/planner/planning/exceptions?month=${overlayMonthKey}&context=weekly`),
+      fetch(`/api/planner/planning/exceptions?month=${overlayMonthKey}&context=weekly`, { cache: "no-store" }),
       fetch(`/api/planner/planning/vacations?month=${overlayMonthKey}`),
       fetch(`/api/planner/planning/holidays?month=${overlayMonthKey}`),
     ]);
@@ -303,6 +309,156 @@ function getHistoryVersionKey(entry) {
   const entryGroupId = entry?.groupId || "";
 
   return `${entryGroupId}|${savedAt}|${actor}`;
+}
+
+function isActivePlanningApproval(approval) {
+  return Boolean(approval) && !approval.unlockedAt;
+}
+
+function mergeHistoryDays(currentDays = [], nextDays = []) {
+  return [...new Map(
+    [...currentDays, ...nextDays]
+      .filter((day) => day?.dateKey)
+      .map((day) => [day.dateKey, day]),
+  ).values()].sort((left, right) => String(left.dateKey).localeCompare(String(right.dateKey)));
+}
+
+function buildWeeklyApprovalState(assignments, employeeCount, weekStartKey) {
+  const employeeAssignments = assignments.filter((assignment) =>
+    (assignment.scheduleHistory || []).some((entry) => entry.weekStartKey === weekStartKey)
+    || (assignment.planningApprovals || []).some((approval) => approval.weekStartKey === weekStartKey),
+  );
+  const approvedAssignments = employeeAssignments.filter((assignment) =>
+    (assignment.planningApprovals || []).some((approval) =>
+      approval.weekStartKey === weekStartKey && isActivePlanningApproval(approval),
+    ),
+  );
+  const historyVersionsByKey = new Map();
+  const approvalCountsByVersionKey = new Map();
+  const historicalApprovalCountsByVersionKey = new Map();
+  const unlockEvents = [];
+
+  employeeAssignments.forEach((assignment) => {
+    const approvedVersionKeysForEmployee = new Set();
+    const historicalApprovalVersionKeysForEmployee = new Set();
+    const historyVersionKeysForEmployee = new Set();
+    const employeeId = assignment.employeeId || "";
+
+    (assignment.planningApprovals || [])
+      .filter((approval) => approval.weekStartKey === weekStartKey)
+      .forEach((approval) => {
+        const approvalVersionKey = approval.versionSavedAt
+          ? getHistoryVersionKey({
+            groupId: approval.groupId,
+            savedAt: approval.versionSavedAt,
+            savedBy: approval.versionSavedBy,
+            savedByUser: approval.versionSavedByUser,
+          })
+          : "legacy";
+
+        historicalApprovalVersionKeysForEmployee.add(approvalVersionKey);
+
+        if (isActivePlanningApproval(approval)) {
+          approvedVersionKeysForEmployee.add(approvalVersionKey);
+        } else if (approval.unlockedAt) {
+          unlockEvents.push({
+            unlockedAt: approval.unlockedAt,
+            unlockedBy: approval.unlockedBy || "",
+            unlockReason: approval.unlockReason || "",
+          });
+        }
+      });
+
+    approvedVersionKeysForEmployee.forEach((approvalVersionKey) => {
+      approvalCountsByVersionKey.set(approvalVersionKey, (approvalCountsByVersionKey.get(approvalVersionKey) || 0) + 1);
+    });
+    historicalApprovalVersionKeysForEmployee.forEach((approvalVersionKey) => {
+      historicalApprovalCountsByVersionKey.set(
+        approvalVersionKey,
+        (historicalApprovalCountsByVersionKey.get(approvalVersionKey) || 0) + 1,
+      );
+    });
+
+    (assignment.scheduleHistory || [])
+      .filter((entry) => entry.weekStartKey === weekStartKey)
+      .forEach((entry) => {
+        const versionKey = getHistoryVersionKey(entry);
+        const current = historyVersionsByKey.get(versionKey);
+
+        if (historyVersionKeysForEmployee.has(versionKey)) {
+          if (current) {
+            current.daysCount += Number(entry.daysCount) || 0;
+            current.employeeDays[employeeId] = mergeHistoryDays(
+              current.employeeDays[employeeId],
+              entry.generatedDays,
+            );
+          }
+          return;
+        }
+
+        historyVersionKeysForEmployee.add(versionKey);
+
+        if (current) {
+          current.employeeCount += 1;
+          current.daysCount += Number(entry.daysCount) || 0;
+          current.employeeDays[employeeId] = mergeHistoryDays(
+            current.employeeDays[employeeId],
+            entry.generatedDays,
+          );
+          return;
+        }
+
+        historyVersionsByKey.set(versionKey, {
+          ...entry,
+          versionKey,
+          employeeCount: 1,
+          daysCount: Number(entry.daysCount) || 0,
+          approvedCount: 0,
+          isApproved: false,
+          employeeDays: {
+            [employeeId]: mergeHistoryDays([], entry.generatedDays),
+          },
+        });
+      });
+  });
+
+  const historyEntries = [...historyVersionsByKey.values()]
+    .map((entry) => {
+      const approvedCount = approvalCountsByVersionKey.get(entry.versionKey) || 0;
+      const historicalApprovalCount = historicalApprovalCountsByVersionKey.get(entry.versionKey) || 0;
+
+      return {
+        ...entry,
+        approvedCount,
+        isApproved: Boolean(entry.employeeCount) && approvedCount >= entry.employeeCount,
+        wasApproved: Boolean(entry.employeeCount) && historicalApprovalCount >= entry.employeeCount,
+      };
+    })
+    .sort((left, right) => new Date(right.savedAt || 0).getTime() - new Date(left.savedAt || 0).getTime())
+    .map((entry, index, entries) => ({
+      ...entry,
+      versionNumber: entries.length - index,
+    }));
+  const latestHistory = historyEntries[0] || null;
+  const approvedVersion = historyEntries.find((entry) => entry.isApproved) || null;
+  const latestUnlock = unlockEvents
+    .sort((left, right) => new Date(right.unlockedAt || 0) - new Date(left.unlockedAt || 0))[0]
+    || null;
+  const hasVersionAfterUnlock = !latestUnlock || Boolean(
+    latestHistory
+    && new Date(latestHistory.savedAt || 0).getTime() > new Date(latestUnlock.unlockedAt || 0).getTime(),
+  );
+
+  return {
+    isApproved: Boolean(approvedVersion) || (Boolean(employeeCount) && approvedAssignments.length === employeeCount && !historyEntries.length),
+    approvedCount: approvedAssignments.length,
+    totalCount: employeeCount,
+    historyEntries,
+    latestHistory,
+    approvedVersion,
+    latestUnlock,
+    hasVersionAfterUnlock,
+  };
 }
 
 function isEmployeeActiveForPlanningWeek(employee, weekDateKeys = []) {
@@ -1348,6 +1504,144 @@ function ShiftPicker({ value, options, onChange, disabled = false }) {
   );
 }
 
+function formatVersionScheduleDay(day) {
+  if (!day || day.dayType === "off_day") return "Descanso";
+  if (day.dayType === "holiday") return "Feriado";
+  if (day.dayType === "vacation") return "Vacaciones";
+
+  return buildReadableShiftSchedule(day) || "Sin horario";
+}
+
+function VersionSchedulePreview({ version, employees, weekDateKeys, monthKey, overlaysByEmployeeDate }) {
+  const versionEmployeeIds = new Set(Object.keys(version.employeeDays || {}));
+  const versionEmployees = employees.filter((employee) => versionEmployeeIds.has(employee.id));
+
+  return (
+    <div className={styles.versionCalendarViewer}>
+      <div className={styles.versionCalendarMeta}>
+        <div>
+          <strong>v{version.versionNumber}</strong>
+          <span>{formatEcuadorDateTimeLabel(version.savedAt)}</span>
+        </div>
+        <div>
+          <small>Creada por</small>
+          <strong>{version.savedBy || "Sistema"}</strong>
+        </div>
+        {version.isApproved ? <em className={styles.approvedVersionBadge}>Aprobada</em> : null}
+        {!version.isApproved && version.wasApproved ? (
+          <em className={styles.previouslyApprovedVersionBadge}>Aprobada anteriormente</em>
+        ) : null}
+      </div>
+
+      <div className={styles.versionCalendarWrap}>
+        <table className={styles.versionCalendarTable}>
+          <thead>
+            <tr>
+              <th>Empleado</th>
+              {weekDateKeys.map((dateKey) => (
+                <th key={dateKey} className={dateKey.startsWith(`${monthKey}-`) ? "" : styles.adjacentMonthDay}>
+                  <span>{DAY_LABELS[getDayOfWeek(dateKey)]}</span>
+                  <small>{formatPlannerDay(dateKey, monthKey)}</small>
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {versionEmployees.map((employee) => {
+              const daysByDate = new Map(
+                (version.employeeDays?.[employee.id] || []).map((day) => [day.dateKey, day]),
+              );
+
+              return (
+                <tr key={employee.id}>
+                  <td>
+                    <strong>{employee.fullName}</strong>
+                  </td>
+                  {weekDateKeys.map((dateKey) => {
+                    const day = daysByDate.get(dateKey);
+                    const overlay = overlaysByEmployeeDate.get(`${employee.id}|${dateKey}`);
+                    const exception = overlay?.kind === "exception" ? overlay : null;
+
+                    return (
+                      <td key={dateKey} className={dateKey.startsWith(`${monthKey}-`) ? "" : styles.adjacentMonthCell}>
+                        <div className={styles.versionScheduleCell}>
+                          <strong title={formatVersionScheduleDay(day)}>{formatVersionScheduleDay(day)}</strong>
+                          {exception ? (
+                            <span className={styles.versionExceptionIndicator}>
+                              <button
+                                type="button"
+                                aria-label={`Ver excepcion: ${exception.typeLabel || exception.title || "Excepcion"}`}
+                              >
+                                <AlertTriangle size={14} aria-hidden="true" />
+                              </button>
+                              <span className={styles.versionExceptionPopover} role="tooltip">
+                                <strong>{exception.typeLabel || exception.title || "Excepcion"}</strong>
+                                <span>{exception.statusLabel || "Registrada"}</span>
+                                {exception.resolutionLabel ? <span>{exception.resolutionLabel}</span> : null}
+                                {exception.notes ? <small>{exception.notes}</small> : null}
+                              </span>
+                            </span>
+                          ) : null}
+                        </div>
+                      </td>
+                    );
+                  })}
+                </tr>
+              );
+            })}
+            {!versionEmployees.length ? (
+              <tr>
+                <td colSpan={weekDateKeys.length + 1} className={styles.versionCalendarEmpty}>
+                  No hay empleados registrados en esta version.
+                </td>
+              </tr>
+            ) : null}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
+function PlannerLoadingScene({ showFilters = false, title, description }) {
+  return (
+    <section
+      className={`${styles.loadingScene} ${showFilters ? styles.loadingSceneInitial : ""}`}
+      role="status"
+      aria-live="polite"
+      aria-busy="true"
+      aria-label={[title, description].filter(Boolean).join(". ")}
+    >
+      <div className={styles.loadingStage} aria-hidden="true">
+        {showFilters ? (
+          <div className={styles.loadingStageFilters}>
+            {Array.from({ length: 2 }, (_, index) => <span key={index} />)}
+          </div>
+        ) : null}
+        <div className={styles.loadingStageWeeks}>
+          {Array.from({ length: 5 }, (_, index) => <span key={index} />)}
+        </div>
+        <div className={styles.loadingStageActions}>
+          {Array.from({ length: 3 }, (_, index) => <span key={index} />)}
+        </div>
+        <div className={styles.loadingStageMetrics}>
+          {Array.from({ length: 3 }, (_, index) => <span key={index} />)}
+        </div>
+        <div className={styles.loadingStageTable}>
+          <div className={styles.loadingStageTableHeader}>
+            {Array.from({ length: 8 }, (_, index) => <span key={index} />)}
+          </div>
+          {Array.from({ length: 4 }, (_, rowIndex) => (
+            <div key={rowIndex} className={styles.loadingStageTableRow}>
+              {Array.from({ length: 8 }, (_, cellIndex) => <span key={cellIndex} />)}
+            </div>
+          ))}
+        </div>
+      </div>
+    </section>
+  );
+}
+
 export default function SchedulePlanner({ initialFilters = {}, basePath = "/schedules", capabilities = {} }) {
   const router = useRouter();
   const [monthKey, setMonthKey] = useState(initialFilters.month || currentMonthKey());
@@ -1367,14 +1661,21 @@ export default function SchedulePlanner({ initialFilters = {}, basePath = "/sche
   const [draftWeekRoles, setDraftWeekRoles] = useState({});
   const [draftDayRoles, setDraftDayRoles] = useState({});
   const [draftDayNotes, setDraftDayNotes] = useState({});
-  const [hasDraftChanges, setHasDraftChanges] = useState(false);
-  const [clearScheduleTargets, setClearScheduleTargets] = useState([]);
-  const [clipboardScheduleText, setClipboardScheduleText] = useState("");
+  const [savedDraftDays, setSavedDraftDays] = useState({});
+  const [isManualPasteOpen, setIsManualPasteOpen] = useState(false);
+  const [manualClipboardText, setManualClipboardText] = useState("");
   const [selectedWeekIndex, setSelectedWeekIndex] = useState(() => parseWeekIndex(initialFilters.week));
   const [isCostModalOpen, setIsCostModalOpen] = useState(false);
+  const [isApprovalConfirmOpen, setIsApprovalConfirmOpen] = useState(false);
+  const [isUnlockConfirmOpen, setIsUnlockConfirmOpen] = useState(false);
+  const [unlockReason, setUnlockReason] = useState("");
+  const [viewedVersionKey, setViewedVersionKey] = useState("");
   const [selectedOverlay, setSelectedOverlay] = useState(null);
+  const [exceptionToDelete, setExceptionToDelete] = useState(null);
   const [adjustmentTarget, setAdjustmentTarget] = useState(null);
   const [adjustmentForm, setAdjustmentForm] = useState(DEFAULT_ADJUSTMENT_FORM);
+  const [isAdjustmentSaving, setIsAdjustmentSaving] = useState(false);
+  const adjustmentSaveInFlightRef = useRef(false);
   const [isQuickTemplateModalOpen, setIsQuickTemplateModalOpen] = useState(false);
   const [quickTemplateForm, setQuickTemplateForm] = useState(DEFAULT_QUICK_TEMPLATE_FORM);
   const [isQuickTemplateSaving, setIsQuickTemplateSaving] = useState(false);
@@ -1389,6 +1690,7 @@ export default function SchedulePlanner({ initialFilters = {}, basePath = "/sche
   const noticeRemoveTimeoutRef = useRef(null);
 
   const weekOptions = useMemo(() => getMonthWeekOptions(monthKey), [monthKey]);
+  const monthLabel = useMemo(() => formatMonthLabel(monthKey), [monthKey]);
   const maxWeekIndex = Math.max(weekOptions.length - 1, 0);
   const resolvedSelectedWeekIndex = Math.min(Math.max(selectedWeekIndex, 0), maxWeekIndex);
   const selectedWeek = weekOptions[resolvedSelectedWeekIndex] || weekOptions[0];
@@ -1398,10 +1700,12 @@ export default function SchedulePlanner({ initialFilters = {}, basePath = "/sche
   );
   const dailyBaseHours = ECUADOR_DAILY_BASE_HOURS;
   const canManageSchedules = capabilities.canManageSchedules === true;
+  const canPasteSchedules = capabilities.canPasteSchedules === true;
   const canApprovePlanning = capabilities.canApprovePlanning === true;
   const canExportSchedule = capabilities.canExportSchedule === true;
   const canCreateQuickTemplates = capabilities.canCreateQuickTemplates === true;
   const canCreateAdjustments = capabilities.canCreateAdjustments === true;
+  const canDeleteAnyPendingExceptions = capabilities.canDeleteAnyPendingExceptions === true;
   const canOpenMonthlyDetail = capabilities.canOpenMonthlyDetail === true;
   const showSummaries = capabilities.showSummaries === true;
   const showHours = capabilities.showHours === true;
@@ -1428,7 +1732,12 @@ export default function SchedulePlanner({ initialFilters = {}, basePath = "/sche
     const optionsByKey = new Map();
 
     assignments.forEach((assignment) => {
-      (assignment.generatedDays || []).forEach((day) => {
+      const assignmentDays = [
+        ...(assignment.generatedDays || []),
+        ...(assignment.scheduleHistory || []).flatMap((entry) => entry.generatedDays || []),
+      ];
+
+      assignmentDays.forEach((day) => {
         if (!day?.startTime || !day?.endTime || day.dayType === "off_day" || day.dayType === "holiday") return;
 
         const option = buildShiftOption(day);
@@ -1515,6 +1824,12 @@ export default function SchedulePlanner({ initialFilters = {}, basePath = "/sche
       }),
     [employees, hasPlanningScope, selectedWorkGroupEmployeeIds, weekDateKeys],
   );
+  const hasDraftChanges = useMemo(() => filteredEmployees.some((employee) =>
+    weekDateKeys.some((dateKey) =>
+      (draftDays[employee.id]?.[dateKey] || OFF_SHIFT_OPTION.key)
+      !== (savedDraftDays[employee.id]?.[dateKey] || OFF_SHIFT_OPTION.key),
+    )),
+  [draftDays, filteredEmployees, savedDraftDays, weekDateKeys]);
   const selectedWorkGroupEmployeeIdsParam = useMemo(() => {
     if (!selectedWorkGroup) return "";
 
@@ -1524,6 +1839,20 @@ export default function SchedulePlanner({ initialFilters = {}, basePath = "/sche
       .sort()
       .join(",");
   }, [filteredEmployees, selectedWorkGroup]);
+  const weeklyApprovalState = useMemo(
+    () => buildWeeklyApprovalState(
+      assignments,
+      filteredEmployees.length,
+      selectedWeek?.weekStartKey || "",
+    ),
+    [assignments, filteredEmployees.length, selectedWeek],
+  );
+  const viewedHistoryVersion = useMemo(() =>
+    weeklyApprovalState.historyEntries.find((entry) => entry.versionKey === viewedVersionKey)
+    || null,
+  [viewedVersionKey, weeklyApprovalState]);
+  const approvedHistoryVersion = weeklyApprovalState.approvedVersion || null;
+  const isScheduleReadOnly = weeklyApprovalState.isApproved;
 
   const coverageRolesForEmployee = useCallback((employee) => {
     const assignments = Array.isArray(employee?.roleAssignments) ? employee.roleAssignments : [];
@@ -1597,17 +1926,6 @@ export default function SchedulePlanner({ initialFilters = {}, basePath = "/sche
     });
   }, [coverageRolesForEmployee, templates]);
 
-  const clipboardPreview = useMemo(
-    () => buildClipboardSchedulePreview(
-      clipboardScheduleText,
-      filteredEmployees,
-      weekDateKeys,
-      getShiftOptionsForEmployee,
-    ),
-    [clipboardScheduleText, filteredEmployees, getShiftOptionsForEmployee, weekDateKeys],
-  );
-  const hasClipboardSchedule = clipboardScheduleText.trim().length > 0;
-
   const overlaysByEmployeeDate = useMemo(() =>
     buildPlanningOverlayIndexes({ exceptions, vacations }),
   [exceptions, vacations]);
@@ -1621,14 +1939,39 @@ export default function SchedulePlanner({ initialFilters = {}, basePath = "/sche
     [holidaysByDate],
   );
 
+  const displayedDraftDays = useMemo(() => {
+    if (!approvedHistoryVersion) return draftDays;
+
+    return Object.fromEntries(filteredEmployees.map((employee) => [
+      employee.id,
+      Object.fromEntries(
+        (approvedHistoryVersion.employeeDays?.[employee.id] || [])
+          .map((day) => [day.dateKey, dayToShiftKey(day, shiftOptions)]),
+      ),
+    ]));
+  }, [approvedHistoryVersion, draftDays, filteredEmployees, shiftOptions]);
+
+  const displayedDayNotes = useMemo(() => {
+    if (!approvedHistoryVersion) return draftDayNotes;
+
+    return Object.fromEntries(filteredEmployees.map((employee) => [
+      employee.id,
+      Object.fromEntries(
+        (approvedHistoryVersion.employeeDays?.[employee.id] || [])
+          .filter((day) => day.dateKey && day.operationalNote)
+          .map((day) => [day.dateKey, day.operationalNote]),
+      ),
+    ]));
+  }, [approvedHistoryVersion, draftDayNotes, filteredEmployees]);
+
   const effectiveDraftDays = useMemo(() =>
     applyPlanningOverlaysToDraftDays({
-      draftDays,
+      draftDays: displayedDraftDays,
       employees: filteredEmployees,
       weekDateKeys,
       overlaysByEmployeeDate,
     }),
-  [draftDays, filteredEmployees, overlaysByEmployeeDate, weekDateKeys]);
+  [displayedDraftDays, filteredEmployees, overlaysByEmployeeDate, weekDateKeys]);
 
   const weekRoleForEmployee = useCallback((employee, weekStartKey) => {
     const roleCodeForWeek = draftWeekRoles[employee.id]?.[weekStartKey] || employee.roleCode || "";
@@ -1747,109 +2090,6 @@ export default function SchedulePlanner({ initialFilters = {}, basePath = "/sche
     return details;
   }, [filteredEmployees, planningCostByEmployee]);
 
-  const weeklyApprovalState = useMemo(() => {
-    const weekStartKey = selectedWeek?.weekStartKey || "";
-    const employeeAssignments = assignments.filter((assignment) =>
-      (assignment.scheduleHistory || []).some((entry) => entry.weekStartKey === weekStartKey)
-      || (assignment.planningApprovals || []).some((approval) => approval.weekStartKey === weekStartKey),
-    );
-    const approvedAssignments = employeeAssignments.filter((assignment) =>
-      (assignment.planningApprovals || []).some((approval) => approval.weekStartKey === weekStartKey),
-    );
-    const historyVersionsByKey = new Map();
-    const approvalCountsByVersionKey = new Map();
-
-    employeeAssignments.forEach((assignment) => {
-      const approvedVersionKeysForEmployee = new Set();
-      const historyVersionKeysForEmployee = new Set();
-
-      (assignment.planningApprovals || [])
-        .filter((approval) => approval.weekStartKey === weekStartKey)
-        .forEach((approval) => {
-          const approvalVersionKey = approval.versionSavedAt
-            ? getHistoryVersionKey({
-              groupId: approval.groupId,
-              savedAt: approval.versionSavedAt,
-              savedBy: approval.versionSavedBy,
-              savedByUser: approval.versionSavedByUser,
-            })
-            : "legacy";
-
-          approvedVersionKeysForEmployee.add(approvalVersionKey);
-        });
-
-      approvedVersionKeysForEmployee.forEach((approvalVersionKey) => {
-        approvalCountsByVersionKey.set(approvalVersionKey, (approvalCountsByVersionKey.get(approvalVersionKey) || 0) + 1);
-      });
-
-      (assignment.scheduleHistory || [])
-        .filter((entry) => entry.weekStartKey === weekStartKey)
-        .forEach((entry) => {
-          const versionKey = getHistoryVersionKey(entry);
-
-          if (historyVersionKeysForEmployee.has(versionKey)) {
-            const current = historyVersionsByKey.get(versionKey);
-
-            if (current) {
-              current.daysCount += Number(entry.daysCount) || 0;
-            }
-            return;
-          }
-
-          historyVersionKeysForEmployee.add(versionKey);
-
-          const current = historyVersionsByKey.get(versionKey);
-
-          if (current) {
-            current.employeeCount += 1;
-            current.daysCount += Number(entry.daysCount) || 0;
-            return;
-          }
-
-          historyVersionsByKey.set(versionKey, {
-            ...entry,
-            versionKey,
-            employeeCount: 1,
-            daysCount: Number(entry.daysCount) || 0,
-            approvedCount: 0,
-            isApproved: false,
-          });
-        });
-    });
-
-    const historyEntries = [...historyVersionsByKey.values()]
-      .map((entry) => {
-        const approvedCount = approvalCountsByVersionKey.get(entry.versionKey) || 0;
-
-        return {
-          ...entry,
-          approvedCount,
-          isApproved: Boolean(entry.employeeCount) && approvedCount >= entry.employeeCount,
-        };
-      })
-      .sort((left, right) => new Date(right.savedAt || 0).getTime() - new Date(left.savedAt || 0).getTime());
-    const latestHistory = historyEntries[0] || null;
-    const approvedVersion = historyEntries.find((entry) => entry.isApproved) || null;
-
-    return {
-      isApproved: Boolean(approvedVersion) || (Boolean(filteredEmployees.length) && approvedAssignments.length === filteredEmployees.length && !historyEntries.length),
-      approvedCount: approvedAssignments.length,
-      totalCount: filteredEmployees.length,
-      historyEntries,
-      latestHistory,
-      approvedVersion,
-    };
-  }, [assignments, filteredEmployees.length, selectedWeek]);
-
-  const hasWeekSchedules = useMemo(() =>
-    filteredEmployees.some((employee) =>
-      weekDateKeys.some((dateKey) =>
-        isEmployeeActiveOnDate(employee, dateKey) &&
-        isWorkShift(effectiveDraftDays[employee.id]?.[dateKey] || "off"),
-      ),
-    ),
-  [effectiveDraftDays, filteredEmployees, weekDateKeys]);
-
   const clearNoticeTimers = useCallback(() => {
     if (noticeExitTimeoutRef.current) window.clearTimeout(noticeExitTimeoutRef.current);
     if (noticeRemoveTimeoutRef.current) window.clearTimeout(noticeRemoveTimeoutRef.current);
@@ -1859,7 +2099,6 @@ export default function SchedulePlanner({ initialFilters = {}, basePath = "/sche
 
   const markDraftEdited = useCallback(() => {
     draftRevisionRef.current += 1;
-    setHasDraftChanges(true);
   }, []);
 
   const dismissNotice = useCallback(() => {
@@ -1889,9 +2128,19 @@ export default function SchedulePlanner({ initialFilters = {}, basePath = "/sche
   const selectWeekIndex = useCallback((nextWeekIndex) => {
     const boundedWeekIndex = Math.min(Math.max(Number(nextWeekIndex) || 0, 0), maxWeekIndex);
 
+    setViewedVersionKey("");
     setSelectedWeekIndex(boundedWeekIndex);
     replaceFilters({ weekIndex: boundedWeekIndex });
   }, [maxWeekIndex, replaceFilters]);
+
+  const navigateMonth = useCallback((offset) => {
+    const nextMonthKey = shiftMonthKey(monthKey, offset);
+
+    setViewedVersionKey("");
+    setMonthKey(nextMonthKey);
+    setSelectedWeekIndex(0);
+    replaceFilters({ monthKey: nextMonthKey, weekIndex: 0 });
+  }, [monthKey, replaceFilters]);
 
   useEffect(() => {
     if (!weekOptions.length || selectedWeekIndex === resolvedSelectedWeekIndex) {
@@ -1974,12 +2223,13 @@ export default function SchedulePlanner({ initialFilters = {}, basePath = "/sche
             setExceptions([]);
             setVacations([]);
             setHolidays([]);
-            setDraftDays(buildDraftDays(nextAssignments, baseShiftOptions));
+            const nextDraftDays = buildDraftDays(nextAssignments, baseShiftOptions);
+
+            setSavedDraftDays(nextDraftDays);
+            setDraftDays(nextDraftDays);
             setDraftWeekRoles(buildDraftWeekRoles(nextAssignments, employees, weekOptions));
             setDraftDayRoles(buildDraftDayRoles(nextAssignments));
             setDraftDayNotes(buildDraftDayNotes(nextAssignments));
-            setClearScheduleTargets([]);
-            setHasDraftChanges(false);
             setLoadedAssignmentsKey(assignmentsScopeKey);
             setIsAssignmentsLoading(false);
             return;
@@ -2004,12 +2254,13 @@ export default function SchedulePlanner({ initialFilters = {}, basePath = "/sche
           setExceptions(overlaysPayload.exceptions || []);
           setVacations(overlaysPayload.vacations || []);
           setHolidays(overlaysPayload.holidays || []);
-          setDraftDays(buildDraftDays(nextAssignments, baseShiftOptions));
+          const nextDraftDays = buildDraftDays(nextAssignments, baseShiftOptions);
+
+          setSavedDraftDays(nextDraftDays);
+          setDraftDays(nextDraftDays);
           setDraftWeekRoles(buildDraftWeekRoles(nextAssignments, employees, weekOptions));
           setDraftDayRoles(buildDraftDayRoles(nextAssignments));
           setDraftDayNotes(buildDraftDayNotes(nextAssignments));
-          setClearScheduleTargets([]);
-          setHasDraftChanges(false);
           setLoadedAssignmentsKey(assignmentsScopeKey);
           setIsAssignmentsLoading(false);
 
@@ -2029,6 +2280,11 @@ export default function SchedulePlanner({ initialFilters = {}, basePath = "/sche
   }, [assignmentsScopeKey, baseShiftOptions, branchCode, employees, hasPlanningScope, isLoading, monthKey, selectedWeek, selectedWorkGroup, selectedWorkGroupEmployeeIdsParam, showNotice, weekDateKeys, weekOptions]);
 
   function setCell(employeeId, dateKey, shiftKey) {
+    if (isScheduleReadOnly) return;
+    const currentShiftKey = draftDays[employeeId]?.[dateKey] || OFF_SHIFT_OPTION.key;
+
+    if (currentShiftKey === shiftKey) return;
+
     markDraftEdited();
 
     setDraftDays((current) => ({
@@ -2051,6 +2307,8 @@ export default function SchedulePlanner({ initialFilters = {}, basePath = "/sche
   }
 
   function openAdjustmentModal(employee, dateKey) {
+    if (isScheduleReadOnly) return;
+
     const shiftKey = draftDays[employee.id]?.[dateKey] || "off";
     const day = dayFromDraft(dateKey, shiftKey, shiftOptionsByKey);
 
@@ -2058,6 +2316,7 @@ export default function SchedulePlanner({ initialFilters = {}, basePath = "/sche
       employee,
       dateKey,
       day,
+      requestKey: globalThis.crypto?.randomUUID?.() || `${employee.id}-${dateKey}-${Date.now()}`,
     });
     setAdjustmentForm({
       ...DEFAULT_ADJUSTMENT_FORM,
@@ -2225,7 +2484,7 @@ export default function SchedulePlanner({ initialFilters = {}, basePath = "/sche
   }
 
   async function saveAdjustment() {
-    if (!adjustmentTarget) return;
+    if (!adjustmentTarget || adjustmentSaveInFlightRef.current) return;
 
     const selectedType = PLANNED_ADJUSTMENT_TYPES.find((option) => option.value === adjustmentForm.kind) || PLANNED_ADJUSTMENT_TYPES[0];
     const { employee, dateKey, day } = adjustmentTarget;
@@ -2254,61 +2513,16 @@ export default function SchedulePlanner({ initialFilters = {}, basePath = "/sche
       return;
     }
 
+    adjustmentSaveInFlightRef.current = true;
+    setIsAdjustmentSaving(true);
+
     try {
-      if (requiresSchedule) {
-        const plannedShiftOption = buildShiftOption(plannedDay);
-        const plannedShiftKey = plannedShiftOption.key;
-        const scheduleOverrideKey = `${employee.id}|${dateKey}`;
-        const scheduleOverrides = new Map([[scheduleOverrideKey, plannedDay]]);
-        const employeeDays = buildOperationalEmployeeDaysForSave(scheduleOverrides);
-        const scheduleResponse = await fetch("/api/planner/planning/schedule-assignments", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            action: "operational-save",
-            monthKey,
-            groupId,
-            weekStartKey: selectedWeek?.weekStartKey || "",
-            employeeDays,
-            clearScheduleTargets,
-          }),
-        });
-        const schedulePayload = await scheduleResponse.json();
-
-        if (!scheduleResponse.ok) {
-          throw new Error(schedulePayload.error || "No se pudo guardar el horario del ajuste.");
-        }
-
-        setAssignments(schedulePayload.assignments || []);
-        setCustomShiftOptions((current) => {
-          const next = new Map(current.map((option) => [option.key, option]));
-          next.set(plannedShiftOption.key, plannedShiftOption);
-          return [...next.values()];
-        });
-        setDraftDays((current) => ({
-          ...current,
-          [employee.id]: {
-            ...(current[employee.id] || {}),
-            [dateKey]: plannedShiftKey,
-          },
-        }));
-        setDraftDayNotes((current) => {
-          const employeeNotes = { ...(current[employee.id] || {}) };
-          delete employeeNotes[dateKey];
-
-          return {
-            ...current,
-            [employee.id]: employeeNotes,
-          };
-        });
-        setHasDraftChanges(false);
-      }
-
       const response = await fetch("/api/planner/planning/exceptions", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           planningSource: "schedule_planner",
+          requestKey: adjustmentTarget.requestKey,
           autoResolve: selectedType.value !== "permission_partial",
           employeeId: employee.id,
           dateKey,
@@ -2345,144 +2559,126 @@ export default function SchedulePlanner({ initialFilters = {}, basePath = "/sche
       showNotice("success", "Ajuste creado para el dia seleccionado.");
     } catch (error) {
       showNotice("error", error.message || "No se pudo crear el ajuste.");
+    } finally {
+      adjustmentSaveInFlightRef.current = false;
+      setIsAdjustmentSaving(false);
     }
   }
 
-  function resetWeek() {
-    markDraftEdited();
-    setClearScheduleTargets(filteredEmployees.flatMap((employee) =>
-      weekDateKeys.map((dateKey) => ({ employeeId: employee.id, dateKey })),
-    ));
+  function applyClipboardScheduleText(text) {
+    if (isScheduleReadOnly) return;
 
+    const nextPreview = buildClipboardSchedulePreview(
+      text,
+      filteredEmployees,
+      weekDateKeys,
+      getShiftOptionsForEmployee,
+    );
+
+    if (!String(text || "").trim() || !nextPreview.rows.length) {
+      throw new Error("No encontre una tabla valida en el portapapeles.");
+    }
+
+    if (nextPreview.errors.length) {
+      throw new Error(nextPreview.errors.slice(0, 3).join(" "));
+    }
+
+    const rowsToApply = nextPreview.rows.filter((row) => row.employee);
+
+    if (!rowsToApply.length) {
+      throw new Error("Pega una tabla con empleados que existan en el alcance actual.");
+    }
+
+    const scheduleChanges = [];
+
+    rowsToApply.forEach((row) => {
+      row.cells.forEach((cell) => {
+        const overlay = overlaysByEmployeeDate.get(`${row.employee.id}|${cell.dateKey}`);
+
+        if (overlay?.kind === "vacation" || holidayDateKeys.has(cell.dateKey)) {
+          return;
+        }
+
+        const nextShiftKey = cell.status === "shift" ? cell.shiftKey : OFF_SHIFT_OPTION.key;
+        const currentShiftKey = draftDays[row.employee.id]?.[cell.dateKey] || OFF_SHIFT_OPTION.key;
+
+        if (currentShiftKey !== nextShiftKey) {
+          scheduleChanges.push({
+            employeeId: row.employee.id,
+            dateKey: cell.dateKey,
+            shiftKey: nextShiftKey,
+          });
+        }
+      });
+    });
+
+    if (!scheduleChanges.length) {
+      showNotice("success", "La tabla coincide con la planificación actual. No hay cambios para guardar.");
+      return;
+    }
+
+    markDraftEdited();
     setDraftDays((current) => {
       const next = { ...current };
 
-      filteredEmployees.forEach((employee) => {
-        const employeeDays = { ...(next[employee.id] || {}) };
-
-        weekDateKeys.forEach((dateKey) => {
-          if (!isEmployeeActiveOnDate(employee, dateKey)) return;
-
-          employeeDays[dateKey] = "off";
-        });
-
-        next[employee.id] = employeeDays;
+      scheduleChanges.forEach(({ employeeId, dateKey, shiftKey }) => {
+        next[employeeId] = {
+          ...(next[employeeId] || {}),
+          [dateKey]: shiftKey,
+        };
       });
 
       return next;
     });
-    setDraftDayRoles((current) => {
-      const next = { ...current };
 
-      filteredEmployees.forEach((employee) => {
-        const employeeRoles = { ...(next[employee.id] || {}) };
+    const skippedLabel = nextPreview.stats.unmatched
+      ? ` ${nextPreview.stats.unmatched} fila(s) no coinciden exactamente y se omitirán.`
+      : "";
 
-        weekDateKeys.forEach((dateKey) => {
-          if (!isEmployeeActiveOnDate(employee, dateKey)) return;
+    showNotice("success", `Tabla aplicada: ${rowsToApply.length} empleados, ${nextPreview.stats.shifts} turnos.${skippedLabel}`);
+  }
 
-          delete employeeRoles[dateKey];
-        });
-
-        next[employee.id] = employeeRoles;
-      });
-
-      return next;
-    });
-    setDraftDayNotes((current) => {
-      const next = { ...current };
-
-      filteredEmployees.forEach((employee) => {
-        const employeeNotes = { ...(next[employee.id] || {}) };
-
-        weekDateKeys.forEach((dateKey) => {
-          if (!isEmployeeActiveOnDate(employee, dateKey)) return;
-
-          delete employeeNotes[dateKey];
-        });
-
-        next[employee.id] = employeeNotes;
-      });
-
-      return next;
-    });
-    showNotice("success", "Horarios de la semana limpiados. Guarda la semana para aplicar el cambio.");
+  function openManualPaste() {
+    setManualClipboardText("");
+    setIsManualPasteOpen(true);
   }
 
   async function pasteClipboardSchedule() {
+    if (!navigator.clipboard?.readText) {
+      openManualPaste();
+      return;
+    }
+
+    let text = "";
+
     try {
-      if (!navigator?.clipboard?.readText) {
-        throw new Error("Tu navegador no permitio leer el portapapeles. Copia la tabla desde Excel e intenta de nuevo.");
-      }
-
-      const text = await navigator.clipboard.readText();
-      const nextPreview = buildClipboardSchedulePreview(
-        text,
-        filteredEmployees,
-        weekDateKeys,
-        getShiftOptionsForEmployee,
-      );
-
-      if (!String(text || "").trim() || !nextPreview.rows.length) {
-        throw new Error("No encontre una tabla valida en el portapapeles.");
-      }
-
-      if (nextPreview.errors.length) {
-        throw new Error(nextPreview.errors.slice(0, 3).join(" "));
-      }
-
-      setClipboardScheduleText(text);
-      const skippedLabel = nextPreview.stats.unmatched
-        ? ` ${nextPreview.stats.unmatched} fila(s) no coinciden exactamente y se omitirán.`
-        : "";
-      showNotice("success", `Tabla detectada: ${nextPreview.stats.matched} empleados, ${nextPreview.stats.shifts} turnos.${skippedLabel}`);
+      text = await navigator.clipboard.readText();
     } catch (error) {
-      showNotice("error", error.message || "No se pudo leer el portapapeles.");
-    }
-  }
-
-  function clearClipboardSchedule() {
-    setClipboardScheduleText("");
-    showNotice("success", "Carga pegada borrada.");
-  }
-
-  function applyClipboardSchedule() {
-    if (clipboardPreview.errors.length) {
-      showNotice("error", clipboardPreview.errors.slice(0, 3).join(" "));
+      openManualPaste();
+      showNotice(
+        "error",
+        error?.name === "NotAllowedError"
+          ? "El navegador bloqueo el acceso directo. Pega la tabla manualmente en la ventana abierta."
+          : error.message || "No se pudo leer el portapapeles. Pega la tabla manualmente.",
+      );
       return;
     }
 
-    const rowsToApply = clipboardPreview.rows.filter((row) => row.employee);
-
-    if (!rowsToApply.length) {
-      showNotice("error", "Pega una tabla con empleados que existan en el alcance actual.");
-      return;
+    try {
+      applyClipboardScheduleText(text);
+    } catch (error) {
+      showNotice("error", error.message || "No se pudo aplicar la tabla pegada.");
     }
+  }
 
-    markDraftEdited();
-    setDraftDays((current) => {
-      const next = { ...current };
-
-      rowsToApply.forEach((row) => {
-        const employeeDays = { ...(next[row.employee.id] || {}) };
-        row.cells.forEach((cell) => {
-          if (
-            overlaysByEmployeeDate.has(`${row.employee.id}|${cell.dateKey}`)
-            || holidayDateKeys.has(cell.dateKey)
-          ) {
-            return;
-          }
-
-          employeeDays[cell.dateKey] = cell.status === "shift" ? cell.shiftKey : OFF_SHIFT_OPTION.key;
-        });
-
-        next[row.employee.id] = employeeDays;
-      });
-
-      return next;
-    });
-    setClipboardScheduleText("");
-
-    showNotice("success", `Se aplicaron horarios para ${rowsToApply.length} empleado(s).`);
+  function processManualClipboardSchedule() {
+    try {
+      applyClipboardScheduleText(manualClipboardText);
+      setIsManualPasteOpen(false);
+      setManualClipboardText("");
+    } catch (error) {
+      showNotice("error", error.message || "No se pudo procesar la tabla pegada.");
+    }
   }
 
   const buildOperationalEmployeeDaysForSave = useCallback((scheduleOverrides = new Map()) => {
@@ -2496,22 +2692,11 @@ export default function SchedulePlanner({ initialFilters = {}, basePath = "/sche
         const dayRole = roleForEmployeeOnDate(employee, dateKey);
         const overlay = overlaysByEmployeeDate.get(`${employee.id}|${dateKey}`);
         const scheduleOverride = scheduleOverrides.get(`${employee.id}|${dateKey}`);
-        const shiftKey = overlay
-          ? (overlay.kind === "vacation" ? RESERVED_SHIFT_KEYS.vacation : OFF_SHIFT_OPTION.key)
+        const shiftKey = overlay?.kind === "vacation"
+          ? RESERVED_SHIFT_KEYS.vacation
           : draftDays[employee.id]?.[dateKey] || "off";
-        const hasOverlayPlannedSchedule = hasPlannedScheduleFields({
-          startTime: overlay?.raw?.plannedStartTime,
-          endTime: overlay?.raw?.plannedEndTime,
-        });
         const baseDay = scheduleOverride
-          || (hasOverlayPlannedSchedule
-            ? buildPlannedScheduleDay(dateKey, {
-              startTime: overlay.raw.plannedStartTime,
-              lunchStartTime: overlay.raw.plannedLunchStartTime,
-              lunchEndTime: overlay.raw.plannedLunchEndTime,
-              endTime: overlay.raw.plannedEndTime,
-            })
-            : buildOperationalDay(dateKey, shiftKey, shiftOptionsByKey));
+          || buildOperationalDay(dateKey, shiftKey, shiftOptionsByKey);
         const operationalNote = overlay ? "" : draftDayNotes[employee.id]?.[dateKey] || baseDay.operationalNote || "";
 
         return {
@@ -2537,6 +2722,11 @@ export default function SchedulePlanner({ initialFilters = {}, basePath = "/sche
   ]);
 
   function saveWeek() {
+    if (isScheduleReadOnly) {
+      showNotice("error", "Esta version esta disponible unicamente en modo de consulta.");
+      return;
+    }
+
     const employeeDays = buildOperationalEmployeeDaysForSave();
     startTransition(async () => {
       try {
@@ -2549,7 +2739,6 @@ export default function SchedulePlanner({ initialFilters = {}, basePath = "/sche
             groupId,
             weekStartKey: selectedWeek?.weekStartKey || "",
             employeeDays,
-            clearScheduleTargets,
           }),
         });
         const payload = await response.json();
@@ -2559,12 +2748,13 @@ export default function SchedulePlanner({ initialFilters = {}, basePath = "/sche
         const nextAssignments = payload.assignments || [];
 
         setAssignments(nextAssignments);
-        setDraftDays(buildDraftDays(nextAssignments, shiftOptions));
+        const nextDraftDays = buildDraftDays(nextAssignments, shiftOptions);
+
+        setSavedDraftDays(nextDraftDays);
+        setDraftDays(nextDraftDays);
         setDraftWeekRoles(buildDraftWeekRoles(nextAssignments, employees, weekOptions));
         setDraftDayRoles(buildDraftDayRoles(nextAssignments));
         setDraftDayNotes(buildDraftDayNotes(nextAssignments));
-        setClearScheduleTargets([]);
-        setHasDraftChanges(false);
         showNotice("success", payload.message || "Programacion guardada correctamente.");
 
         fetchPlanningOverlays(monthKey, weekDateKeys)
@@ -2593,6 +2783,11 @@ export default function SchedulePlanner({ initialFilters = {}, basePath = "/sche
       return;
     }
 
+    if (!weeklyApprovalState.hasVersionAfterUnlock) {
+      showNotice("error", "Modifica un horario y guarda una nueva versión antes de aprobar nuevamente.");
+      return;
+    }
+
     const versionToApprove = weeklyApprovalState.latestHistory;
 
     startTransition(async () => {
@@ -2616,6 +2811,7 @@ export default function SchedulePlanner({ initialFilters = {}, basePath = "/sche
         if (!response.ok) throw new Error(payload.error || "No se pudo aprobar la planificacion.");
 
         setAssignments(payload.assignments || []);
+        setIsApprovalConfirmOpen(false);
         showNotice("success", payload.message || "Planificacion aprobada.");
       } catch (error) {
         showNotice("error", error.message || "No se pudo aprobar la planificacion.");
@@ -2623,13 +2819,76 @@ export default function SchedulePlanner({ initialFilters = {}, basePath = "/sche
     });
   }
 
-  async function downloadScheduleExcel() {
-    if (isExportingSchedule || shouldShowScopedLoading || !filteredEmployees.length) return;
+  function unlockWeek() {
+    const normalizedReason = unlockReason.trim();
 
-    if (hasDraftChanges) {
-      showNotice("error", "Guarda los cambios pendientes antes de descargar el Excel.");
+    if (normalizedReason.length < 10) {
+      showNotice("error", "Describe el motivo del desbloqueo con al menos 10 caracteres.");
       return;
     }
+
+    startTransition(async () => {
+      try {
+        const response = await fetch("/api/planner/planning/schedule-assignments", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            action: "unlock-week",
+            monthKey,
+            groupId,
+            weekStartKey: selectedWeek?.weekStartKey || "",
+            employeeIds: filteredEmployees.map((employee) => employee.id),
+            reason: normalizedReason,
+          }),
+        });
+        const payload = await response.json();
+
+        if (!response.ok) throw new Error(payload.error || "No se pudo desbloquear la planificación.");
+
+        setAssignments(payload.assignments || []);
+        setIsUnlockConfirmOpen(false);
+        setUnlockReason("");
+        showNotice("success", payload.message || "Planificación desbloqueada correctamente.");
+      } catch (error) {
+        showNotice("error", error.message || "No se pudo desbloquear la planificación.");
+      }
+    });
+  }
+
+  function deletePendingException() {
+    if (!exceptionToDelete?.id) return;
+
+    if (exceptionToDelete.raw?.resolution !== "pending" || exceptionToDelete.raw?.status === "void") {
+      setExceptionToDelete(null);
+      showNotice("error", "Las excepciones aprobadas o resueltas no se pueden eliminar.");
+      return;
+    }
+
+    const exceptionId = exceptionToDelete.id;
+
+    startTransition(async () => {
+      try {
+        const response = await fetch(`/api/planner/planning/exceptions/${exceptionId}`, {
+          method: "DELETE",
+        });
+        const payload = await response.json();
+
+        if (!response.ok) {
+          throw new Error(payload.error || "No se pudo eliminar la excepción.");
+        }
+
+        setExceptions((current) => current.filter((exception) => exception.id !== exceptionId));
+        setSelectedOverlay(null);
+        setExceptionToDelete(null);
+        showNotice("success", "Excepción eliminada correctamente.");
+      } catch (error) {
+        showNotice("error", error.message || "No se pudo eliminar la excepción.");
+      }
+    });
+  }
+
+  async function downloadScheduleExcel() {
+    if (isExportingSchedule || shouldShowScopedLoading || !filteredEmployees.length) return;
 
     try {
       setIsExportingSchedule(true);
@@ -2638,6 +2897,7 @@ export default function SchedulePlanner({ initialFilters = {}, basePath = "/sche
       const exportBranchCode = selectedWorkGroup?.branchCode || branchCode;
 
       if (exportBranchCode) params.set("branchCode", exportBranchCode);
+      if (groupId) params.set("groupId", groupId);
       params.set("employeeIds", filteredEmployees.map((employee) => employee.id).join(","));
 
       const response = await fetch(`/api/planner/planning/schedule-assignments/export?${params.toString()}`);
@@ -2681,51 +2941,18 @@ export default function SchedulePlanner({ initialFilters = {}, basePath = "/sche
 
   if (isLoading) {
     return (
-      <section className={`${styles.loadingScene} page-entrance`} aria-live="polite">
-        <div className={styles.loadingFilters}>
-          {Array.from({ length: 2 }, (_, index) => <span key={index} className={styles.skeletonField} />)}
-        </div>
-        <div className={styles.loadingWeekToolbar}>
-          <div className={styles.loadingWeekTabs}>
-            {Array.from({ length: 4 }, (_, index) => <span key={index} className={styles.skeletonWeekTab} />)}
-          </div>
-          <span className={styles.skeletonButton} />
-        </div>
-        <div className={styles.loadingImportPanel}>
-          <div>
-            <span className={styles.skeletonTiny} />
-            <span className={styles.skeletonTitle} />
-          </div>
-          <span className={styles.skeletonButton} />
-        </div>
-        <div className={styles.loadingMetrics}>
-          {Array.from({ length: 3 }, (_, index) => (
-            <article key={index}>
-              <span className={styles.skeletonTiny} />
-              <strong className={styles.skeletonValue} />
-            </article>
-          ))}
-        </div>
-        <div className={styles.loadingTable}>
-          <div className={styles.loadingTableHeader}>
-            {Array.from({ length: 10 }, (_, index) => <span key={index} className={styles.skeletonTitle} />)}
-          </div>
-          {Array.from({ length: 6 }, (_, rowIndex) => (
-            <div key={rowIndex} className={styles.skeletonRow}>
-              <span className={styles.skeletonPerson} />
-              {Array.from({ length: 8 }, (_, cellIndex) => <span key={cellIndex} className={styles.skeletonCell} />)}
-              <span className={styles.skeletonButton} />
-            </div>
-          ))}
-        </div>
-      </section>
+      <PlannerLoadingScene
+        showFilters
+        title="Preparando planificación semanal"
+        description="Cargando grupos, empleados y plantillas de horario"
+      />
     );
   }
 
   const selectedAdjustmentType = PLANNED_ADJUSTMENT_TYPES.find((option) => option.value === adjustmentForm.kind) || PLANNED_ADJUSTMENT_TYPES[0];
 
   return (
-    <div className={`${styles.layout} page-entrance`}>
+    <div className={styles.layout}>
       <FloatingNotice notice={notice} onClose={dismissNotice} />
       {showFinancials ? <FloatingModal
         isOpen={isCostModalOpen}
@@ -2764,6 +2991,19 @@ export default function SchedulePlanner({ initialFilters = {}, basePath = "/sche
           </section>
         </div>
       </FloatingModal> : null}
+      <ConfirmDialog
+        isOpen={Boolean(exceptionToDelete)}
+        title="Eliminar excepción pendiente"
+        message={exceptionToDelete
+          ? `Se eliminará la excepción de ${exceptionToDelete.employeeName || "este empleado"} para el ${exceptionToDelete.dateKey}. Esta acción no modifica la versión de la planificación.`
+          : "La excepción pendiente será eliminada."}
+        confirmLabel="Eliminar"
+        cancelLabel="Conservar"
+        tone="danger"
+        isPending={isPending}
+        onCancel={() => setExceptionToDelete(null)}
+        onConfirm={deletePendingException}
+      />
       <FloatingModal
         isOpen={Boolean(selectedOverlay)}
         eyebrow={selectedOverlay?.dateKey || "Novedad"}
@@ -2823,6 +3063,27 @@ export default function SchedulePlanner({ initialFilters = {}, basePath = "/sche
                 </div>
               ) : null}
             </dl>
+            {selectedOverlay.kind === "exception"
+              && (
+                selectedOverlay.raw?.canDelete === true
+                || canDeleteAnyPendingExceptions
+              )
+              && (
+                selectedOverlay.raw?.resolution === "pending"
+                || selectedOverlay.raw?.status === "open"
+              ) ? (
+                <div className={styles.modalActions}>
+                  <button
+                    type="button"
+                    className={styles.overlayDeleteButton}
+                    onClick={() => setExceptionToDelete(selectedOverlay)}
+                    disabled={isPending}
+                  >
+                    <Trash2 size={15} aria-hidden="true" />
+                    Eliminar
+                  </button>
+                </div>
+              ) : null}
           </div>
         ) : null}
       </FloatingModal>
@@ -2830,7 +3091,7 @@ export default function SchedulePlanner({ initialFilters = {}, basePath = "/sche
         isOpen={Boolean(adjustmentTarget)}
         eyebrow={adjustmentTarget?.dateKey || "Dia"}
         title="Crear ajuste planificado"
-        isPending={isPending}
+        isPending={isAdjustmentSaving}
         onClose={closeAdjustmentModal}
       >
         {adjustmentTarget ? (
@@ -2894,10 +3155,10 @@ export default function SchedulePlanner({ initialFilters = {}, basePath = "/sche
               <textarea value={adjustmentForm.notes} onChange={(event) => updateAdjustmentField("notes", event.target.value)} />
             </label>
             <div className={styles.modalActions}>
-              <button type="button" className={styles.secondaryButton} onClick={closeAdjustmentModal}>Cancelar</button>
-              <button type="button" className={styles.primaryButton} onClick={saveAdjustment}>
+              <button type="button" className={styles.secondaryButton} onClick={closeAdjustmentModal} disabled={isAdjustmentSaving}>Cancelar</button>
+              <button type="button" className={styles.primaryButton} onClick={saveAdjustment} disabled={isAdjustmentSaving}>
                 <Save size={16} />
-                Crear ajuste
+                {isAdjustmentSaving ? "Creando..." : "Crear ajuste"}
               </button>
             </div>
           </div>
@@ -2943,20 +3204,33 @@ export default function SchedulePlanner({ initialFilters = {}, basePath = "/sche
         </div>
       </FloatingModal>
 
-      <section className={`${styles.toolbar} page-entrance page-entrance-delay-sm`}>
-        <label>
-          <span>Mes</span>
-          <input
-            type="month"
-            value={monthKey}
-            disabled={isPending}
-            onChange={(event) => {
-              setMonthKey(event.target.value);
-              setSelectedWeekIndex(0);
-              replaceFilters({ monthKey: event.target.value, weekIndex: 0 });
-            }}
-          />
-        </label>
+      <section className={`${styles.toolbar} ${styles.plannerEntrance}`}>
+        <div className={styles.monthSliderField}>
+          <span className={styles.monthSliderLabel}>Mes</span>
+          <div className={styles.monthSlider}>
+            <button
+              type="button"
+              disabled={isPending}
+              aria-label={`Ir al mes anterior desde ${monthLabel}`}
+              title="Mes anterior"
+              onClick={() => navigateMonth(-1)}
+            >
+              <ChevronLeft size={18} aria-hidden="true" />
+            </button>
+            <output aria-live="polite" aria-label={`Mes seleccionado: ${monthLabel}`}>
+              {monthLabel}
+            </output>
+            <button
+              type="button"
+              disabled={isPending}
+              aria-label={`Ir al mes siguiente desde ${monthLabel}`}
+              title="Mes siguiente"
+              onClick={() => navigateMonth(1)}
+            >
+              <ChevronRight size={18} aria-hidden="true" />
+            </button>
+          </div>
+        </div>
         <SelectInput
           label="Grupo"
           className={styles.groupSelect}
@@ -2969,6 +3243,7 @@ export default function SchedulePlanner({ initialFilters = {}, basePath = "/sche
             const nextGroupId = event.target.value;
             const nextGroup = workGroups.find((group) => group.id === nextGroupId);
 
+            setViewedVersionKey("");
             setGroupId(nextGroupId);
             setBranchCode(nextGroup?.branchCode || "");
             replaceFilters({
@@ -2986,7 +3261,7 @@ export default function SchedulePlanner({ initialFilters = {}, basePath = "/sche
       </section>
 
       {!hasPlanningScope ? (
-        <section className={`${styles.scopeEmptyState} page-entrance page-entrance-delay-md`}>
+        <section className={`${styles.scopeEmptyState} ${styles.plannerEntrance}`}>
           <strong>Selecciona un grupo para empezar</strong>
           <span>
             Los grupos definen quien planifica a quien y mantienen el historial semanal separado por equipo.
@@ -2995,46 +3270,15 @@ export default function SchedulePlanner({ initialFilters = {}, basePath = "/sche
       ) : null}
 
       {shouldShowScopedLoading ? (
-        <section className={`${styles.loadingScene} page-entrance`} aria-live="polite">
-          <div className={styles.loadingWeekToolbar}>
-            <div className={styles.loadingWeekTabs}>
-              {Array.from({ length: 4 }, (_, index) => <span key={index} className={styles.skeletonWeekTab} />)}
-            </div>
-            <span className={styles.skeletonButton} />
-          </div>
-          <div className={styles.loadingImportPanel}>
-            <div>
-              <span className={styles.skeletonTiny} />
-              <span className={styles.skeletonTitle} />
-            </div>
-            <span className={styles.skeletonButton} />
-          </div>
-          <div className={styles.loadingMetrics}>
-            {Array.from({ length: 3 }, (_, index) => (
-              <article key={index}>
-                <span className={styles.skeletonTiny} />
-                <strong className={styles.skeletonValue} />
-              </article>
-            ))}
-          </div>
-          <div className={styles.loadingTable}>
-            <div className={styles.loadingTableHeader}>
-              {Array.from({ length: 10 }, (_, index) => <span key={index} className={styles.skeletonTitle} />)}
-            </div>
-            {Array.from({ length: 6 }, (_, rowIndex) => (
-              <div key={rowIndex} className={styles.skeletonRow}>
-                <span className={styles.skeletonPerson} />
-                {Array.from({ length: 8 }, (_, cellIndex) => <span key={cellIndex} className={styles.skeletonCell} />)}
-                <span className={styles.skeletonButton} />
-              </div>
-            ))}
-          </div>
-        </section>
+        <PlannerLoadingScene
+          title="Actualizando la semana"
+          description="Organizando horarios y novedades del grupo seleccionado"
+        />
       ) : null}
 
       {hasPlanningScope && !shouldShowScopedLoading ? (
         <>
-      <section className={`${styles.weekToolbar} page-entrance page-entrance-delay-sm`}>
+      <section className={`${styles.weekToolbar} ${styles.plannerEntrance}`}>
         <div className={styles.weekTabs}>
           {weekOptions.map((week, index) => (
             <button
@@ -3050,72 +3294,69 @@ export default function SchedulePlanner({ initialFilters = {}, basePath = "/sche
         </div>
       </section>
 
-      {canManageSchedules || canExportSchedule || canCreateQuickTemplates ? <section className={`${styles.importPanel} page-entrance page-entrance-delay-md`}>
+      {canPasteSchedules || canManageSchedules || canExportSchedule || canCreateQuickTemplates ? <section className={`${styles.importPanel} ${styles.plannerEntrance}`}>
         <div className={styles.importActions}>
-            {canManageSchedules && hasClipboardSchedule ? (
-              <>
-                <button
-                  type="button"
-                  onClick={applyClipboardSchedule}
-                  disabled={!clipboardPreview.stats.matched || Boolean(clipboardPreview.errors.length)}
-                >
-                  <Save size={16} />
-                  Aplicar a la tabla
-                </button>
-                <button type="button" className={styles.clearImportAction} onClick={clearClipboardSchedule}>
-                  <X size={16} />
-                  Borrar carga
-                </button>
-              </>
-            ) : canManageSchedules ? (
-              <button type="button" onClick={pasteClipboardSchedule}>
+          <div className={styles.importActionGroup}>
+            {canCreateQuickTemplates ? (
+              <button
+                type="button"
+                onClick={openBlankQuickTemplateModal}
+                disabled={isQuickTemplateSaving}
+              >
+                <Plus size={16} />
+                Crear plantilla
+              </button>
+            ) : null}
+            {canExportSchedule ? (
+              <button
+                type="button"
+                onClick={downloadScheduleExcel}
+                disabled={isExportingSchedule || isPending || !filteredEmployees.length}
+              >
+                {isExportingSchedule ? <RefreshCw size={16} /> : <Download size={16} />}
+                {isExportingSchedule ? "Descargando..." : "Exportar"}
+              </button>
+            ) : null}
+            {canPasteSchedules ? (
+              <button type="button" onClick={pasteClipboardSchedule} disabled={isScheduleReadOnly}>
                 <ClipboardPaste size={16} />
                 Pegar tabla
               </button>
             ) : null}
-          {canManageSchedules ? (
-          <button
-            type="button"
-            className={styles.resetAction}
-            onClick={resetWeek}
-            disabled={isPending || !filteredEmployees.length || !hasWeekSchedules}
-          >
-            <RotateCcw size={16} />
-            Limpiar horarios
-          </button>
-          ) : null}
-          {canExportSchedule ? (
-          <button
-            type="button"
-            onClick={downloadScheduleExcel}
-            disabled={isExportingSchedule || isPending || !filteredEmployees.length}
-          >
-            {isExportingSchedule ? <RefreshCw size={16} /> : <Download size={16} />}
-            {isExportingSchedule ? "Descargando..." : "Exportar"}
-          </button>
-          ) : null}
-          {canCreateQuickTemplates ? (
-          <button
-            type="button"
-            onClick={openBlankQuickTemplateModal}
-            disabled={isQuickTemplateSaving}
-          >
-            <Plus size={16} />
-            Crear plantilla
-          </button>
-          ) : null}
-        </div>
-        {hasClipboardSchedule ? (
-          <div className={styles.importStats} aria-live="polite">
-            <span>{clipboardPreview.stats.shifts} turnos</span>
-            <span>{clipboardPreview.stats.rests} descansos</span>
-            <span>{clipboardPreview.stats.unmatched} omitidos</span>
-            <span>{clipboardPreview.errors.length} errores</span>
           </div>
-        ) : null}
+        </div>
       </section> : null}
 
-      {showSummaries ? <section className={`${styles.summaryGrid} page-entrance page-entrance-delay-md`}>
+      <FloatingModal
+        isOpen={isManualPasteOpen}
+        eyebrow="Importar horarios"
+        title="Pegar tabla desde Excel"
+        onClose={() => setIsManualPasteOpen(false)}
+      >
+        <div className={styles.adjustmentModal}>
+          <label className={styles.adjustmentTextareaField}>
+            <span className={styles.adjustmentTextareaLabel}>Contenido de la tabla</span>
+            <textarea
+              autoFocus
+              rows={10}
+              value={manualClipboardText}
+              onChange={(event) => setManualClipboardText(event.target.value)}
+              placeholder="Copia las filas en Excel y pégalas aquí con Ctrl+V o Cmd+V."
+            />
+          </label>
+          <div className={styles.modalActions}>
+            <button type="button" className={styles.secondaryButton} onClick={() => setIsManualPasteOpen(false)}>
+              Cancelar
+            </button>
+            <button type="button" className={styles.primaryButton} onClick={processManualClipboardSchedule} disabled={!manualClipboardText.trim()}>
+              <ClipboardPaste size={16} />
+              Aplicar tabla
+            </button>
+          </div>
+        </div>
+      </FloatingModal>
+
+      {showSummaries ? <section className={`${styles.summaryGrid} ${styles.plannerEntrance}`}>
         <article>
           <span>Suplementarias aprox.</span>
           <strong>{formatDuration(summary.supplementaryMinutes)}</strong>
@@ -3138,13 +3379,30 @@ export default function SchedulePlanner({ initialFilters = {}, basePath = "/sche
         </button>
       </section> : null}
 
-      <section className={`${styles.tablePanel} page-entrance page-entrance-delay-md`}>
-        <div className={styles.tableHeader}>
-          <div className={styles.tableHeaderTitle}>
-            <CalendarDays size={18} />
-            <span>{filteredEmployees.length} empleados para programar</span>
+      {weeklyApprovalState.isApproved ? (
+        <div className={`${styles.versionPreviewBar} ${styles.versionPreviewApproved}`}>
+          <div>
+            <LockKeyhole size={16} aria-hidden="true" />
+            <span>
+              <strong>{approvedHistoryVersion ? `Planificacion aprobada · v${approvedHistoryVersion.versionNumber}` : "Planificacion aprobada"}</strong>
+              <small>La tabla principal esta disponible en modo de consulta</small>
+            </span>
           </div>
+          {canApprovePlanning ? (
+            <button
+              type="button"
+              className={styles.unlockPlanningButton}
+              onClick={() => setIsUnlockConfirmOpen(true)}
+              disabled={isPending}
+            >
+              <LockOpen size={15} aria-hidden="true" />
+              Desbloquear
+            </button>
+          ) : null}
         </div>
+      ) : null}
+
+      <section className={`${styles.tablePanel} ${styles.plannerEntrance}`}>
         <div className={styles.tableWrap}>
           <table className={styles.table}>
             <thead>
@@ -3198,16 +3456,13 @@ export default function SchedulePlanner({ initialFilters = {}, basePath = "/sche
                     {weekDateKeys.map((dateKey) => {
                       const isActiveForDate = isEmployeeActiveOnDate(employee, dateKey);
                       const overlay = overlaysByEmployeeDate.get(`${employee.id}|${dateKey}`);
-                      const overlayPlannedDay = overlayPlannedScheduleDay(overlay, dateKey);
-                      const overlayShiftOption = overlayPlannedDay ? buildShiftOption(overlayPlannedDay) : null;
-                      const shiftKey = overlayShiftOption?.key || draftDays[employee.id]?.[dateKey] || "off";
+                      const shiftKey = draftDays[employee.id]?.[dateKey] || "off";
                       const blocksScheduleInput = overlayBlocksScheduleInput(overlay);
-                      const shouldLockSchedulePicker = Boolean(overlay && overlayPlannedDay);
-                      const showSchedulePicker = isActiveForDate && (shouldLockSchedulePicker || (!blocksScheduleInput && (!overlay || shiftKey !== "off")));
+                      const isException = overlay?.kind === "exception";
+                      const showSchedulePicker = isActiveForDate && (
+                        isException || (!blocksScheduleInput && (!overlay || shiftKey !== "off"))
+                      );
                       const overlayLabel = overlay?.shortLabel || overlay?.typeLabel || "Ajuste";
-                      const cellShiftOptions = overlayShiftOption
-                        ? [overlayShiftOption, ...employeeShiftOptions.filter((option) => option.key !== overlayShiftOption.key)]
-                        : employeeShiftOptions;
                       const startDateKey = dateKeyFromValue(employee.employmentStartDate);
 
                       return (
@@ -3225,12 +3480,12 @@ export default function SchedulePlanner({ initialFilters = {}, basePath = "/sche
                             {showSchedulePicker ? (
                               <ShiftPicker
                                 value={shiftKey}
-                                options={cellShiftOptions}
+                                options={employeeShiftOptions}
                                 onChange={(nextShiftKey) => setCell(employee.id, dateKey, nextShiftKey)}
-                                disabled={shouldLockSchedulePicker || !canManageSchedules}
+                                disabled={isScheduleReadOnly || !canManageSchedules}
                               />
                             ) : null}
-                            {!overlay && canCreateAdjustments ? (
+                            {!overlay && canCreateAdjustments && !isScheduleReadOnly ? (
                               <button
                                 type="button"
                                 className={styles.cellAdjustButton}
@@ -3252,17 +3507,17 @@ export default function SchedulePlanner({ initialFilters = {}, basePath = "/sche
                                 title={overlay.title || overlayLabel || "Ver ajuste"}
                                 aria-label={overlay.title || overlayLabel || "Ver ajuste"}
                               >
-                                {overlay.kind === "vacation" ? <CalendarDays size={14} aria-hidden="true" /> : <Info size={14} aria-hidden="true" />}
-                                {!shouldLockSchedulePicker ? <span>{overlayLabel}</span> : null}
+                                {overlay.kind === "vacation" ? <CalendarDays size={14} aria-hidden="true" /> : <AlertTriangle size={14} aria-hidden="true" />}
+                                {overlay.kind === "vacation" ? <span>{overlayLabel}</span> : null}
                               </button>
                             ) : null}
                           </div>
                           )}
-                          {isActiveForDate && shouldShowDayNote(
+                          {!overlay && isActiveForDate && shouldShowDayNote(
                             shiftKey,
-                            draftDayNotes[employee.id]?.[dateKey],
+                            displayedDayNotes[employee.id]?.[dateKey],
                           ) ? (
-                            <small className={styles.dayNote}>{draftDayNotes[employee.id][dateKey]}</small>
+                            <small className={styles.dayNote}>{displayedDayNotes[employee.id][dateKey]}</small>
                           ) : null}
                         </td>
                       );
@@ -3342,17 +3597,23 @@ export default function SchedulePlanner({ initialFilters = {}, basePath = "/sche
         </div>
       </section>
 
-      <section className={`${styles.bottomActions} page-entrance page-entrance-delay-md`}>
-        {canManageSchedules ? <button type="button" onClick={saveWeek} disabled={isPending || !hasDraftChanges || !filteredEmployees.length}>
+      <section className={`${styles.bottomActions} ${styles.plannerEntrance}`}>
+        {canManageSchedules && !isScheduleReadOnly ? <button type="button" onClick={saveWeek} disabled={isPending || !hasDraftChanges || !filteredEmployees.length}>
           {isPending ? <RefreshCw size={16} /> : <Save size={16} />}
           {isPending ? "Guardando..." : "Guardar"}
         </button> : null}
-        {canApprovePlanning && !weeklyApprovalState.latestHistory?.isApproved ? (
+        {canApprovePlanning && !isScheduleReadOnly && !weeklyApprovalState.latestHistory?.isApproved ? (
           <button
             type="button"
-            onClick={approveWeek}
-            disabled={isPending || hasDraftChanges || !filteredEmployees.length || !weeklyApprovalState.latestHistory}
-            title={hasDraftChanges ? "Guarda los cambios antes de aprobar" : "Aprobar planificacion semanal"}
+            onClick={() => setIsApprovalConfirmOpen(true)}
+            disabled={isPending || hasDraftChanges || !filteredEmployees.length || !weeklyApprovalState.latestHistory || !weeklyApprovalState.hasVersionAfterUnlock}
+            title={
+              !weeklyApprovalState.hasVersionAfterUnlock
+                ? "Modifica y guarda una nueva versión antes de aprobar nuevamente"
+                : hasDraftChanges
+                  ? "Guarda los cambios antes de aprobar"
+                  : "Aprobar planificacion semanal"
+            }
           >
             {isPending ? <RefreshCw size={16} /> : <Check size={16} />}
             Aprobar
@@ -3360,28 +3621,118 @@ export default function SchedulePlanner({ initialFilters = {}, basePath = "/sche
         ) : null}
       </section>
 
+      <ConfirmDialog
+        isOpen={isApprovalConfirmOpen}
+        title="Aprobar planificación semanal"
+        message="Si apruebas esta planificación, ya no se podrá modificar. Verifica los horarios antes de continuar."
+        confirmLabel="Sí, aprobar"
+        cancelLabel="Volver a revisar"
+        tone="warning"
+        isPending={isPending}
+        onCancel={() => setIsApprovalConfirmOpen(false)}
+        onConfirm={approveWeek}
+      />
+
+      <ConfirmDialog
+        isOpen={isUnlockConfirmOpen}
+        title="Desbloquear planificación"
+        message="La aprobación actual quedará como antecedente y la semana volverá a estar disponible para edición. Después deberás guardar una nueva versión y aprobarla nuevamente."
+        confirmLabel="Desbloquear"
+        cancelLabel="Cancelar"
+        tone="warning"
+        layout="form"
+        isPending={isPending}
+        confirmDisabled={unlockReason.trim().length < 10}
+        onCancel={() => {
+          setIsUnlockConfirmOpen(false);
+          setUnlockReason("");
+        }}
+        onConfirm={unlockWeek}
+      >
+        <label className={styles.unlockReasonField}>
+          <span className={styles.unlockReasonHeader}>
+            <strong>Motivo del desbloqueo</strong>
+            <small>{unlockReason.trim().length}/500</small>
+          </span>
+          <textarea
+            value={unlockReason}
+            onChange={(event) => setUnlockReason(event.target.value)}
+            placeholder="Explica por qué es necesario modificar la planificación aprobada"
+            rows={4}
+            maxLength={500}
+            autoFocus
+            disabled={isPending}
+          />
+          <small className={styles.unlockReasonHint}>Escribe al menos 10 caracteres.</small>
+        </label>
+      </ConfirmDialog>
+
+      <FloatingModal
+        isOpen={Boolean(viewedHistoryVersion)}
+        eyebrow="Historial de planificacion · Solo vista"
+        title={viewedHistoryVersion ? `Calendario de la v${viewedHistoryVersion.versionNumber}` : "Calendario de version"}
+        isFullscreen
+        onClose={() => setViewedVersionKey("")}
+      >
+        {viewedHistoryVersion ? (
+          <VersionSchedulePreview
+            version={viewedHistoryVersion}
+            employees={filteredEmployees}
+            weekDateKeys={weekDateKeys}
+            monthKey={monthKey}
+            overlaysByEmployeeDate={overlaysByEmployeeDate}
+          />
+        ) : null}
+      </FloatingModal>
+
       {weeklyApprovalState.historyEntries.length ? (
-        <section className={`${styles.versionHistory} page-entrance page-entrance-delay-md`}>
+        <section className={`${styles.versionHistory} ${styles.plannerEntrance}`}>
           <div className={styles.versionHistoryHeader}>
             <span>Historial de versiones</span>
             <strong>{weeklyApprovalState.historyEntries.length} guardado{weeklyApprovalState.historyEntries.length === 1 ? "" : "s"}</strong>
           </div>
           <div className={styles.versionList}>
-            {weeklyApprovalState.historyEntries.slice(0, 8).map((entry, index) => (
-              <article
-                key={entry.versionKey || `${entry.savedAt || "sin-fecha"}-${entry.savedBy || "sistema"}-${index}`}
-              >
-                <div>
-                  <strong>Version {weeklyApprovalState.historyEntries.length - index}</strong>
-                  <span>
-                    {new Date(entry.savedAt || 0).toLocaleString("es-EC")} · {entry.savedBy || "Sistema"} · {entry.employeeCount} empleado{entry.employeeCount === 1 ? "" : "s"}
+            {weeklyApprovalState.historyEntries.slice(0, 8).map((entry, index) => {
+              const isLatestVersion = index === 0;
+
+              return (
+                <article
+                  key={entry.versionKey || `${entry.savedAt || "sin-fecha"}-${entry.savedBy || "sistema"}-${index}`}
+                  className={`${entry.isApproved ? styles.approvedVersionRow : ""} ${entry.wasApproved && !entry.isApproved ? styles.previouslyApprovedVersionRow : ""} ${viewedHistoryVersion?.versionKey === entry.versionKey ? styles.activeVersionRow : ""}`}
+                >
+                  <button
+                    type="button"
+                    className={styles.versionViewButton}
+                    disabled={isLatestVersion}
+                    aria-pressed={viewedHistoryVersion?.versionKey === entry.versionKey}
+                    onClick={() => setViewedVersionKey(entry.versionKey)}
+                  >
+                  <span className={styles.versionMainLine}>
+                    <strong>v{entry.versionNumber}</strong>
+                    <time dateTime={entry.savedAt ? String(entry.savedAt) : undefined}>
+                      {formatEcuadorDateTimeLabel(entry.savedAt)}
+                    </time>
                   </span>
-                  {entry.isApproved ? (
-                    <em className={styles.approvedVersionBadge}>Version aprobada</em>
-                  ) : null}
-                </div>
-              </article>
-            ))}
+                  <span className={styles.versionAuthor}>
+                    <small>Creada por</small>
+                    <strong>{entry.savedBy || "Sistema"}</strong>
+                  </span>
+                  <span className={styles.versionRowStatus}>
+                    {entry.isApproved ? <em className={styles.approvedVersionBadge}>Aprobada</em> : null}
+                    {!entry.isApproved && entry.wasApproved ? (
+                      <em className={styles.previouslyApprovedVersionBadge}>Aprobada anteriormente</em>
+                    ) : null}
+                    {!isLatestVersion ? (
+                      <>
+                        <Eye size={16} aria-hidden="true" />
+                        <small>Ver</small>
+                      </>
+                    ) : null}
+                  </span>
+                  </button>
+                </article>
+              );
+            })}
           </div>
         </section>
       ) : null}

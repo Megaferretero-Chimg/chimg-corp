@@ -1,6 +1,6 @@
 import { endOfMonth, format, isValid, parse, startOfMonth } from "date-fns";
 
-import { makeEcuadorDate } from "@/lib/datetime/ecuador";
+import { isValidTime24, makeEcuadorDate } from "@/lib/datetime/ecuador";
 
 export const EXCEPTION_TYPES = [
   { value: "outside_work", label: "Trabajo externo" },
@@ -199,7 +199,7 @@ function normalizePayMode(value, effect, exception) {
 }
 
 function minutesBetweenTimes(startTime, endTime) {
-  if (!/^\d{2}:\d{2}$/.test(startTime || "") || !/^\d{2}:\d{2}$/.test(endTime || "")) {
+  if (!isValidTime24(startTime) || !isValidTime24(endTime)) {
     return 0;
   }
 
@@ -363,27 +363,27 @@ export function normalizeExceptionPayload(body, employee) {
     throw new Error("Para justificar horas debes indicar hora de inicio y hora de fin.");
   }
 
-  if (startTime && !/^\d{2}:\d{2}$/.test(startTime)) {
+  if (startTime && !isValidTime24(startTime)) {
     throw new Error("La hora de inicio no es valida.");
   }
 
-  if (endTime && !/^\d{2}:\d{2}$/.test(endTime)) {
+  if (endTime && !isValidTime24(endTime)) {
     throw new Error("La hora de fin no es valida.");
   }
 
-  if (plannedStartTime && !/^\d{2}:\d{2}$/.test(plannedStartTime)) {
+  if (plannedStartTime && !isValidTime24(plannedStartTime)) {
     throw new Error("La hora de inicio del horario no es valida.");
   }
 
-  if (plannedEndTime && !/^\d{2}:\d{2}$/.test(plannedEndTime)) {
+  if (plannedEndTime && !isValidTime24(plannedEndTime)) {
     throw new Error("La hora de fin del horario no es valida.");
   }
 
-  if (plannedLunchStartTime && !/^\d{2}:\d{2}$/.test(plannedLunchStartTime)) {
+  if (plannedLunchStartTime && !isValidTime24(plannedLunchStartTime)) {
     throw new Error("La hora de inicio de almuerzo no es valida.");
   }
 
-  if (plannedLunchEndTime && !/^\d{2}:\d{2}$/.test(plannedLunchEndTime)) {
+  if (plannedLunchEndTime && !isValidTime24(plannedLunchEndTime)) {
     throw new Error("La hora de fin de almuerzo no es valida.");
   }
 
@@ -395,7 +395,7 @@ export function normalizeExceptionPayload(body, employee) {
     throw new Error("Debes indicar la hora de la picada manual.");
   }
 
-  if (manualPunchTime && !/^\d{2}:\d{2}$/.test(manualPunchTime)) {
+  if (manualPunchTime && !isValidTime24(manualPunchTime)) {
     throw new Error("La hora de la picada manual no es valida.");
   }
 

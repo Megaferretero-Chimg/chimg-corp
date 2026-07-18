@@ -4,6 +4,7 @@ import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { AlertTriangle, RefreshCw } from "lucide-react";
 
+import { formatEcuadorDateTimeLabel } from "@/lib/datetime/ecuador";
 import { planningModulePath } from "@/modules/planner/routes";
 import styles from "@/modules/planner/styles/components/attendance/MonthlyClosureMonthsView.module.scss";
 
@@ -113,7 +114,7 @@ export default function MonthlyClosureMonthsView() {
                       <span className={styles.closedBadge}>
                         Cerrado v{month.version}
                       </span>
-                      {month.closedAt ? <small>{new Date(month.closedAt).toLocaleString("es-EC")}</small> : null}
+                      {month.closedAt ? <small>{formatEcuadorDateTimeLabel(month.closedAt)}</small> : null}
                     </td>
                     <td>{month.regularWorkedLabel} / {month.regularTargetLabel}</td>
                     <td>{month.supplementaryLabel}</td>

@@ -16,7 +16,8 @@ import AutocompleteSelect from "@/components/ui/AutocompleteSelect";
 import ConfirmDialog from "@/components/ui/ConfirmDialog";
 import FloatingNotice from "@/components/ui/FloatingNotice";
 import SelectInput from "@/components/ui/SelectInput";
-import { formatEcuadorMonthKey } from "@/lib/datetime/ecuador";
+import TimeInput24 from "@/components/ui/TimeInput24";
+import { formatEcuadorDateTimeLabel, formatEcuadorMonthKey, formatTime24 } from "@/lib/datetime/ecuador";
 import { calculatePayrollAdditionalRate } from "@/modules/planner/lib/payroll/rates";
 import styles from "@/modules/planner/styles/components/attendance/AttendanceComparisonDetail.module.scss";
 
@@ -41,17 +42,11 @@ function formatMinutes(value) {
 }
 
 function formatScheduleHour(value) {
-  return String(value || "").replace(":", "H");
+  return formatTime24(value);
 }
 
 function formatDecisionTimestamp(value) {
-  if (!value) return "Fecha no disponible";
-
-  return new Intl.DateTimeFormat("es-EC", {
-    dateStyle: "medium",
-    timeStyle: "short",
-    timeZone: "America/Guayaquil",
-  }).format(new Date(value));
+  return formatEcuadorDateTimeLabel(value, { fallback: "Fecha no disponible" });
 }
 
 const INLINE_EXCEPTION_OPTIONS = [
@@ -152,7 +147,8 @@ function scheduleTimeToMinutes(value) {
     Number.isNaN(hours) ||
     Number.isNaN(minutes) ||
     hours < 0 ||
-    hours > 23 ||
+    hours > 24 ||
+    (hours === 24 && minutes !== 0) ||
     minutes < 0 ||
     minutes > 59
   ) {
@@ -3410,8 +3406,7 @@ export default function AttendanceComparisonDetail({ employeeId, initialFilters 
                         <div className={styles.exceptionTimeGrid}>
                           <label>
                             <span>Entrada</span>
-                            <input
-                              type="time"
+                            <TimeInput24
                               value={exceptionDraft.plannedStartTime}
                               disabled={Boolean(exceptionTemplateOptions.length)}
                               onChange={(event) => updateExceptionDraft("plannedStartTime", event.target.value)}
@@ -3419,8 +3414,7 @@ export default function AttendanceComparisonDetail({ employeeId, initialFilters 
                           </label>
                           <label>
                             <span>Almuerzo sale</span>
-                            <input
-                              type="time"
+                            <TimeInput24
                               value={exceptionDraft.plannedLunchStartTime}
                               disabled={Boolean(exceptionTemplateOptions.length)}
                               onChange={(event) => updateExceptionDraft("plannedLunchStartTime", event.target.value)}
@@ -3428,8 +3422,7 @@ export default function AttendanceComparisonDetail({ employeeId, initialFilters 
                           </label>
                           <label>
                             <span>Almuerzo vuelve</span>
-                            <input
-                              type="time"
+                            <TimeInput24
                               value={exceptionDraft.plannedLunchEndTime}
                               disabled={Boolean(exceptionTemplateOptions.length)}
                               onChange={(event) => updateExceptionDraft("plannedLunchEndTime", event.target.value)}
@@ -3437,8 +3430,7 @@ export default function AttendanceComparisonDetail({ employeeId, initialFilters 
                           </label>
                           <label>
                             <span>Salida</span>
-                            <input
-                              type="time"
+                            <TimeInput24
                               value={exceptionDraft.plannedEndTime}
                               disabled={Boolean(exceptionTemplateOptions.length)}
                               onChange={(event) => updateExceptionDraft("plannedEndTime", event.target.value)}
@@ -3471,16 +3463,14 @@ export default function AttendanceComparisonDetail({ employeeId, initialFilters 
                   <div className={styles.exceptionTimeGrid}>
                     <label>
                       <span>Desde</span>
-                      <input
-                        type="time"
+                      <TimeInput24
                         value={exceptionDraft.startTime}
                         onChange={(event) => updateExceptionDraft("startTime", event.target.value)}
                       />
                     </label>
                     <label>
                       <span>Hasta</span>
-                      <input
-                        type="time"
+                      <TimeInput24
                         value={exceptionDraft.endTime}
                         onChange={(event) => updateExceptionDraft("endTime", event.target.value)}
                       />

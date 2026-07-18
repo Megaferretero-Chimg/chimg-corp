@@ -89,7 +89,7 @@ function latestPunchLabel(date) {
   const timeLabel = new Intl.DateTimeFormat("es-EC", {
     hour: "2-digit",
     minute: "2-digit",
-    hour12: false,
+    hourCycle: "h23",
   }).format(date);
 
   return `Hasta ${dayLabel}, ${timeLabel}`;

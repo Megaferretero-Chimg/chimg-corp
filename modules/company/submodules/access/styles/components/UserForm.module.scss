@@ -20,6 +20,43 @@
   border-radius: 0.65rem;
 }
 
+.passwordControl {
+  position: relative;
+}
+
+.passwordInput {
+  padding-right: 3.15rem;
+}
+
+.visibilityToggle {
+  position: absolute;
+  top: 50%;
+  right: 0.4rem;
+  width: 2.2rem;
+  height: 2.2rem;
+  border: 0;
+  border-radius: 0.55rem;
+  background: transparent;
+  color: var(--text-muted);
+  display: grid;
+  place-items: center;
+  cursor: pointer;
+  transform: translateY(-50%);
+  transition:
+    background 160ms ease,
+    color 160ms ease;
+
+  &:hover {
+    background: rgba(31, 111, 255, 0.08);
+    color: var(--primary);
+  }
+
+  &:focus-visible {
+    outline: 2px solid var(--primary);
+    outline-offset: 1px;
+  }
+}
+
 .actions {
   margin-top: 0.35rem;
 }
