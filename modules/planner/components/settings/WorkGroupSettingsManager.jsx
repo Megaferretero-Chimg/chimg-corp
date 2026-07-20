@@ -21,7 +21,10 @@ function mapGroupToForm(group) {
   return {
     name: group.name || "",
     ownerEmployeeId: group.ownerEmployeeId || "",
-    memberIds: (group.members || []).map((member) => member.employeeId).filter(Boolean),
+    memberIds: (group.members || [])
+      .filter((member) => member.isActive !== false)
+      .map((member) => member.employeeId)
+      .filter(Boolean),
     notes: group.notes || "",
     isActive: group.isActive !== false,
   };

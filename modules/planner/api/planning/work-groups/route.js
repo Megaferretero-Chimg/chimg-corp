@@ -111,15 +111,37 @@ async function employeeDocumentsForGroups(groups = []) {
   return new Map(employees.map((employee) => [String(employee._id), employee]));
 }
 
-async function buildGroupPayload(body, scope) {
+async function buildGroupPayload(body, scope, { existingGroup = null } = {}) {
   const name = normalizeText(body?.name);
   const ownerEmployeeId = normalizeId(body?.ownerEmployeeId);
-  const memberIds = [...new Set((Array.isArray(body?.memberIds) ? body.memberIds : []).map(normalizeId).filter(Boolean))];
+  const submittedMemberIds = [...new Set((Array.isArray(body?.memberIds) ? body.memberIds : []).map(normalizeId).filter(Boolean))];
 
   if (!name) throw new Error("Indica el nombre del grupo de trabajo.");
   if (!ownerEmployeeId) throw new Error("Selecciona la persona responsable del grupo.");
 
-  if (!memberIds.includes(ownerEmployeeId)) memberIds.unshift(ownerEmployeeId);
+  if (!submittedMemberIds.includes(ownerEmployeeId)) submittedMemberIds.unshift(ownerEmployeeId);
+
+  const employees = await Employee.find({ _id: { $in: submittedMemberIds } })
+    .select({ fullName: 1, branchCode: 1, branchName: 1, areaCode: 1, areaName: 1, roleCode: 1, roleName: 1, isActive: 1 })
+    .lean();
+
+  if (employees.length !== submittedMemberIds.length) {
+    throw new Error("Uno o mas empleados seleccionados no existen.");
+  }
+
+  const employeesById = new Map(employees.map((employee) => [String(employee._id), employee]));
+  const existingMemberIds = new Set((existingGroup?.members || []).map((member) => String(member.employee || "")));
+  const inactiveEmployees = employees.filter((employee) => employee.isActive === false);
+  const invalidInactiveEmployee = inactiveEmployees.find((employee) =>
+    String(employee._id) === ownerEmployeeId || !existingMemberIds.has(String(employee._id)),
+  );
+
+  if (invalidInactiveEmployee) {
+    throw new Error("No puedes agregar empleados inactivos al grupo de trabajo.");
+  }
+
+  const inactiveEmployeeIds = new Set(inactiveEmployees.map((employee) => String(employee._id)));
+  const memberIds = submittedMemberIds.filter((employeeId) => !inactiveEmployeeIds.has(employeeId));
 
   if (!scope.isCompanyWide) {
     const allowedEmployeeIds = scope.employeeIdSet || new Set(scope.employeeIds || []);
@@ -130,15 +152,6 @@ async function buildGroupPayload(body, scope) {
     }
   }
 
-  const employees = await Employee.find({ _id: { $in: memberIds }, isActive: { $ne: false } })
-    .select({ fullName: 1, branchCode: 1, branchName: 1, areaCode: 1, areaName: 1, roleCode: 1, roleName: 1 })
-    .lean();
-
-  if (employees.length !== memberIds.length) {
-    throw new Error("Uno o mas empleados seleccionados no existen o estan inactivos.");
-  }
-
-  const employeesById = new Map(employees.map((employee) => [String(employee._id), employee]));
   const owner = employeesById.get(ownerEmployeeId);
 
   return {
@@ -221,7 +234,7 @@ export async function PATCH(request) {
 
     const group = await PlanningWorkGroup.findById(groupId);
     assertGroupInScope(group, context.scope);
-    const payload = await buildGroupPayload(body, context.scope);
+    const payload = await buildGroupPayload(body, context.scope, { existingGroup: group });
     const duplicate = await PlanningWorkGroup.exists({
       ...groupScopeQuery(context.scope),
       _id: { $ne: groupId },
