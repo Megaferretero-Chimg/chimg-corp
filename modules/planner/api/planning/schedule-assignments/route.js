@@ -1113,7 +1113,6 @@ export async function POST(request) {
     if (action === "unlock-week") {
       const weekStartKey = String(body?.weekStartKey || "").trim();
       const groupId = normalizeGroupId(body?.groupId);
-      const employeeIds = normalizeEmployeeIdList(body?.employeeIds);
       const unlockReason = String(body?.reason || "").trim();
 
       if (!groupId) {
@@ -1122,10 +1121,6 @@ export async function POST(request) {
 
       if (!weekStartKey || !/^\d{4}-\d{2}-\d{2}$/.test(weekStartKey)) {
         throw new Error("Debes indicar la semana que deseas desbloquear.");
-      }
-
-      if (!employeeIds.length) {
-        throw new Error("No hay empleados en la planificacion que deseas desbloquear.");
       }
 
       if (unlockReason.length < 10) {
@@ -1137,7 +1132,6 @@ export async function POST(request) {
       }
 
       assertWorkGroupInPlannerScope(groupId, plannerScope);
-      assertEmployeesInPlannerScope(employeeIds, plannerScope);
 
       const unlockUser = await getAuthenticatedUser();
 
@@ -1148,25 +1142,21 @@ export async function POST(request) {
         );
       }
 
-      const employeeQuery = { _id: { $in: employeeIds } };
-
-      applyPlannerScopeToEmployeeQuery(employeeQuery, plannerScope);
-
-      const [employees, workGroup] = await Promise.all([
-        Employee.find(employeeQuery).lean(),
-        PlanningWorkGroup.findById(groupId).lean(),
-      ]);
-
-      assertEmployeesBelongToGroup(employeeIds, workGroup);
-
-      const employeeObjectIds = employees.map((employee) => employee._id);
+      const workGroup = await PlanningWorkGroup.findById(groupId).lean();
       const assignmentMonthKeys = getWeekMonthKeys(weekStartKey);
       const targetMonthKeys = assignmentMonthKeys.length
         ? assignmentMonthKeys
         : [getPreviousMonthKey(monthKey), monthKey, getNextMonthKey(monthKey)];
+      const groupObjectId = new mongoose.Types.ObjectId(groupId);
       const assignmentsForUnlock = await ScheduleAssignment.find({
         monthKey: { $in: targetMonthKeys },
-        employee: { $in: employeeObjectIds },
+        planningApprovals: {
+          $elemMatch: {
+            weekStartKey,
+            groupId: groupObjectId,
+            unlockedAt: null,
+          },
+        },
       }).lean();
       const assignmentsWithActiveApproval = assignmentsForUnlock.filter((assignment) =>
         (assignment.planningApprovals || []).some((approval) =>
@@ -1188,7 +1178,11 @@ export async function POST(request) {
         unlockUser?.employeeName || unlockUser?.username || unlockUser?.id || "SISTEMA",
       ).trim();
       const unlockedByUser = String(unlockUser?.id || unlockUser?.username || "").trim();
-      const groupObjectId = new mongoose.Types.ObjectId(groupId);
+      const unlockedEmployeeIds = [...new Set(
+        assignmentsWithActiveApproval
+          .map((assignment) => assignment.employee?.toString?.() || "")
+          .filter(Boolean),
+      )];
 
       await ScheduleAssignment.updateMany(
         { _id: { $in: assignmentsWithActiveApproval.map((assignment) => assignment._id) } },
@@ -1239,19 +1233,25 @@ export async function POST(request) {
           unlockedAt,
           unlockedByUser,
           unlockReason,
-          employeeIds,
+          employeeIds: unlockedEmployeeIds,
           unlockedVersionKeys,
         },
       });
 
+      const responseEmployeeIds = [...new Set([
+        ...(workGroup?.members || [])
+          .map((member) => member.employee?.toString?.() || "")
+          .filter(Boolean),
+        ...unlockedEmployeeIds,
+      ])];
       const assignmentQuery = {
         monthKey: { $in: targetMonthKeys },
-        employee: { $in: employeeObjectIds },
+        employee: { $in: responseEmployeeIds },
       };
       const assignments = await findScheduleAssignmentsForWeek(assignmentQuery, weekStartKey, groupId);
 
       return NextResponse.json({
-        message: "Planificación desbloqueada. Ya puedes modificar los horarios y guardar una nueva versión.",
+        message: "Planificación desbloqueada. Puedes modificarla o aprobar nuevamente la última versión.",
         assignments: mergeAssignmentsByEmployee(assignments, monthKey)
           .map((assignment) => serializeScheduleAssignmentForWeek(assignment, weekStartKey, groupId)),
       });
@@ -1330,24 +1330,6 @@ export async function POST(request) {
       const approvedVersionSavedAt = new Date(targetVersion.savedAt || targetVersion.versionSavedAt);
       const approvedVersionSavedBy = String(targetVersion.savedBy || targetVersion.versionSavedBy || "").trim();
       const approvedVersionSavedByUser = String(targetVersion.savedByUser || targetVersion.versionSavedByUser || "").trim();
-      const latestUnlockAt = assignmentsForApproval.reduce((latestTimestamp, assignment) => {
-        const assignmentLatestTimestamp = (assignment.planningApprovals || [])
-          .filter((approval) =>
-            approval.weekStartKey === weekStartKey
-            && normalizeGroupId(approval.groupId) === groupId
-            && approval.unlockedAt,
-          )
-          .reduce(
-            (latest, approval) => Math.max(latest, new Date(approval.unlockedAt).getTime() || 0),
-            0,
-          );
-
-        return Math.max(latestTimestamp, assignmentLatestTimestamp);
-      }, 0);
-
-      if (latestUnlockAt && approvedVersionSavedAt.getTime() <= latestUnlockAt) {
-        throw new Error("Modifica un horario y guarda una nueva versión antes de aprobar nuevamente.");
-      }
 
       const matchingVersionCount = assignmentsForApproval.filter((assignment) =>
         (assignment.scheduleHistory || []).some((entry) =>
@@ -1394,7 +1376,7 @@ export async function POST(request) {
 
       if (isAlreadyApproved) {
         return NextResponse.json(
-          { error: "Esta version ya fue aprobada. Guarda una nueva version para volver a aprobar." },
+          { error: "Esta versión ya se encuentra aprobada." },
           { status: 409 },
         );
       }

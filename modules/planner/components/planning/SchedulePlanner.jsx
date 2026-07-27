@@ -346,7 +346,6 @@ function buildWeeklyApprovalState(assignments, employeeCount, weekStartKey) {
   const historyVersionsByKey = new Map();
   const approvalCountsByVersionKey = new Map();
   const historicalApprovalCountsByVersionKey = new Map();
-  const unlockEvents = [];
 
   employeeAssignments.forEach((assignment) => {
     const approvedVersionKeysForEmployee = new Set();
@@ -370,12 +369,6 @@ function buildWeeklyApprovalState(assignments, employeeCount, weekStartKey) {
 
         if (isActivePlanningApproval(approval)) {
           approvedVersionKeysForEmployee.add(approvalVersionKey);
-        } else if (approval.unlockedAt) {
-          unlockEvents.push({
-            unlockedAt: approval.unlockedAt,
-            unlockedBy: approval.unlockedBy || "",
-            unlockReason: approval.unlockReason || "",
-          });
         }
       });
 
@@ -451,13 +444,6 @@ function buildWeeklyApprovalState(assignments, employeeCount, weekStartKey) {
     }));
   const latestHistory = historyEntries[0] || null;
   const approvedVersion = historyEntries.find((entry) => entry.isApproved) || null;
-  const latestUnlock = unlockEvents
-    .sort((left, right) => new Date(right.unlockedAt || 0) - new Date(left.unlockedAt || 0))[0]
-    || null;
-  const hasVersionAfterUnlock = !latestUnlock || Boolean(
-    latestHistory
-    && new Date(latestHistory.savedAt || 0).getTime() > new Date(latestUnlock.unlockedAt || 0).getTime(),
-  );
 
   return {
     isApproved: Boolean(approvedVersion) || (Boolean(employeeCount) && approvedAssignments.length === employeeCount && !historyEntries.length),
@@ -466,8 +452,6 @@ function buildWeeklyApprovalState(assignments, employeeCount, weekStartKey) {
     historyEntries,
     latestHistory,
     approvedVersion,
-    latestUnlock,
-    hasVersionAfterUnlock,
   };
 }
 
@@ -2785,11 +2769,6 @@ export default function SchedulePlanner({ initialFilters = {}, basePath = "/sche
       return;
     }
 
-    if (!weeklyApprovalState.hasVersionAfterUnlock) {
-      showNotice("error", "Modifica un horario y guarda una nueva versión antes de aprobar nuevamente.");
-      return;
-    }
-
     const versionToApprove = weeklyApprovalState.latestHistory;
 
     startTransition(async () => {
@@ -3613,14 +3592,8 @@ export default function SchedulePlanner({ initialFilters = {}, basePath = "/sche
           <button
             type="button"
             onClick={() => setIsApprovalConfirmOpen(true)}
-            disabled={isPending || hasDraftChanges || !filteredEmployees.length || !weeklyApprovalState.latestHistory || !weeklyApprovalState.hasVersionAfterUnlock}
-            title={
-              !weeklyApprovalState.hasVersionAfterUnlock
-                ? "Modifica y guarda una nueva versión antes de aprobar nuevamente"
-                : hasDraftChanges
-                  ? "Guarda los cambios antes de aprobar"
-                  : "Aprobar planificacion semanal"
-            }
+            disabled={isPending || hasDraftChanges || !filteredEmployees.length || !weeklyApprovalState.latestHistory}
+            title={hasDraftChanges ? "Guarda los cambios antes de aprobar" : "Aprobar planificacion semanal"}
           >
             {isPending ? <RefreshCw size={16} /> : <Check size={16} />}
             Aprobar
