@@ -7,6 +7,7 @@ import {
   normalizeEmployeePayload,
   serializeEmployee,
 } from "@/modules/company/submodules/people/lib/employees";
+import { assertEmployeeBiometricCodesAvailable } from "@/modules/company/submodules/people/lib/employeeBiometrics";
 import {
   filterEmployeesByPlannerScope,
   resolvePlannerEmployeeScope,
@@ -138,6 +139,7 @@ export async function POST(request) {
 
     const payload = normalizeEmployeePayload(body, { role });
 
+    await assertEmployeeBiometricCodesAvailable(payload);
     const employee = await Employee.create(payload);
     const [employees, roles] = await Promise.all([
       Employee.find({}).lean(),
@@ -152,6 +154,10 @@ export async function POST(request) {
       { status: 201 },
     );
   } catch (error) {
+    if (error?.code === "BIOMETRIC_CODE_CONFLICT") {
+      return NextResponse.json({ error: error.message }, { status: 409 });
+    }
+
     if (error?.code === 11000) {
       const field = Object.keys(error.keyPattern || {})[0];
       const message = field === "dni"

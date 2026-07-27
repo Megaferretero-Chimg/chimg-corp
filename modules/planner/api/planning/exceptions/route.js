@@ -52,6 +52,10 @@ export async function GET(request) {
 
     applyPlannerScopeToEmployeeReferenceQuery(query, plannerScope);
 
+    if (isWeeklyIndicatorRequest) {
+      query.resolution = { $ne: "no_action" };
+    }
+
     if (!isWeeklyIndicatorRequest && !hasAccessPermission(user, "planner.exceptions.viewAll")) {
       query.createdByUser = user.id;
     }

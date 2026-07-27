@@ -82,18 +82,18 @@ function workdayTemplate({
 
 export const OPERATIONAL_TEMPLATES = [
   workdayTemplate({
-    name: "08H00 A 13H00 14H00 A 17H00",
+    name: "08:00 A 13:00 14:00 A 17:00",
     startTime: "08:00",
     endTime: "17:00",
   }),
   workdayTemplate({
-    name: "09H00 A 13H00 14H30 A 19H00",
+    name: "09:00 A 13:00 14:30 A 19:00",
     startTime: "09:00",
     lunchEndTime: "14:30",
     endTime: "19:00",
   }),
   workdayTemplate({
-    name: "08H00 A 13H00 14H00 A 18H00",
+    name: "08:00 A 13:00 14:00 A 18:00",
     startTime: "08:00",
     endTime: "18:00",
   }),

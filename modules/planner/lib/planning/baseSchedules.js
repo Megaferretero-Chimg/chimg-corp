@@ -1,4 +1,4 @@
-import { formatTime24, isValidTime24 } from "@/lib/datetime/ecuador";
+import { formatTime24, formatTimeText24, isValidTime24 } from "@/lib/datetime/ecuador";
 import { DAY_TYPES, WEEK_DAYS } from "@/modules/planner/lib/schedules";
 
 const DAY_TYPE_MAP = new Map(DAY_TYPES.map((item) => [item.value, item]));
@@ -191,7 +191,7 @@ export function normalizeBaseScheduleTemplatePayload(body, { role } = {}) {
   const defaultName = firstRow?.hasLunch
     ? `${formatTimeLabel(firstRow.startTime)} A ${formatTimeLabel(firstRow.lunchStartTime)} ${formatTimeLabel(firstRow.lunchEndTime)} A ${formatTimeLabel(firstRow.endTime)}`
     : `${formatTimeLabel(firstRow.startTime)} A ${formatTimeLabel(firstRow.endTime)}`;
-  const name = String(body?.name || defaultName).trim().toUpperCase();
+  const name = formatTimeText24(body?.name || defaultName).trim().toUpperCase();
 
   return {
     name,
@@ -209,7 +209,7 @@ export function normalizeBaseScheduleTemplatePayload(body, { role } = {}) {
 export function serializeBaseScheduleTemplate(template) {
   return {
     id: template._id.toString(),
-    name: template.name || "",
+    name: formatTimeText24(template.name),
     areaCode: "",
     areaName: "",
     roleCode: template.roleCode || "",

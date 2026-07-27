@@ -12,7 +12,7 @@ export const EXCEPTION_TYPES = [
 
 export const EXCEPTION_RESOLUTIONS = [
   { value: "pending", label: "Pendiente de revisar" },
-  { value: "approved_work_time", label: "Sin descuento de horas" },
+  { value: "approved_work_time", label: "Aprobada" },
   { value: "discount_day", label: "Con descuento de horas" },
   { value: "no_action", label: "Rechazada" },
 ];

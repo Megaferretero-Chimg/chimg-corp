@@ -57,7 +57,7 @@ async function getOrganizationSnapshot() {
 
   const [employees, branches, areas, roles] = await Promise.all([
     Employee.find({})
-      .select("fullName isActive branchName branch areaName department roleName dni biometricCode")
+      .select("fullName isActive branchName branch areaName department roleName dni biometricCode biometricAliases")
       .lean(),
     Branch.find({}).sort({ name: 1 }).lean(),
     Area.find({}).sort({ name: 1 }).lean(),
@@ -67,7 +67,10 @@ async function getOrganizationSnapshot() {
   const activeEmployees = employees.filter((employee) => employee.isActive !== false);
   const inactiveEmployees = employees.length - activeEmployees.length;
   const withDni = employees.filter((employee) => String(employee.dni || "").trim()).length;
-  const withBiometric = employees.filter((employee) => String(employee.biometricCode || "").trim()).length;
+  const withBiometric = employees.filter((employee) =>
+    String(employee.biometricCode || "").trim()
+    || (employee.biometricAliases || []).some((alias) => String(alias.biometricCode || "").trim()),
+  ).length;
   const assignedToBranch = employees.filter((employee) =>
     String(employee.branchName || employee.branch || "").trim(),
   ).length;

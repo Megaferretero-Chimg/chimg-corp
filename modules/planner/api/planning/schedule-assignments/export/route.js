@@ -3,9 +3,11 @@ import * as XLSX from "xlsx";
 
 import connectToDatabase from "@/lib/db/mongodb";
 import { formatTime24 } from "@/lib/datetime/ecuador";
+import { Employee } from "@/modules/company/models";
 import { hasAccessPermission } from "@/modules/company/submodules/access/lib/permissions";
 import {
   applyPlannerScopeToAssignmentQuery,
+  assertEmployeesInPlannerScope,
   assertWorkGroupInPlannerScope,
   resolvePlannerEmployeeScope,
 } from "@/modules/planner/lib/planning/accessScope";
@@ -15,7 +17,7 @@ import {
   getNextMonthKey,
   getPreviousMonthKey,
 } from "@/modules/planner/lib/planning/scheduleAssignments";
-import { ScheduleAssignment } from "@/modules/planner/models";
+import { PlanningWorkGroup, ScheduleAssignment } from "@/modules/planner/models";
 
 const DAY_LABELS = ["Domingo", "Lunes", "Martes", "Miercoles", "Jueves", "Viernes", "Sabado"];
 
@@ -126,8 +128,11 @@ function findApprovedHistory(assignment, weekStartKey, groupId) {
   }) || null;
 }
 
-function mergeApprovedAssignmentsByEmployee(assignments, requestedMonthKey, weekOptions, groupId) {
+function mergeApprovedAssignmentsByEmployee(assignments, employees, requestedMonthKey, weekOptions, groupId) {
   const grouped = new Map();
+  const employeesById = new Map(
+    employees.map((employee) => [normalizeId(employee._id), employee]),
+  );
 
   assignments.forEach((assignment) => {
     const employeeId = assignment.employee?.toString?.() || "";
@@ -137,17 +142,37 @@ function mergeApprovedAssignmentsByEmployee(assignments, requestedMonthKey, week
     grouped.get(employeeId).push(assignment);
   });
 
-  return [...grouped.values()].map((employeeAssignments) => {
-    const primary =
+  employeesById.forEach((_employee, employeeId) => {
+    if (!grouped.has(employeeId)) grouped.set(employeeId, []);
+  });
+
+  return [...grouped.entries()].map(([employeeId, employeeAssignments]) => {
+    const employee = employeesById.get(employeeId);
+    const primaryAssignment =
       employeeAssignments.find((assignment) => assignment.monthKey === requestedMonthKey)
       || employeeAssignments[0];
+    const primary = primaryAssignment || {
+      employee: employee?._id,
+      employeeName: employee?.fullName || "",
+      branchCode: employee?.branchCode || "",
+      branchName: employee?.branchName || employee?.branch || "",
+      areaCode: employee?.areaCode || "",
+      areaName: employee?.areaName || employee?.areaCode || "SIN AREA",
+      roleCode: employee?.roleCode || "",
+      roleName: employee?.roleName || "",
+    };
     const approvedDaysByDate = new Map();
+    const approvedWeekStartKeys = new Set();
 
     weekOptions.forEach((week) => {
       const weekDateKeySet = new Set(getWeekDateKeys(week.weekStartKey));
 
       employeeAssignments.forEach((assignment) => {
         const approvedHistory = findApprovedHistory(assignment, week.weekStartKey, groupId);
+
+        if (approvedHistory) {
+          approvedWeekStartKeys.add(week.weekStartKey);
+        }
 
         (approvedHistory?.generatedDays || []).forEach((day) => {
           if (weekDateKeySet.has(day?.dateKey)) {
@@ -162,6 +187,7 @@ function mergeApprovedAssignmentsByEmployee(assignments, requestedMonthKey, week
       monthKey: requestedMonthKey || primary.monthKey,
       generatedDays: [...approvedDaysByDate.values()]
         .sort((left, right) => String(left.dateKey).localeCompare(String(right.dateKey))),
+      approvedWeekStartKeys: [...approvedWeekStartKeys],
     };
   });
 }
@@ -198,7 +224,7 @@ function buildAreaGroups(assignments, areaCodeFilter) {
     .sort((left, right) => String(left.areaName || "").localeCompare(String(right.areaName || ""), "es"));
 }
 
-function buildRowsForWeekArea({ weekDateKeys, areaGroup }) {
+function buildRowsForWeekArea({ weekStartKey, weekDateKeys, areaGroup }) {
   const headerRow = [
     "Empleado",
     ...weekDateKeys.map((dateKey) => `${DAY_LABELS[getDayOfWeek(dateKey)]} ${dateKey.slice(8, 10)}`),
@@ -211,6 +237,7 @@ function buildRowsForWeekArea({ weekDateKeys, areaGroup }) {
   areaGroup.assignments.forEach((assignment) => {
     const daysByDate = new Map((assignment.generatedDays || []).map((day) => [day.dateKey, day]));
     const weekDays = weekDateKeys.map((dateKey) => daysByDate.get(dateKey) || null);
+    const isApprovedWeek = (assignment.approvedWeekStartKeys || []).includes(weekStartKey);
     const workedDays = weekDays.filter((day) =>
       day && ["workday", "weekend_overtime"].includes(day.dayType),
     ).length;
@@ -224,7 +251,7 @@ function buildRowsForWeekArea({ weekDateKeys, areaGroup }) {
 
     rows.push([
       assignment.employeeName || "",
-      ...weekDays.map(formatDaySchedule),
+      ...weekDays.map((day) => isApprovedWeek ? formatDaySchedule(day) : "Descanso"),
       workedDays,
     ]);
   });
@@ -254,19 +281,74 @@ function applyWorksheetLayout(worksheet, weekDateKeys) {
 async function buildScheduleWorkbook({ monthKey, branchCode, areaCode, roleCode, groupId, employeeIds = [], plannerScope }) {
   const monthKeys = [getPreviousMonthKey(monthKey), monthKey, getNextMonthKey(monthKey)];
   const query = { monthKey: { $in: monthKeys } };
+  let workGroupMembersById = new Map();
 
   if (branchCode) query.branchCode = branchCode;
   if (areaCode) query.areaCode = areaCode;
   if (roleCode) query.roleCode = roleCode;
-  if (employeeIds.length) query.employee = { $in: employeeIds };
+  if (employeeIds.length) {
+    assertEmployeesInPlannerScope(employeeIds, plannerScope);
+    query.employee = { $in: employeeIds };
+  } else {
+    applyPlannerScopeToAssignmentQuery(query, plannerScope);
+  }
 
-  applyPlannerScopeToAssignmentQuery(query, plannerScope);
+  if (groupId) {
+    const workGroup = await PlanningWorkGroup.findById(groupId).lean();
 
-  const assignments = await ScheduleAssignment.find(query)
-    .sort({ areaName: 1, employeeName: 1 })
-    .lean();
+    if (!workGroup) {
+      throw new Error("El grupo de trabajo seleccionado no existe.");
+    }
+
+    const memberIds = new Set(
+      (workGroup.members || []).map((member) => normalizeId(member.employee)),
+    );
+    workGroupMembersById = new Map(
+      (workGroup.members || []).map((member) => [normalizeId(member.employee), member]),
+    );
+    const outOfGroupIds = employeeIds.filter((employeeId) => !memberIds.has(employeeId));
+
+    if (outOfGroupIds.length) {
+      throw new Error("Uno o más empleados ya no pertenecen al grupo de trabajo seleccionado.");
+    }
+  }
+
+  const [assignments, employees] = await Promise.all([
+    ScheduleAssignment.find(query)
+      .sort({ areaName: 1, employeeName: 1 })
+      .lean(),
+    employeeIds.length
+      ? Employee.find({ _id: { $in: employeeIds } }).select({
+          fullName: 1,
+          branchCode: 1,
+          branchName: 1,
+          branch: 1,
+          areaCode: 1,
+          areaName: 1,
+          roleCode: 1,
+          roleName: 1,
+        }).lean()
+      : [],
+  ]);
+  const employeeDocumentsById = new Map(
+    employees.map((employee) => [normalizeId(employee._id), employee]),
+  );
+  const exportEmployees = employeeIds.map((employeeId) => {
+    const employee = employeeDocumentsById.get(employeeId);
+    const member = workGroupMembersById.get(employeeId);
+
+    return {
+      ...employee,
+      _id: employee?._id || employeeId,
+      fullName: employee?.fullName || member?.employeeName || "",
+      areaCode: member?.areaCode || employee?.areaCode || "",
+      areaName: member?.areaName || employee?.areaName || "",
+      roleCode: member?.roleCode || employee?.roleCode || "",
+      roleName: member?.roleName || employee?.roleName || "",
+    };
+  });
   const weekOptions = getMonthWeekOptions(monthKey);
-  const mergedAssignments = mergeApprovedAssignmentsByEmployee(assignments, monthKey, weekOptions, groupId);
+  const mergedAssignments = mergeApprovedAssignmentsByEmployee(assignments, exportEmployees, monthKey, weekOptions, groupId);
   const areaGroups = buildAreaGroups(mergedAssignments, areaCode);
   const workbook = XLSX.utils.book_new();
 
@@ -287,6 +369,7 @@ async function buildScheduleWorkbook({ monthKey, branchCode, areaCode, roleCode,
 
     areaGroups.forEach((areaGroup) => {
       const rows = buildRowsForWeekArea({
+        weekStartKey: week.weekStartKey,
         weekDateKeys,
         areaGroup,
       });

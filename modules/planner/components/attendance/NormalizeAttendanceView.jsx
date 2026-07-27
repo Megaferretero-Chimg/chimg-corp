@@ -16,6 +16,7 @@ import {
   X,
 } from "lucide-react";
 
+import EmployeeAutocomplete from "@/components/ui/EmployeeAutocomplete";
 import styles from "@/modules/planner/styles/components/attendance/NormalizeAttendanceView.module.scss";
 import useClientReady from "@/hooks/useClientReady";
 import {
@@ -163,6 +164,10 @@ function getEmployeeKey(employee) {
   ].join("|");
 }
 
+function getEmployeePunches(employee) {
+  return Array.isArray(employee?.punches) ? employee.punches : [];
+}
+
 async function readJsonResponse(response) {
   const text = await response.text();
 
@@ -184,17 +189,25 @@ async function readJsonResponse(response) {
 export default function NormalizeAttendanceView({ uploadId }) {
   const isClientReady = useClientReady();
   const [response, setResponse] = useState(null);
+  const [employees, setEmployees] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [isPublishingPunches, setIsPublishingPunches] = useState(false);
+  const [isAssigningEmployee, setIsAssigningEmployee] = useState(false);
   const [search, setSearch] = useState("");
   const [selectedEmployeeKey, setSelectedEmployeeKey] = useState("");
+  const [manualEmployeeId, setManualEmployeeId] = useState("");
+  const [manualEmployeeQuery, setManualEmployeeQuery] = useState("");
   const [toast, setToast] = useState(null);
   const toastTimeoutRef = useRef(null);
   const employeeDetailRef = useRef(null);
 
   const totalRows = useMemo(
-    () => response?.employees?.reduce((sum, employee) => sum + employee.punches.length, 0) || 0,
+    () =>
+      response?.employees?.reduce(
+        (sum, employee) => sum + getEmployeePunches(employee).length,
+        0,
+      ) || 0,
     [response],
   );
 
@@ -217,8 +230,8 @@ export default function NormalizeAttendanceView({ uploadId }) {
     [response?.employees, selectedEmployeeKey],
   );
   const selectedEmployeeWeeks = useMemo(
-    () => groupPunchesByWeek(selectedEmployee?.punches || []),
-    [selectedEmployee?.punches],
+    () => groupPunchesByWeek(getEmployeePunches(selectedEmployee)),
+    [selectedEmployee],
   );
   const reconciliationNeedsAttention = Boolean(
     (response?.summary?.inactiveEmployees || 0) > 0 ||
@@ -227,7 +240,7 @@ export default function NormalizeAttendanceView({ uploadId }) {
       (response?.summary?.irregularDays || 0) > 0,
   );
   const isNormalizationSaved = response?.source === "saved";
-  const showBlockingOverlay = isSaving || isPublishingPunches;
+  const showBlockingOverlay = isSaving || isPublishingPunches || isAssigningEmployee;
 
   function showToast(type, message) {
     setToast({ type, message });
@@ -325,8 +338,48 @@ export default function NormalizeAttendanceView({ uploadId }) {
     }
   }
 
+  async function handleAssignEmployee() {
+    if (!selectedEmployee?.biometricCode || !manualEmployeeId) {
+      showToast("error", "Selecciona el empleado al que pertenecen estas picadas.");
+      return;
+    }
+
+    try {
+      setIsAssigningEmployee(true);
+      const request = await fetch(`/api/planner/attendance/upload/${uploadId}/normalize`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          biometricCode: selectedEmployee.biometricCode,
+          employeeId: manualEmployeeId,
+        }),
+      });
+      const payload = await readJsonResponse(request);
+
+      if (!request.ok) {
+        throw new Error(payload.error || "No se pudo asignar el empleado.");
+      }
+
+      const updatedEmployee = (payload.employees || []).find(
+        (employee) => employee.biometricCode === selectedEmployee.biometricCode,
+      );
+
+      setResponse(payload);
+      setSelectedEmployeeKey(getEmployeeKey(updatedEmployee));
+      setManualEmployeeId("");
+      setManualEmployeeQuery("");
+      showToast("success", payload.message || "Empleado asignado correctamente.");
+    } catch (requestError) {
+      showToast("error", requestError.message);
+    } finally {
+      setIsAssigningEmployee(false);
+    }
+  }
+
   function handleSelectEmployee(employeeKey) {
     setSelectedEmployeeKey(employeeKey);
+    setManualEmployeeId("");
+    setManualEmployeeQuery("");
     window.requestAnimationFrame(() => {
       employeeDetailRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
       employeeDetailRef.current?.focus({ preventScroll: true });
@@ -376,7 +429,36 @@ export default function NormalizeAttendanceView({ uploadId }) {
   }, [uploadId]);
 
   useEffect(() => {
-    if (!isPublishingPunches && !isSaving) {
+    let isCancelled = false;
+
+    async function fetchEmployees() {
+      try {
+        const request = await fetch("/api/company/employees?view=attendance-comparison");
+        const payload = await readJsonResponse(request);
+
+        if (!request.ok) {
+          throw new Error(payload.error || "No se pudieron cargar los empleados.");
+        }
+
+        if (!isCancelled) {
+          setEmployees(payload.employees || []);
+        }
+      } catch (requestError) {
+        if (!isCancelled) {
+          showToast("error", requestError.message);
+        }
+      }
+    }
+
+    fetchEmployees();
+
+    return () => {
+      isCancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!isPublishingPunches && !isSaving && !isAssigningEmployee) {
       return undefined;
     }
 
@@ -391,7 +473,7 @@ export default function NormalizeAttendanceView({ uploadId }) {
     return () => {
       window.removeEventListener("beforeunload", handleBeforeUnload);
     };
-  }, [isPublishingPunches, isSaving]);
+  }, [isAssigningEmployee, isPublishingPunches, isSaving]);
 
   return (
     <>
@@ -401,7 +483,11 @@ export default function NormalizeAttendanceView({ uploadId }) {
               <div className={styles.blockingCard}>
                 <div className={styles.loadingSpinner} />
                 <h2 className={styles.blockingTitle}>
-                  {isSaving ? "Guardando y publicando" : "Publicando picadas"}
+                  {isAssigningEmployee
+                    ? "Asignando empleado"
+                    : isSaving
+                      ? "Guardando y publicando"
+                      : "Publicando picadas"}
                 </h2>
                 <p className={styles.blockingMessage}>
                   No cierres esta página ni navegues a otra sección hasta que termine el proceso.
@@ -653,8 +739,40 @@ export default function NormalizeAttendanceView({ uploadId }) {
                     </div>
                   </div>
 
+                  {selectedEmployee.matchStatus !== "matched" ? (
+                    <div className={styles.manualAssignment}>
+                      <div className={styles.manualAssignmentHeader}>
+                        <strong>Asignar estas picadas manualmente</strong>
+                        <span>
+                          La asignación se guardará en esta carga y las picadas quedarán vinculadas al empleado.
+                        </span>
+                      </div>
+                      <div className={styles.manualAssignmentControls}>
+                        <EmployeeAutocomplete
+                          employees={employees}
+                          value={manualEmployeeId}
+                          query={manualEmployeeQuery}
+                          onQueryChange={setManualEmployeeQuery}
+                          onSelect={(employee) => setManualEmployeeId(employee?.id || "")}
+                          onClearSelection={() => setManualEmployeeId("")}
+                          label="Empleado"
+                          placeholder="Buscar por nombre, DNI, sucursal, área o cargo"
+                          disabled={isAssigningEmployee}
+                        />
+                        <button
+                          type="button"
+                          className={styles.assignEmployeeButton}
+                          onClick={handleAssignEmployee}
+                          disabled={!manualEmployeeId || isAssigningEmployee}
+                        >
+                          {isAssigningEmployee ? "Asignando..." : "Asignar picadas"}
+                        </button>
+                      </div>
+                    </div>
+                  ) : null}
+
                   <div className={styles.punchList}>
-                    {selectedEmployee.punches.length ? (
+                    {getEmployeePunches(selectedEmployee).length ? (
                       selectedEmployeeWeeks.map((week) => (
                         <section key={`${selectedEmployee.biometricCode}-${week.weekKey}`} className={styles.weekGroup}>
                           <div className={styles.weekHeader}>

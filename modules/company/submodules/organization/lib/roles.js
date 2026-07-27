@@ -1,3 +1,5 @@
+import { formatTimeText24 } from "@/lib/datetime/ecuador";
+
 function slugifyRoleText(value) {
   return String(value || "")
     .normalize("NFD")
@@ -98,8 +100,10 @@ export function serializeRole(role) {
       role.fixedScheduleTemplate?._id?.toString?.() ||
       role.fixedScheduleTemplate?.toString?.() ||
       "",
-    fixedScheduleTemplateName: role.fixedScheduleTemplateName || "",
-    fixedScheduleTemplateSourceName: role.fixedScheduleTemplateSourceName || role.fixedScheduleTemplateName || "",
+    fixedScheduleTemplateName: formatTimeText24(role.fixedScheduleTemplateName),
+    fixedScheduleTemplateSourceName: formatTimeText24(
+      role.fixedScheduleTemplateSourceName || role.fixedScheduleTemplateName,
+    ),
     fixedScheduleAreaCode: role.fixedScheduleAreaCode || "",
     fixedScheduleAreaName: role.fixedScheduleAreaName || "",
     fixedScheduleRoleCode: role.fixedScheduleRoleCode || "",

@@ -8,6 +8,7 @@ import {
   normalizeEmployeePayload,
   serializeEmployee,
 } from "@/modules/company/submodules/people/lib/employees";
+import { assertEmployeeBiometricCodesAvailable } from "@/modules/company/submodules/people/lib/employeeBiometrics";
 import { Employee, Role, User } from "@/modules/company/models";
 
 async function employeeSerializationContext() {
@@ -67,6 +68,7 @@ export async function PATCH(request, context) {
 
     const payload = normalizeEmployeePayload(body, { role, existingEmployee });
 
+    await assertEmployeeBiometricCodesAvailable(payload, { excludeEmployeeId: id });
     const employee = await Employee.findByIdAndUpdate(id, payload, {
       new: true,
       runValidators: true,
@@ -78,6 +80,10 @@ export async function PATCH(request, context) {
       employee: serializeEmployee(employee.toObject(), serializationContext),
     });
   } catch (error) {
+    if (error?.code === "BIOMETRIC_CODE_CONFLICT") {
+      return NextResponse.json({ error: error.message }, { status: 409 });
+    }
+
     if (error?.code === 11000) {
       const field = Object.keys(error.keyPattern || {})[0];
       const message = field === "dni"

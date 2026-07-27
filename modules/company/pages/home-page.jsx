@@ -40,7 +40,7 @@ async function getCompanyHomeSnapshot() {
 
   const [employees, branches, areas, roles] = await Promise.all([
     Employee.find({})
-      .select("isActive dni biometricCode branchName branch areaName department roleName")
+      .select("isActive dni biometricCode biometricAliases branchName branch areaName department roleName")
       .lean(),
     Branch.find({}).select("isActive").lean(),
     Area.find({}).select("isActive").lean(),
@@ -54,7 +54,10 @@ async function getCompanyHomeSnapshot() {
   const assignedToStructure = employees.filter((employee) =>
     String(employee.areaName || employee.department || employee.roleName || "").trim(),
   ).length;
-  const withBiometric = employees.filter((employee) => String(employee.biometricCode || "").trim()).length;
+  const withBiometric = employees.filter((employee) =>
+    String(employee.biometricCode || "").trim()
+    || (employee.biometricAliases || []).some((alias) => String(alias.biometricCode || "").trim()),
+  ).length;
   const withDni = employees.filter((employee) => String(employee.dni || "").trim()).length;
 
   return {

@@ -183,7 +183,7 @@ function buildTemplatesForRole(area, role) {
     if (ADMIN_REFERENCE_ROLE_CODES.has(role.code)) {
       return [
         template({
-          name: `ADMINISTRATIVO ${role.name} REFERENCIAL 08H00`,
+          name: `ADMINISTRATIVO ${role.name} REFERENCIAL 08:00`,
           area,
           role,
           rotationGroup: "ADMIN_BASE",
@@ -195,7 +195,7 @@ function buildTemplatesForRole(area, role) {
 
     return [
       template({
-        name: `ADMINISTRATIVO ${role.name} BASE 08H00`,
+        name: `ADMINISTRATIVO ${role.name} BASE 08:00`,
         area,
         role,
         rotationGroup: "ADMIN_BASE",
@@ -212,7 +212,7 @@ function buildTemplatesForRole(area, role) {
   if (area.code === "COM") {
     return [
       template({
-        name: `COMERCIAL ${role.name} BASE SEMANA A 07H00`,
+        name: `COMERCIAL ${role.name} BASE SEMANA A 07:00`,
         area,
         role,
         rotationGroup: `COM_${role.code}_BASE`,
@@ -220,7 +220,7 @@ function buildTemplatesForRole(area, role) {
         notes: `${note} Fin de semana libre.`,
       }),
       template({
-        name: `COMERCIAL ${role.name} BASE SEMANA B 08H00`,
+        name: `COMERCIAL ${role.name} BASE SEMANA B 08:00`,
         area,
         role,
         rotationGroup: `COM_${role.code}_BASE`,
@@ -228,7 +228,7 @@ function buildTemplatesForRole(area, role) {
         notes: `${note} Alternativa de entrada con fin de semana libre.`,
       }),
       template({
-        name: `COMERCIAL ${role.name} SABADO SEMANA A 07H00`,
+        name: `COMERCIAL ${role.name} SABADO SEMANA A 07:00`,
         area,
         role,
         rotationGroup: `COM_${role.code}_SABADO`,
@@ -236,7 +236,7 @@ function buildTemplatesForRole(area, role) {
         notes: `${note} Semana A con sabado extraordinario.`,
       }),
       template({
-        name: `COMERCIAL ${role.name} SABADO SEMANA B 08H00`,
+        name: `COMERCIAL ${role.name} SABADO SEMANA B 08:00`,
         area,
         role,
         rotationGroup: `COM_${role.code}_SABADO`,
@@ -244,7 +244,7 @@ function buildTemplatesForRole(area, role) {
         notes: `${note} Semana B con sabado extraordinario.`,
       }),
       template({
-        name: `COMERCIAL ${role.name} DOMINGO SEMANA A 07H00`,
+        name: `COMERCIAL ${role.name} DOMINGO SEMANA A 07:00`,
         area,
         role,
         rotationGroup: `COM_${role.code}_DOMINGO`,
@@ -252,7 +252,7 @@ function buildTemplatesForRole(area, role) {
         notes: `${note} Semana A con domingo extraordinario y sabado libre.`,
       }),
       template({
-        name: `COMERCIAL ${role.name} DOMINGO SEMANA B 08H00`,
+        name: `COMERCIAL ${role.name} DOMINGO SEMANA B 08:00`,
         area,
         role,
         rotationGroup: `COM_${role.code}_DOMINGO`,
@@ -260,7 +260,7 @@ function buildTemplatesForRole(area, role) {
         notes: `${note} Semana B con domingo extraordinario y sabado libre.`,
       }),
       template({
-        name: `COMERCIAL ${role.name} SABADO DOMINGO SEMANA A 07H00`,
+        name: `COMERCIAL ${role.name} SABADO DOMINGO SEMANA A 07:00`,
         area,
         role,
         rotationGroup: `COM_${role.code}_FIN_SEMANA_COMPLETO`,
@@ -268,7 +268,7 @@ function buildTemplatesForRole(area, role) {
         notes: `${note} Caso excepcional con sabado y domingo extraordinarios.`,
       }),
       template({
-        name: `COMERCIAL ${role.name} SABADO DOMINGO SEMANA B 08H00`,
+        name: `COMERCIAL ${role.name} SABADO DOMINGO SEMANA B 08:00`,
         area,
         role,
         rotationGroup: `COM_${role.code}_FIN_SEMANA_COMPLETO`,
@@ -281,7 +281,7 @@ function buildTemplatesForRole(area, role) {
   if (area.code === "OPER" && role.code === "BODEG") {
     return [
       template({
-        name: "BODEGA BODEGUERO BASE SEMANA A 07H00",
+        name: "BODEGA BODEGUERO BASE SEMANA A 07:00",
         area,
         role,
         rotationGroup: "OPER_BODEG_BASE",
@@ -289,7 +289,7 @@ function buildTemplatesForRole(area, role) {
         notes: `${note} Fin de semana libre.`,
       }),
       template({
-        name: "BODEGA BODEGUERO BASE SEMANA B 08H00",
+        name: "BODEGA BODEGUERO BASE SEMANA B 08:00",
         area,
         role,
         rotationGroup: "OPER_BODEG_BASE",
@@ -297,7 +297,7 @@ function buildTemplatesForRole(area, role) {
         notes: `${note} Alternativa de entrada con fin de semana libre.`,
       }),
       template({
-        name: "BODEGA BODEGUERO SABADO SEMANA A 07H00",
+        name: "BODEGA BODEGUERO SABADO SEMANA A 07:00",
         area,
         role,
         rotationGroup: "OPER_BODEG_SABADO",
@@ -305,7 +305,7 @@ function buildTemplatesForRole(area, role) {
         notes: `${note} Semana A con sabado extraordinario.`,
       }),
       template({
-        name: "BODEGA BODEGUERO SABADO SEMANA B 08H00",
+        name: "BODEGA BODEGUERO SABADO SEMANA B 08:00",
         area,
         role,
         rotationGroup: "OPER_BODEG_SABADO",
@@ -313,7 +313,7 @@ function buildTemplatesForRole(area, role) {
         notes: `${note} Semana B con sabado extraordinario.`,
       }),
       template({
-        name: "BODEGA BODEGUERO DOMINGO SEMANA A 07H00",
+        name: "BODEGA BODEGUERO DOMINGO SEMANA A 07:00",
         area,
         role,
         rotationGroup: "OPER_BODEG_DOMINGO",
@@ -321,7 +321,7 @@ function buildTemplatesForRole(area, role) {
         notes: `${note} Semana A con domingo extraordinario y sabado libre.`,
       }),
       template({
-        name: "BODEGA BODEGUERO DOMINGO SEMANA B 08H00",
+        name: "BODEGA BODEGUERO DOMINGO SEMANA B 08:00",
         area,
         role,
         rotationGroup: "OPER_BODEG_DOMINGO",
@@ -329,7 +329,7 @@ function buildTemplatesForRole(area, role) {
         notes: `${note} Semana B con domingo extraordinario y sabado libre.`,
       }),
       template({
-        name: "BODEGA BODEGUERO SABADO DOMINGO SEMANA A 07H00",
+        name: "BODEGA BODEGUERO SABADO DOMINGO SEMANA A 07:00",
         area,
         role,
         rotationGroup: "OPER_BODEG_FIN_SEMANA_COMPLETO",
@@ -337,7 +337,7 @@ function buildTemplatesForRole(area, role) {
         notes: `${note} Caso excepcional con sabado y domingo extraordinarios.`,
       }),
       template({
-        name: "BODEGA BODEGUERO SABADO DOMINGO SEMANA B 08H00",
+        name: "BODEGA BODEGUERO SABADO DOMINGO SEMANA B 08:00",
         area,
         role,
         rotationGroup: "OPER_BODEG_FIN_SEMANA_COMPLETO",
@@ -350,7 +350,7 @@ function buildTemplatesForRole(area, role) {
   if (area.code === "OPER") {
     return [
       template({
-        name: `BODEGA ${role.name} BASE SEMANA A 07H00`,
+        name: `BODEGA ${role.name} BASE SEMANA A 07:00`,
         area,
         role,
         rotationGroup: `OPER_${role.code}_BASE`,
@@ -358,7 +358,7 @@ function buildTemplatesForRole(area, role) {
         notes: `${note} Fin de semana libre; se asigna solo si la operacion lo requiere.`,
       }),
       template({
-        name: `BODEGA ${role.name} BASE SEMANA B 08H00`,
+        name: `BODEGA ${role.name} BASE SEMANA B 08:00`,
         area,
         role,
         rotationGroup: `OPER_${role.code}_BASE`,
@@ -366,7 +366,7 @@ function buildTemplatesForRole(area, role) {
         notes: `${note} Alternativa de entrada para escalonar cobertura.`,
       }),
       template({
-        name: `BODEGA ${role.name} SABADO SEMANA A 07H00`,
+        name: `BODEGA ${role.name} SABADO SEMANA A 07:00`,
         area,
         role,
         rotationGroup: `OPER_${role.code}_SABADO`,
@@ -374,7 +374,7 @@ function buildTemplatesForRole(area, role) {
         notes: `${note} Semana A con sabado extraordinario.`,
       }),
       template({
-        name: `BODEGA ${role.name} SABADO SEMANA B 08H00`,
+        name: `BODEGA ${role.name} SABADO SEMANA B 08:00`,
         area,
         role,
         rotationGroup: `OPER_${role.code}_SABADO`,
@@ -382,7 +382,7 @@ function buildTemplatesForRole(area, role) {
         notes: `${note} Semana B con sabado extraordinario.`,
       }),
       template({
-        name: `BODEGA ${role.name} DOMINGO SEMANA A 07H00`,
+        name: `BODEGA ${role.name} DOMINGO SEMANA A 07:00`,
         area,
         role,
         rotationGroup: `OPER_${role.code}_DOMINGO`,
@@ -390,7 +390,7 @@ function buildTemplatesForRole(area, role) {
         notes: `${note} Semana A con domingo extraordinario y sabado libre.`,
       }),
       template({
-        name: `BODEGA ${role.name} DOMINGO SEMANA B 08H00`,
+        name: `BODEGA ${role.name} DOMINGO SEMANA B 08:00`,
         area,
         role,
         rotationGroup: `OPER_${role.code}_DOMINGO`,
@@ -398,7 +398,7 @@ function buildTemplatesForRole(area, role) {
         notes: `${note} Semana B con domingo extraordinario y sabado libre.`,
       }),
       template({
-        name: `BODEGA ${role.name} SABADO DOMINGO SEMANA A 07H00`,
+        name: `BODEGA ${role.name} SABADO DOMINGO SEMANA A 07:00`,
         area,
         role,
         rotationGroup: `OPER_${role.code}_FIN_SEMANA_COMPLETO`,
@@ -406,7 +406,7 @@ function buildTemplatesForRole(area, role) {
         notes: `${note} Caso excepcional con sabado y domingo extraordinarios.`,
       }),
       template({
-        name: `BODEGA ${role.name} SABADO DOMINGO SEMANA B 08H00`,
+        name: `BODEGA ${role.name} SABADO DOMINGO SEMANA B 08:00`,
         area,
         role,
         rotationGroup: `OPER_${role.code}_FIN_SEMANA_COMPLETO`,

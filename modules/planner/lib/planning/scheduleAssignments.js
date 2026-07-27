@@ -1,6 +1,6 @@
 import { addDays, format, startOfWeek } from "date-fns";
 
-import { makeEcuadorDate } from "@/lib/datetime/ecuador";
+import { formatTimeText24, makeEcuadorDate } from "@/lib/datetime/ecuador";
 import { parseMonthKey } from "@/modules/planner/lib/planning/holidays";
 import { WEEK_DAYS } from "@/modules/planner/lib/schedules";
 
@@ -416,14 +416,14 @@ export function serializeScheduleAssignment(assignment) {
     roleCode: assignment.roleCode || "",
     roleName: assignment.roleName || "",
     templateId: toId(assignment.template),
-    templateName: assignment.templateName || "",
+    templateName: formatTimeText24(assignment.templateName),
     rotationGroup: assignment.rotationGroup || "",
     generatedDays,
     weeklyPlan: (assignment.weeklyPlan || []).map((week) => ({
       weekStartKey: week.weekStartKey || "",
       label: week.label || "",
       templateId: toId(week.template),
-      templateName: week.templateName || "",
+      templateName: formatTimeText24(week.templateName),
       rotationGroup: week.rotationGroup || "",
       variantType: week.variantType || "custom",
       startTime: week.startTime || "",

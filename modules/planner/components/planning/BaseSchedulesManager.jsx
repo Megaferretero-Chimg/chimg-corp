@@ -473,7 +473,7 @@ export default function BaseSchedulesManager() {
             type="search"
             value={templateFilters.query}
             onChange={(event) => setTemplateFilters((current) => ({ ...current, query: event.target.value }))}
-            placeholder="08H00 A 12H00 13H00 A 17H00"
+            placeholder="08:00 A 12:00 13:00 A 17:00"
           />
           <button type="button" className={styles.ghostButton} onClick={clearTemplateFilters}>
             <RotateCcw size={15} />

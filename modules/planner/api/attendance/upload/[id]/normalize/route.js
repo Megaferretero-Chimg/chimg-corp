@@ -30,6 +30,10 @@ function normalizeStoredFileToBuffer(value) {
   return Buffer.from(value);
 }
 
+function toPlainObject(value) {
+  return typeof value?.toObject === "function" ? value.toObject() : value;
+}
+
 function buildReconciliationSummary(employees = []) {
   return employees.reduce(
     (summary, employee) => {
@@ -114,27 +118,31 @@ function getPunchDiagnostics(punches = []) {
 }
 
 function enrichNormalizedSnapshotDiagnostics(normalizedSnapshot = {}) {
-  const employees = (normalizedSnapshot.employees || []).map((employee) => {
-    const diagnostics = getPunchDiagnostics(employee.punches || []);
+  const plainSnapshot = toPlainObject(normalizedSnapshot) || {};
+  const employees = (plainSnapshot.employees || []).map((employee) => {
+    const plainEmployee = toPlainObject(employee) || {};
+    const punches = Array.isArray(plainEmployee.punches) ? plainEmployee.punches : [];
+    const diagnostics = getPunchDiagnostics(punches);
 
     return {
-      ...employee,
+      ...plainEmployee,
+      punches,
       duplicateMinuteCount: diagnostics.duplicateMinuteCount,
       irregularDayCount: diagnostics.irregularDays.length,
       irregularDays: diagnostics.irregularDays.slice(0, 12),
-      punchCount: employee.punches?.length ?? employee.punchCount ?? 0,
+      punchCount: punches.length || plainEmployee.punchCount || 0,
     };
   });
   const reconciliationSummary = buildReconciliationSummary(employees);
 
   return {
-    ...normalizedSnapshot,
+    ...plainSnapshot,
     employees,
     summary: {
-      ...(normalizedSnapshot.summary || {}),
-      totalEmployees: normalizedSnapshot.summary?.totalEmployees ?? employees.length,
+      ...(plainSnapshot.summary || {}),
+      totalEmployees: plainSnapshot.summary?.totalEmployees ?? employees.length,
       totalPunches:
-        normalizedSnapshot.summary?.totalPunches ??
+        plainSnapshot.summary?.totalPunches ??
         employees.reduce((total, employee) => total + (employee.punchCount || 0), 0),
       ...reconciliationSummary,
     },
@@ -356,6 +364,124 @@ export async function GET(_request, context) {
 
     return NextResponse.json(
       { error: error.message || "No se pudo normalizar el archivo seleccionado." },
+      { status: 500 },
+    );
+  }
+}
+
+export async function PATCH(request, context) {
+  try {
+    const authenticated = await isAuthenticated();
+
+    if (!authenticated) {
+      return NextResponse.json({ error: "Sesión inválida o expirada." }, { status: 401 });
+    }
+
+    const params = await context.params;
+    const uploadId = String(params?.id || "").trim();
+    const body = await request.json();
+    const biometricCode = String(body?.biometricCode || "").trim();
+    const employeeId = String(body?.employeeId || "").trim();
+
+    if (!uploadId || !biometricCode || !employeeId) {
+      return NextResponse.json(
+        { error: "Debes indicar la carga, el código biométrico y el empleado." },
+        { status: 400 },
+      );
+    }
+
+    await connectToDatabase();
+
+    const [upload, employee] = await Promise.all([
+      AttendanceUpload.findById(uploadId),
+      Employee.findById(employeeId).lean(),
+    ]);
+
+    if (!upload) {
+      return NextResponse.json({ error: "Archivo cargado no encontrado." }, { status: 404 });
+    }
+
+    if (!employee) {
+      return NextResponse.json({ error: "Empleado no encontrado." }, { status: 404 });
+    }
+
+    if (!upload.normalizedSnapshot?.employees?.length) {
+      const originalFileBuffer = normalizeStoredFileToBuffer(upload.originalFile);
+
+      if (!originalFileBuffer.length) {
+        return NextResponse.json(
+          { error: "El archivo guardado no tiene contenido legible." },
+          { status: 400 },
+        );
+      }
+
+      const parsedFile = parseAttendanceFile({
+        buffer: originalFileBuffer,
+        fileName: upload.fileName,
+        branchCode: upload.branchCode || "",
+        branchName: upload.branchName || "",
+        month: upload.month || null,
+        year: upload.year || null,
+      });
+
+      upload.normalizedSnapshot = await buildNormalizedSnapshot(parsedFile);
+    }
+
+    const snapshot = toPlainObject(upload.normalizedSnapshot);
+    const normalizedEmployee = (snapshot.employees || []).find(
+      (entry) => String(entry.biometricCode || "").trim() === biometricCode,
+    );
+
+    if (!normalizedEmployee) {
+      return NextResponse.json(
+        { error: "No se encontraron picadas para ese código biométrico." },
+        { status: 404 },
+      );
+    }
+
+    const hasActivePunchDate = (normalizedEmployee.punches || []).some((punch) =>
+      isEmployeeActiveOnDate(employee, formatEcuadorDateKey(punch.punchedAt)),
+    );
+
+    if (!hasActivePunchDate) {
+      return NextResponse.json(
+        { error: "El empleado seleccionado no estaba activo en las fechas de esas picadas." },
+        { status: 409 },
+      );
+    }
+
+    normalizedEmployee.fullName = employee.fullName || normalizedEmployee.fullName;
+    normalizedEmployee.department = [employee.areaName, employee.roleName].filter(Boolean).join(" · ");
+    normalizedEmployee.matchedEmployeeId = employee._id.toString();
+    normalizedEmployee.matchedEmployeeName = employee.fullName || "";
+    normalizedEmployee.matchedEmployeeIsActive = true;
+    normalizedEmployee.matchStatus = "matched";
+
+    upload.normalizedSnapshot = enrichNormalizedSnapshotDiagnostics(snapshot);
+    upload.normalizedAt = upload.normalizedAt || new Date();
+    upload.markModified("normalizedSnapshot");
+
+    const wasPublished = Boolean(upload.punchesPublishedAt);
+    let publishResult = null;
+
+    if (wasPublished) {
+      publishResult = await publishAttendancePunches(upload);
+    } else {
+      await upload.save();
+    }
+
+    return NextResponse.json({
+      ...buildNormalizedPayload(upload, upload.normalizedSnapshot, "saved"),
+      message: wasPublished
+        ? `Empleado asignado. ${buildPublishMessage(publishResult)}`
+        : "Empleado asignado correctamente. Las picadas están listas para publicar.",
+      publishSummary: publishResult,
+    });
+  } catch (error) {
+    console.error("attendance-normalize-manual-match-error", error);
+
+    return NextResponse.json(
+      { error: error.message || "No se pudo asignar el empleado a las picadas." },
       { status: 500 },
     );
   }

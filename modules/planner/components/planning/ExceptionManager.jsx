@@ -82,6 +82,7 @@ const FLOW_OPTIONS = EXCEPTION_FLOWS.map((flow) => ({
   searchText: FLOW_GROUPS.find((group) => group.value === flow.category)?.label || "",
 }));
 const FLOW_VALUES = new Set(EXCEPTION_FLOWS.map((flow) => flow.value));
+const NON_APPROVED_RESOLUTIONS = new Set(["pending", "discount_day", "no_action"]);
 const WEEKDAY_OPTIONS = [
   { value: 1, label: "Lun" },
   { value: 2, label: "Mar" },
@@ -322,8 +323,11 @@ export default function ExceptionManager({
     () => (onlyPending ? exceptions.filter((exception) => exception.resolution === "pending") : exceptions),
     [exceptions, onlyPending],
   );
-  const approvedCount = scopedExceptions.filter((exception) => exception.resolution !== "pending" && exception.resolution !== "discount_day").length;
+  const approvedCount = scopedExceptions.filter((exception) =>
+    !NON_APPROVED_RESOLUTIONS.has(exception.resolution),
+  ).length;
   const discountCount = scopedExceptions.filter((exception) => exception.resolution === "discount_day").length;
+  const rejectedCount = scopedExceptions.filter((exception) => exception.resolution === "no_action").length;
   const pendingCount = scopedExceptions.filter((exception) => exception.resolution === "pending").length;
   const filteredExceptions = useMemo(() => {
     if (exceptionEmployeeId) {
@@ -1054,7 +1058,7 @@ export default function ExceptionManager({
 
           {isLoading ? (
             <div className={styles.summaryGrid} aria-hidden="true">
-              {Array.from({ length: 4 }, (_, index) => (
+              {Array.from({ length: 5 }, (_, index) => (
                 <div key={index} className={styles.metricSkeleton}>
                   <span className={styles.skeletonLineShort} />
                   <span className={styles.skeletonNumber} />
@@ -1072,8 +1076,12 @@ export default function ExceptionManager({
                 <strong>{pendingCount}</strong>
               </div>
               <div className={styles.metric}>
-                <span>Sin descuento</span>
+                <span>Aprobadas</span>
                 <strong>{approvedCount}</strong>
+              </div>
+              <div className={styles.metric}>
+                <span>Rechazadas</span>
+                <strong>{rejectedCount}</strong>
               </div>
               <div className={styles.metric}>
                 <span>Con descuento</span>

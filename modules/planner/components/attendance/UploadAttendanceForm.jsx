@@ -5,6 +5,9 @@ import { useCallback, useEffect, useRef, useState, useTransition } from "react";
 import { format } from "date-fns";
 import { es } from "date-fns/locale";
 import {
+  CheckCircle2,
+  ChevronLeft,
+  ChevronRight,
   Clock3,
   FileSpreadsheet,
   History,
@@ -75,6 +78,31 @@ function formatPeriod(month, year) {
   }
 
   return format(date, "MMMM yyyy", { locale: es });
+}
+
+function formatMonthKeyLabel(value) {
+  const match = String(value || "").match(/^(\d{4})-(\d{2})$/);
+
+  if (!match) {
+    return "Mes no definido";
+  }
+
+  const date = new Date(Number(match[1]), Number(match[2]) - 1, 1);
+  const label = format(date, "MMMM 'de' yyyy", { locale: es });
+
+  return `${label.charAt(0).toUpperCase()}${label.slice(1)}`;
+}
+
+function moveMonth(value, amount) {
+  const match = String(value || "").match(/^(\d{4})-(\d{2})$/);
+
+  if (!match) {
+    return formatEcuadorMonthKey();
+  }
+
+  const date = new Date(Number(match[1]), Number(match[2]) - 1 + amount, 1);
+
+  return format(date, "yyyy-MM");
 }
 
 function formatAuditActor(upload) {
@@ -356,16 +384,30 @@ export default function UploadAttendanceForm() {
                       ))}
                     </SelectInput>
 
-                    <label className={styles.field}>
+                    <div className={`${styles.field} ${styles.monthField}`}>
                       <span className={styles.label}>Mes</span>
-                      <input
-                        type="month"
-                        value={monthKey}
-                        onChange={(event) => setMonthKey(event.target.value)}
-                        className={styles.input}
-                        disabled={isUploadLocked || isPending}
-                      />
-                    </label>
+                      <div className={styles.monthSlider}>
+                        <button
+                          type="button"
+                          aria-label="Mes anterior"
+                          title="Mes anterior"
+                          onClick={() => setMonthKey((current) => moveMonth(current, -1))}
+                          disabled={isUploadLocked || isPending}
+                        >
+                          <ChevronLeft size={17} aria-hidden="true" />
+                        </button>
+                        <output aria-live="polite">{formatMonthKeyLabel(monthKey)}</output>
+                        <button
+                          type="button"
+                          aria-label="Mes siguiente"
+                          title="Mes siguiente"
+                          onClick={() => setMonthKey((current) => moveMonth(current, 1))}
+                          disabled={isUploadLocked || isPending}
+                        >
+                          <ChevronRight size={17} aria-hidden="true" />
+                        </button>
+                      </div>
+                    </div>
                   </div>
 
                   <div
@@ -531,7 +573,19 @@ export default function UploadAttendanceForm() {
                           </p>
                         </div>
                         <div className={styles.historyItemSide}>
-                          <span className={styles.historyStatus}>{formatUploadStatus(upload.status)}</span>
+                          <div className={styles.historyStatuses}>
+                            <span className={styles.historyStatus}>
+                              {formatUploadStatus(upload.status)}
+                            </span>
+                            {upload.punchesPublishedAt ? (
+                              <span className={styles.historyPublishedStatus}>
+                                <CheckCircle2 size={14} />
+                                Publicadas · {formatDateTime(upload.punchesPublishedAt)}
+                              </span>
+                            ) : (
+                              <span className={styles.historyPendingStatus}>Sin publicar</span>
+                            )}
+                          </div>
                           <Link href={planningModulePath(`/attendance/uploads/${upload.id}`)} className={styles.historyAction}>
                             Revisar
                           </Link>

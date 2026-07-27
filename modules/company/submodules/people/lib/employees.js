@@ -189,19 +189,23 @@ function normalizeDni(value, documentType = "cedula") {
   return normalizedValue;
 }
 
-function normalizeBiometricAliases(body) {
-  const aliases = Array.isArray(body?.biometricAliases) ? body.biometricAliases : [];
+export function getEmployeeBiometricEntries(employee = {}) {
+  const primaryEntry = {
+    branchCode: String(employee?.branchCode || "").trim().toUpperCase(),
+    branchName: String(employee?.branchName || employee?.branchCode || "").trim().toUpperCase(),
+    biometricCode: String(employee?.biometricCode || "").trim(),
+  };
+  const aliases = Array.isArray(employee?.biometricAliases) ? employee.biometricAliases : [];
   const seenKeys = new Set();
 
-  return aliases
-    .map((alias) => ({
-      branchCode: String(alias?.branchCode || "").trim().toUpperCase(),
-      branchName: String(alias?.branchName || alias?.branchCode || "").trim().toUpperCase(),
-      biometricCode: String(alias?.biometricCode || "").trim(),
-    }))
-    .filter((alias) => alias.branchCode && alias.biometricCode)
-    .filter((alias) => {
-      const key = `${alias.branchCode}|${alias.biometricCode}`;
+  return [primaryEntry, ...aliases.map((alias) => ({
+    branchCode: String(alias?.branchCode || "").trim().toUpperCase(),
+    branchName: String(alias?.branchName || alias?.branchCode || "").trim().toUpperCase(),
+    biometricCode: String(alias?.biometricCode || "").trim(),
+  }))]
+    .filter((entry) => entry.branchCode && entry.biometricCode)
+    .filter((entry) => {
+      const key = `${entry.branchCode}|${entry.biometricCode}`;
 
       if (seenKeys.has(key)) {
         return false;
@@ -209,6 +213,36 @@ function normalizeBiometricAliases(body) {
 
       seenKeys.add(key);
       return true;
+    });
+}
+
+function normalizeBiometricAliases(body, primaryEntry) {
+  const aliases = Array.isArray(body?.biometricAliases) ? body.biometricAliases : [];
+  const seenKeys = new Set();
+  const primaryKey = primaryEntry?.branchCode && primaryEntry?.biometricCode
+    ? `${primaryEntry.branchCode}|${primaryEntry.biometricCode}`
+    : "";
+  const normalizedAliases = aliases.map((alias) => ({
+      branchCode: String(alias?.branchCode || "").trim().toUpperCase(),
+      branchName: String(alias?.branchName || alias?.branchCode || "").trim().toUpperCase(),
+      biometricCode: String(alias?.biometricCode || "").trim(),
+    }));
+
+  if (normalizedAliases.some((alias) => Boolean(alias.branchCode) !== Boolean(alias.biometricCode))) {
+    throw new Error("Cada código biométrico adicional debe indicar la sucursal y el código.");
+  }
+
+  return normalizedAliases
+    .filter((alias) => alias.branchCode && alias.biometricCode)
+    .map((alias) => {
+      const key = `${alias.branchCode}|${alias.biometricCode}`;
+
+      if (key === primaryKey || seenKeys.has(key)) {
+        throw new Error("No puedes repetir el mismo código biométrico para una sucursal.");
+      }
+
+      seenKeys.add(key);
+      return alias;
     });
 }
 
@@ -241,6 +275,8 @@ export function normalizeEmployeePayload(body, { role, existingEmployee } = {}) 
   const roleName = String(primaryRole?.name || body?.roleName || "").trim().toUpperCase();
 
   const documentType = String(body?.documentType || "cedula").trim().toLowerCase() || "cedula";
+  const biometricCode = String(body?.biometricCode || "").trim();
+  const primaryBiometricEntry = { branchCode, biometricCode };
 
   return {
     documentType,
@@ -263,8 +299,8 @@ export function normalizeEmployeePayload(body, { role, existingEmployee } = {}) 
     salary,
     birthDate: normalizeDateValue(body?.birthDate, "fecha de nacimiento"),
     employmentStartDate: normalizeDateValue(body?.employmentStartDate, "fecha de ingreso"),
-    biometricCode: String(body?.biometricCode || "").trim(),
-    biometricAliases: normalizeBiometricAliases(body),
+    biometricCode,
+    biometricAliases: normalizeBiometricAliases(body, primaryBiometricEntry),
     isActive: body?.isActive === undefined
       ? existingEmployee?.isActive !== false
       : Boolean(body.isActive),

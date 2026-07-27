@@ -20,18 +20,26 @@ function punchBelongsToUploadPeriod(punch, upload) {
 }
 
 async function findActiveEmployee(normalizedEmployee, upload) {
+  const matchedEmployeeId = String(normalizedEmployee.matchedEmployeeId || "").trim();
   const biometricCode = String(normalizedEmployee.biometricCode || "").trim();
   const branchCode = String(
     normalizedEmployee.branchCode || upload.branchCode || "",
   ).trim().toUpperCase();
 
-  if (!biometricCode || !branchCode) {
-    return null;
-  }
-
   const activityQuery = isUploadPeriod(upload.month, upload.year)
     ? buildEmployeeActiveInMonthQuery(makeEcuadorDate(upload.year, upload.month - 1, 1))
     : { isActive: { $ne: false } };
+
+  if (matchedEmployeeId) {
+    return Employee.findOne({
+      ...activityQuery,
+      _id: matchedEmployeeId,
+    });
+  }
+
+  if (!biometricCode || !branchCode) {
+    return null;
+  }
 
   return Employee.findOne({
     ...activityQuery,

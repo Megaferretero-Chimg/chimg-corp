@@ -1291,35 +1291,37 @@ function buildPlanningOverlayIndexes({ exceptions = [], vacations = [] }) {
     });
   });
 
-  exceptions.forEach((exception) => {
-    getDateRangeKeys(exception.dateKey, exception.endDateKey || exception.dateKey).forEach((dateKey) => {
-      const key = `${exception.employeeId}|${dateKey}`;
-      const current = byEmployeeDate.get(key);
+  exceptions
+    .filter((exception) => exception.resolution !== "no_action")
+    .forEach((exception) => {
+      getDateRangeKeys(exception.dateKey, exception.endDateKey || exception.dateKey).forEach((dateKey) => {
+        const key = `${exception.employeeId}|${dateKey}`;
+        const current = byEmployeeDate.get(key);
 
-      if (current?.priority > 1) return;
+        if (current?.priority > 1) return;
 
-      const importedLabel = cleanImportedNote(exception.notes);
-      const isExternalWork = exception.type === "outside_work" || exception.effect === "external_work";
-      const shortLabel = isExternalWork
-        ? EXTERNAL_WORK_LABEL
-        : exception.destination || exception.resolutionNotes || importedLabel || exception.typeLabel || "Excepcion";
+        const importedLabel = cleanImportedNote(exception.notes);
+        const isExternalWork = exception.type === "outside_work" || exception.effect === "external_work";
+        const shortLabel = isExternalWork
+          ? EXTERNAL_WORK_LABEL
+          : exception.destination || exception.resolutionNotes || importedLabel || exception.typeLabel || "Excepcion";
 
-      byEmployeeDate.set(key, {
-        id: exception.id,
-        kind: "exception",
-        priority: 1,
-        dateKey,
-        employeeId: exception.employeeId,
-        title: shortLabel,
-        shortLabel,
-        statusLabel: exception.status === "resolved" ? "Resuelta" : "Pendiente",
-        typeLabel: exception.typeLabel || "Excepcion",
-        resolutionLabel: exception.resolutionLabel || "",
-        notes: exception.notes || "",
-        raw: exception,
+        byEmployeeDate.set(key, {
+          id: exception.id,
+          kind: "exception",
+          priority: 1,
+          dateKey,
+          employeeId: exception.employeeId,
+          title: shortLabel,
+          shortLabel,
+          statusLabel: exception.status === "resolved" ? "Resuelta" : "Pendiente",
+          typeLabel: exception.typeLabel || "Excepcion",
+          resolutionLabel: exception.resolutionLabel || "",
+          notes: exception.notes || "",
+          raw: exception,
+        });
       });
     });
-  });
 
   return byEmployeeDate;
 }

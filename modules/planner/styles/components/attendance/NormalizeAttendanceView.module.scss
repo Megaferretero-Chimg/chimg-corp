@@ -550,10 +550,63 @@
   white-space: nowrap;
 }
 
+.manualAssignment {
+  display: grid;
+  gap: 0.85rem;
+  border-bottom: 1px solid #e8eef8;
+  background: #fff8e8;
+  padding: 1rem 1.1rem;
+}
+
+.manualAssignmentHeader {
+  display: grid;
+  gap: 0.2rem;
+
+  strong {
+    color: #744b00;
+  }
+
+  span {
+    color: #786441;
+    font-size: var(--font-size-sm);
+  }
+}
+
+.manualAssignmentControls {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: end;
+  gap: 0.75rem;
+}
+
+.assignEmployeeButton {
+  min-height: 2.75rem;
+  border: 1px solid #1550a0;
+  border-radius: 0.75rem;
+  background: #1550a0;
+  color: #fff;
+  cursor: pointer;
+  font: inherit;
+  font-weight: 800;
+  padding: 0.65rem 1rem;
+  white-space: nowrap;
+
+  &:disabled {
+    cursor: not-allowed;
+    opacity: 0.55;
+  }
+}
+
 .punchList {
   display: grid;
   gap: 1rem;
   padding: 1rem 1.1rem 1.1rem;
+}
+
+@media (max-width: 720px) {
+  .manualAssignmentControls {
+    grid-template-columns: 1fr;
+  }
 }
 
 .weekGroup {

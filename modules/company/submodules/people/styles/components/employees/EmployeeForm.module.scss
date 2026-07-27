@@ -15,6 +15,23 @@
   margin-top: 0.35rem;
 }
 
+.formSelect {
+  min-width: 0;
+}
+
+.formSelectControl {
+  min-height: 2.75rem;
+  border-color: rgba(16, 33, 62, 0.12);
+  border-radius: 0.7rem;
+}
+
+.formSelectButton {
+  min-height: 2.65rem;
+  padding: 0.65rem 0.78rem;
+  color: #10213e;
+  font-weight: 750;
+}
+
 .roleAutocomplete {
   position: relative;
   min-width: 0;
@@ -193,4 +210,124 @@
 .roleHint {
   color: #6a7ea2;
   font-size: var(--font-size-xs);
+}
+
+.biometricSection {
+  grid-column: 1 / -1;
+  display: grid;
+  gap: 0.8rem;
+  border: 1px solid rgba(16, 33, 62, 0.1);
+  border-radius: 0.9rem;
+  background: #f8fbff;
+  padding: 0.9rem;
+}
+
+.biometricHeader {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+
+  > div {
+    display: grid;
+    gap: 0.2rem;
+  }
+
+  strong {
+    color: #10213e;
+    font-size: var(--font-size-sm);
+  }
+
+  span {
+    color: #6a7ea2;
+    font-size: var(--font-size-xs);
+  }
+}
+
+.addBiometricButton,
+.removeBiometricButton {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid rgba(0, 95, 178, 0.18);
+  background: #fff;
+  color: #17428c;
+  cursor: pointer;
+}
+
+.addBiometricButton {
+  gap: 0.4rem;
+  border-radius: 999px;
+  padding: 0.55rem 0.75rem;
+  font: inherit;
+  font-size: var(--font-size-xs);
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+.biometricAliases {
+  display: grid;
+  gap: 0.6rem;
+}
+
+.biometricAliasRow {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(10rem, 0.7fr) auto;
+  align-items: end;
+  gap: 0.6rem;
+
+  label {
+    display: grid;
+    gap: 0.3rem;
+  }
+
+  label span {
+    color: #52677f;
+    font-size: var(--font-size-xs);
+    font-weight: 750;
+  }
+
+  input,
+  select {
+    min-width: 0;
+    min-height: 2.55rem;
+    border: 1px solid rgba(16, 33, 62, 0.12);
+    border-radius: 0.68rem;
+    background: #fff;
+    color: #10213e;
+    font: inherit;
+    padding: 0.6rem 0.72rem;
+  }
+}
+
+.removeBiometricButton {
+  width: 2.55rem;
+  height: 2.55rem;
+  border-radius: 0.68rem;
+  color: #a12a2a;
+}
+
+.biometricEmpty {
+  margin: 0;
+  color: #6a7ea2;
+  font-size: var(--font-size-xs);
+}
+
+@media (max-width: 640px) {
+  .biometricHeader {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .addBiometricButton {
+    align-self: flex-start;
+  }
+
+  .biometricAliasRow {
+    grid-template-columns: 1fr auto;
+
+    label:first-child {
+      grid-column: 1 / -1;
+    }
+  }
 }

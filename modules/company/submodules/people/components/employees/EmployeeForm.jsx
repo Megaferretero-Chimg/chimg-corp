@@ -3,16 +3,17 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { BriefcaseBusiness, ChevronDown, Plus, Search, X } from "lucide-react";
 
+import SelectInput from "@/components/ui/SelectInput";
 import styles from "@/modules/company/submodules/people/styles/components/employees/EmployeeForm.module.scss";
 
 const DOCUMENT_TYPES = [
-  { value: "cedula", label: "Cedula" },
+  { value: "cedula", label: "Cédula" },
   { value: "pasaporte", label: "Pasaporte" },
 ];
 
 const EMPLOYMENT_RELATIONS = [
-  { value: "nomina", label: "Nomina" },
-  { value: "prestacion_servicios", label: "Prestacion de servicios" },
+  { value: "nomina", label: "Nómina" },
+  { value: "prestacion_servicios", label: "Prestación de servicios" },
 ];
 
 function normalizeSearch(value) {
@@ -110,23 +111,63 @@ export default function EmployeeForm({
     onRoleChange(form.roleCode, nextCodes);
   }
 
+  function updateBiometricAlias(index, field, value) {
+    const aliases = [...(form.biometricAliases || [])];
+    const current = aliases[index] || {};
+    const nextAlias = { ...current, [field]: value };
+
+    if (field === "branchCode") {
+      const branch = branches.find((candidate) => candidate.code === value);
+      nextAlias.branchName = branch?.name || "";
+    }
+
+    aliases[index] = nextAlias;
+    onFieldChange("biometricAliases", aliases);
+  }
+
+  function addBiometricAlias() {
+    const usedBranchCodes = new Set([
+      form.branchCode,
+      ...(form.biometricAliases || []).map((alias) => alias.branchCode),
+    ]);
+    const branch = branches.find((candidate) => !usedBranchCodes.has(candidate.code));
+
+    onFieldChange("biometricAliases", [
+      ...(form.biometricAliases || []),
+      {
+        branchCode: branch?.code || "",
+        branchName: branch?.name || "",
+        biometricCode: "",
+      },
+    ]);
+  }
+
+  function removeBiometricAlias(index) {
+    onFieldChange(
+      "biometricAliases",
+      (form.biometricAliases || []).filter((_, aliasIndex) => aliasIndex !== index),
+    );
+  }
+
   return (
     <form onSubmit={onSubmit} className={`catalog-form-grid ${styles.formGrid}`}>
       <fieldset className={styles.formFields} disabled={isSaving}>
-      <label className="catalog-field">
-        <span className="catalog-label">Documento de identidad</span>
-        <select
-          value={form.documentType}
-          onChange={(event) => onFieldChange("documentType", event.target.value)}
-          className="catalog-select"
-        >
-          {DOCUMENT_TYPES.map((documentType) => (
-            <option key={documentType.value} value={documentType.value}>
-              {documentType.label}
-            </option>
-          ))}
-        </select>
-      </label>
+      <SelectInput
+        label="Documento de identidad"
+        value={form.documentType}
+        onChange={(event) => onFieldChange("documentType", event.target.value)}
+        disabled={isSaving}
+        className={`catalog-field ${styles.formSelect}`}
+        labelClassName="catalog-label"
+        controlClassName={styles.formSelectControl}
+        selectClassName={styles.formSelectButton}
+      >
+        {DOCUMENT_TYPES.map((documentType) => (
+          <option key={documentType.value} value={documentType.value}>
+            {documentType.label}
+          </option>
+        ))}
+      </SelectInput>
 
       <label className="catalog-field">
         <span className="catalog-label">DNI</span>
@@ -180,36 +221,40 @@ export default function EmployeeForm({
         />
       </label>
 
-      <label className="catalog-field">
-        <span className="catalog-label">Relacion de dependencia</span>
-        <select
-          value={form.employmentRelation}
-          onChange={(event) => onFieldChange("employmentRelation", event.target.value)}
-          className="catalog-select"
-        >
-          {EMPLOYMENT_RELATIONS.map((relation) => (
-            <option key={relation.value} value={relation.value}>
-              {relation.label}
-            </option>
-          ))}
-        </select>
-      </label>
+      <SelectInput
+        label="Relación de dependencia"
+        value={form.employmentRelation}
+        onChange={(event) => onFieldChange("employmentRelation", event.target.value)}
+        disabled={isSaving}
+        className={`catalog-field ${styles.formSelect}`}
+        labelClassName="catalog-label"
+        controlClassName={styles.formSelectControl}
+        selectClassName={styles.formSelectButton}
+      >
+        {EMPLOYMENT_RELATIONS.map((relation) => (
+          <option key={relation.value} value={relation.value}>
+            {relation.label}
+          </option>
+        ))}
+      </SelectInput>
 
-      <label className="catalog-field">
-        <span className="catalog-label">Sucursal</span>
-        <select
-          value={form.branchId}
-          onChange={(event) => onBranchChange(event.target.value)}
-          className="catalog-select"
-        >
-          <option value="">Selecciona una sucursal</option>
-          {branches.map((branch) => (
-            <option key={branch.id} value={branch.id}>
-              {branch.name}
-            </option>
-          ))}
-        </select>
-      </label>
+      <SelectInput
+        label="Sucursal"
+        value={form.branchId}
+        onChange={(event) => onBranchChange(event.target.value)}
+        disabled={isSaving}
+        className={`catalog-field ${styles.formSelect}`}
+        labelClassName="catalog-label"
+        controlClassName={styles.formSelectControl}
+        selectClassName={styles.formSelectButton}
+      >
+        <option value="">Selecciona una sucursal</option>
+        {branches.map((branch) => (
+          <option key={branch.id} value={branch.id}>
+            {branch.name}
+          </option>
+        ))}
+      </SelectInput>
 
       <div className="catalog-field">
         <span className="catalog-label">Cargo principal</span>
@@ -342,14 +387,76 @@ export default function EmployeeForm({
       </label>
 
       <label className="catalog-field">
-        <span className="catalog-label">Biometrico</span>
+        <span className="catalog-label">Código biométrico principal</span>
         <input
           value={form.biometricCode}
           onChange={(event) => onFieldChange("biometricCode", event.target.value)}
           className="catalog-input"
-          placeholder="Codigo del biometrico"
+          placeholder="Código en la sucursal principal"
         />
       </label>
+
+      <div className={styles.biometricSection}>
+        <div className={styles.biometricHeader}>
+          <div>
+            <strong>Códigos biométricos adicionales</strong>
+            <span>
+              Asigna los códigos que identifica a esta persona en otras sucursales.
+            </span>
+          </div>
+          <button type="button" onClick={addBiometricAlias} className={styles.addBiometricButton}>
+            <Plus size={15} />
+            Agregar código
+          </button>
+        </div>
+
+        {(form.biometricAliases || []).length ? (
+          <div className={styles.biometricAliases}>
+            {(form.biometricAliases || []).map((alias, index) => (
+              <div
+                key={`${alias.branchCode || "branch"}-${index}`}
+                className={styles.biometricAliasRow}
+              >
+                <label>
+                  <span>Sucursal</span>
+                  <select
+                    value={alias.branchCode || ""}
+                    onChange={(event) => updateBiometricAlias(index, "branchCode", event.target.value)}
+                  >
+                    <option value="">Seleccionar sucursal</option>
+                    {branches.map((branch) => (
+                      <option key={branch.id || branch.code} value={branch.code}>
+                        {branch.name}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label>
+                  <span>Código</span>
+                  <input
+                    value={alias.biometricCode || ""}
+                    onChange={(event) => updateBiometricAlias(index, "biometricCode", event.target.value)}
+                    placeholder="Código biométrico"
+                  />
+                </label>
+                <button
+                  type="button"
+                  className={styles.removeBiometricButton}
+                  onClick={() => removeBiometricAlias(index)}
+                  aria-label="Eliminar código biométrico"
+                  title="Eliminar código"
+                >
+                  <X size={16} />
+                </button>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <p className={styles.biometricEmpty}>
+            No hay códigos adicionales. El código principal se usa en la sucursal del empleado.
+          </p>
+        )}
+      </div>
 
       </fieldset>
 

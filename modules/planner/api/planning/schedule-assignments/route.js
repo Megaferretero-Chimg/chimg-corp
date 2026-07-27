@@ -661,6 +661,7 @@ export async function GET(request) {
 
     const exceptionOverlayQuery = weekDateKeys.length ? {
       status: { $ne: "void" },
+      resolution: { $ne: "no_action" },
       $or: [
         { dateKey: { $in: weekDateKeys } },
         { dateKey: { $lte: weekDateKeys.at(-1) }, endDateKey: { $gte: weekDateKeys[0] } },

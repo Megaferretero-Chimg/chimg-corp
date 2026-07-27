@@ -17,7 +17,12 @@ import ConfirmDialog from "@/components/ui/ConfirmDialog";
 import FloatingNotice from "@/components/ui/FloatingNotice";
 import SelectInput from "@/components/ui/SelectInput";
 import TimeInput24 from "@/components/ui/TimeInput24";
-import { formatEcuadorDateTimeLabel, formatEcuadorMonthKey, formatTime24 } from "@/lib/datetime/ecuador";
+import {
+  formatEcuadorDateTimeLabel,
+  formatEcuadorMonthKey,
+  formatTime24,
+  formatTimeText24,
+} from "@/lib/datetime/ecuador";
 import { calculatePayrollAdditionalRate } from "@/modules/planner/lib/payroll/rates";
 import styles from "@/modules/planner/styles/components/attendance/AttendanceComparisonDetail.module.scss";
 
@@ -43,6 +48,14 @@ function formatMinutes(value) {
 
 function formatScheduleHour(value) {
   return formatTime24(value);
+}
+
+function normalizeScheduleText(value) {
+  return formatTimeText24(value).replace(/\s+/g, " ").trim();
+}
+
+function scheduleTextsMatch(left, right) {
+  return normalizeScheduleText(left).toUpperCase() === normalizeScheduleText(right).toUpperCase();
 }
 
 function formatDecisionTimestamp(value) {
@@ -285,7 +298,7 @@ function scheduleTemplateOptionsForDay(employee, templates = [], day) {
 
       return {
         id: template.id,
-        name: template.name || "Plantilla",
+        name: normalizeScheduleText(template.name) || "Plantilla",
         scheduleLabel,
         row,
         distance: templateDistanceFromPunches(punchMinutes, row),
@@ -3390,8 +3403,10 @@ export default function AttendanceComparisonDetail({ employeeId, initialFilters 
                           options={exceptionTemplateOptions.map((option) => ({
                             value: option.id,
                             label: `${option.name}${option.isRecommended ? " (más cercana)" : ""}`,
-                            description: option.scheduleLabel,
-                            searchText: option.scheduleLabel,
+                            description: scheduleTextsMatch(option.name, option.scheduleLabel)
+                              ? ""
+                              : option.scheduleLabel,
+                            searchText: [option.name, option.scheduleLabel].filter(Boolean).join(" "),
                           }))}
                           placeholder={exceptionTemplateOptions.length ? "Selecciona una plantilla" : "Horario manual"}
                           searchPlaceholder="Buscar plantilla por nombre u horario"

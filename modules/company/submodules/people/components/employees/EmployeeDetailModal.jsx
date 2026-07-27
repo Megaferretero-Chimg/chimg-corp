@@ -58,6 +58,14 @@ export default function EmployeeDetailModal({ employee, onClose, onEdit, onDelet
     ["Numero de contacto", employee?.phone],
     ["Direccion", employee?.address],
   ];
+  const biometricCodes = [
+    employee?.biometricCode
+      ? `${employee.branchName || employee.branchCode || "Sucursal principal"}: ${employee.biometricCode}`
+      : "",
+    ...(employee?.biometricAliases || []).map((alias) =>
+      `${alias.branchName || alias.branchCode}: ${alias.biometricCode}`,
+    ),
+  ].filter(Boolean);
   const baseWorkDetails = [
     ["Relacion", EMPLOYMENT_RELATION_LABELS[employee?.employmentRelation] || "Nomina"],
     ["Sucursal", employee?.branchName || employee?.branch],
@@ -66,7 +74,7 @@ export default function EmployeeDetailModal({ employee, onClose, onEdit, onDelet
     ["Funciones habilitadas", (employee?.roleAssignments || []).map((role) => role.name).join(", ")],
     ["Area", employee?.areaName],
     ["Sueldo", formatMoney(employee?.salary)],
-    ["Biometrico", employee?.biometricCode],
+    ["Códigos biométricos", biometricCodes.join(", ")],
     ["Fecha de ingreso", employee?.employmentStartDate],
   ];
   const workDetails = employee?.isActive === false

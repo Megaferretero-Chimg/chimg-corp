@@ -4,9 +4,10 @@ import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState, useTransition } from "react";
 import {
   BriefcaseBusiness,
+  ChevronLeft,
+  ChevronRight,
   Edit3,
   Landmark,
-  Layers3,
   Plus,
   ReceiptText,
   RotateCcw,
@@ -46,23 +47,7 @@ function getTodayInputValue() {
   return localDate.toISOString().slice(0, 10);
 }
 
-function getInitialEmployeeUrlState() {
-  if (typeof window === "undefined") {
-    return { search: "", page: 1, area: "", role: "", branch: "", relation: "" };
-  }
-
-  const params = new URLSearchParams(window.location.search);
-  const initialPage = Number(params.get("page") || 1);
-
-  return {
-    search: params.get("q") || "",
-    page: Number.isFinite(initialPage) && initialPage > 0 ? Math.floor(initialPage) : 1,
-    area: params.get("area") || "",
-    role: params.get("role") || "",
-    branch: params.get("branch") || "",
-    relation: params.get("relation") || "",
-  };
-}
+const EMPTY_URL_STATE = { search: "", page: 1, area: "", role: "", branch: "", relation: "" };
 
 const INITIAL_FORM = {
   documentType: "cedula",
@@ -84,6 +69,7 @@ const INITIAL_FORM = {
   employmentStartDate: "",
   birthDate: "",
   biometricCode: "",
+  biometricAliases: [],
 };
 
 function mapEmployeeToForm(employee, branches = [], roles = []) {
@@ -149,6 +135,11 @@ function mapEmployeeToForm(employee, branches = [], roles = []) {
     employmentStartDate: employee.employmentStartDate || "",
     birthDate: employee.birthDate || "",
     biometricCode: employee.biometricCode || "",
+    biometricAliases: (employee.biometricAliases || []).map((alias) => ({
+      branchCode: alias.branchCode || "",
+      branchName: alias.branchName || alias.branchCode || "",
+      biometricCode: alias.biometricCode || "",
+    })),
   };
 }
 
@@ -167,6 +158,11 @@ function buildEmployeeSearchText(employee) {
     employee.areaName,
     ...(employee.roleAssignments || []).flatMap((role) => [role.name, role.areaName]),
     employee.biometricCode,
+    ...(employee.biometricAliases || []).flatMap((alias) => [
+      alias.biometricCode,
+      alias.branchCode,
+      alias.branchName,
+    ]),
   ]
     .filter(Boolean)
     .join(" ")
@@ -193,8 +189,7 @@ function getEmployeeBranchCodes(employee) {
   return new Set([employee.branchCode, employee.branchId, employee.branchName, employee.branch].filter(Boolean));
 }
 
-export default function EmployeeManagement() {
-  const initialUrlState = useMemo(() => getInitialEmployeeUrlState(), []);
+export default function EmployeeManagement({ initialUrlState = EMPTY_URL_STATE }) {
   const [employees, setEmployees] = useState([]);
   const [branches, setBranches] = useState([]);
   const [roles, setRoles] = useState([]);
@@ -781,136 +776,134 @@ export default function EmployeeManagement() {
       <FloatingNotice notice={notice} onClose={dismissNotice} />
 
       <section className={`catalog-panel page-entrance ${styles.tablePanel}`}>
-        <div className="catalog-toolbar">
-          <p className="catalog-count">
-            {filteredEmployees.length} empleado{filteredEmployees.length === 1 ? "" : "s"}
-            {hasActiveFilters ? ` de ${sortedEmployees.length}` : ""}
-          </p>
+        <div className={`catalog-toolbar ${styles.employeeToolbar}`}>
+          <div className={styles.toolbarHeader}>
+            <p className="catalog-count">
+              {filteredEmployees.length} empleado{filteredEmployees.length === 1 ? "" : "s"}
+              {hasActiveFilters ? ` de ${sortedEmployees.length}` : ""}
+            </p>
 
-          <div className={styles.filterGrid}>
-            <label className="catalog-search">
-              <Search size={16} />
-              <input
-                type="search"
-                value={search}
-                onChange={(event) => handleSearchChange(event.target.value)}
-                placeholder="Buscar empleado"
-                className="catalog-search-input"
-                disabled={isPending}
-              />
-            </label>
+            <div className={styles.toolbarActions}>
+              {hasActiveFilters ? (
+                <button
+                  type="button"
+                  className="catalog-button-ghost"
+                  onClick={clearFilters}
+                  aria-label="Limpiar filtros"
+                  title="Limpiar filtros"
+                  disabled={isPending}
+                >
+                  <RotateCcw size={16} />
+                  Limpiar
+                </button>
+              ) : null}
 
-            <div className={styles.filterControl}>
-              <Layers3 size={16} />
-              <SelectInput
-                value={areaFilter}
-                onChange={(event) => handleAreaFilterChange(event.target.value)}
-                aria-label="Filtrar por área"
-                disabled={isPending}
-                className={styles.filterSelectField}
-                controlClassName={styles.filterSelectControl}
-                selectClassName={styles.filterSelectButton}
-                menuClassName={styles.filterSelectMenu}
+              <button
+                type="button"
+                className="catalog-button-primary"
+                onClick={openCreateDrawer}
+                aria-haspopup="dialog"
+                aria-expanded={isDrawerOpen}
+                aria-label="Crear empleado"
+                title="Crear empleado"
               >
-                <option value="">Todas las áreas</option>
-                {areaOptions.map((area) => (
-                  <option key={area.code} value={area.code}>
-                    {area.name}
-                  </option>
-                ))}
-              </SelectInput>
-            </div>
-
-            <div className={styles.filterControl}>
-              <BriefcaseBusiness size={16} />
-              <SelectInput
-                value={roleFilter}
-                onChange={(event) => handleRoleFilterChange(event.target.value)}
-                aria-label="Filtrar por cargo"
-                disabled={isPending}
-                className={styles.filterSelectField}
-                controlClassName={styles.filterSelectControl}
-                selectClassName={styles.filterSelectButton}
-                menuClassName={styles.filterSelectMenu}
-              >
-                <option value="">Todos los cargos</option>
-                {roleOptions.map((role) => (
-                  <option key={role.code} value={role.code}>
-                    {role.areaName ? `${role.name} · ${role.areaName}` : role.name}
-                  </option>
-                ))}
-              </SelectInput>
-            </div>
-
-            <div className={styles.filterControl}>
-              <Landmark size={16} />
-              <SelectInput
-                value={branchFilter}
-                onChange={(event) => handleBranchFilterChange(event.target.value)}
-                aria-label="Filtrar por sucursal"
-                disabled={isPending}
-                className={styles.filterSelectField}
-                controlClassName={styles.filterSelectControl}
-                selectClassName={styles.filterSelectButton}
-                menuClassName={styles.filterSelectMenu}
-              >
-                <option value="">Todas las sucursales</option>
-                {branchOptions.map((branch) => (
-                  <option key={branch.code} value={branch.code}>
-                    {branch.name}
-                  </option>
-                ))}
-              </SelectInput>
-            </div>
-
-            <div className={styles.filterControl}>
-              <ReceiptText size={16} />
-              <SelectInput
-                value={relationFilter}
-                onChange={(event) => handleRelationFilterChange(event.target.value)}
-                aria-label="Filtrar por relación"
-                disabled={isPending}
-                className={styles.filterSelectField}
-                controlClassName={styles.filterSelectControl}
-                selectClassName={styles.filterSelectButton}
-                menuClassName={styles.filterSelectMenu}
-              >
-                <option value="">Todas las relaciones</option>
-                {EMPLOYMENT_RELATION_OPTIONS.map((relation) => (
-                  <option key={relation.value} value={relation.value}>
-                    {relation.label}
-                  </option>
-                ))}
-              </SelectInput>
+                <Plus size={16} />
+                Crear
+              </button>
             </div>
           </div>
 
-          {hasActiveFilters ? (
-            <button
-              type="button"
-              className="catalog-button-ghost"
-              onClick={clearFilters}
-              aria-label="Limpiar filtros"
-              title="Limpiar filtros"
-              disabled={isPending}
-            >
-              <RotateCcw size={16} />
-              Limpiar
-            </button>
-          ) : null}
+          <div className={styles.filterGrid}>
+            <label className={styles.searchField}>
+              <span className={styles.filterLabel}>Buscar</span>
+              <span className={styles.searchControl}>
+                <Search size={16} aria-hidden="true" />
+                <input
+                  type="search"
+                  value={search}
+                  onChange={(event) => handleSearchChange(event.target.value)}
+                  placeholder="Nombre, DNI o correo"
+                  disabled={isPending}
+                />
+              </span>
+            </label>
 
-          <button
-            type="button"
-            className="catalog-button-primary"
-            onClick={openCreateDrawer}
-            aria-haspopup="dialog"
-            aria-expanded={isDrawerOpen}
-            aria-label="Crear empleado"
-            title="Crear empleado"
-          >
-            <Plus size={16} />
-            Crear
-          </button>
+            <SelectInput
+              label="Área"
+              value={areaFilter}
+              onChange={(event) => handleAreaFilterChange(event.target.value)}
+              disabled={isPending}
+              className={styles.filterSelectField}
+              labelClassName={styles.filterLabel}
+              controlClassName={styles.filterSelectControl}
+              selectClassName={styles.filterSelectButton}
+              menuClassName={styles.filterSelectMenu}
+            >
+              <option value="">Todas las áreas</option>
+              {areaOptions.map((area) => (
+                <option key={area.code} value={area.code}>
+                  {area.name}
+                </option>
+              ))}
+            </SelectInput>
+
+            <SelectInput
+              label="Cargo"
+              value={roleFilter}
+              onChange={(event) => handleRoleFilterChange(event.target.value)}
+              disabled={isPending}
+              className={styles.filterSelectField}
+              labelClassName={styles.filterLabel}
+              controlClassName={styles.filterSelectControl}
+              selectClassName={styles.filterSelectButton}
+              menuClassName={styles.filterSelectMenu}
+            >
+              <option value="">Todos los cargos</option>
+              {roleOptions.map((role) => (
+                <option key={role.code} value={role.code}>
+                  {role.areaName ? `${role.name} · ${role.areaName}` : role.name}
+                </option>
+              ))}
+            </SelectInput>
+
+            <SelectInput
+              label="Sucursal"
+              value={branchFilter}
+              onChange={(event) => handleBranchFilterChange(event.target.value)}
+              disabled={isPending}
+              className={styles.filterSelectField}
+              labelClassName={styles.filterLabel}
+              controlClassName={styles.filterSelectControl}
+              selectClassName={styles.filterSelectButton}
+              menuClassName={styles.filterSelectMenu}
+            >
+              <option value="">Todas las sucursales</option>
+              {branchOptions.map((branch) => (
+                <option key={branch.code} value={branch.code}>
+                  {branch.name}
+                </option>
+              ))}
+            </SelectInput>
+
+            <SelectInput
+              label="Relación"
+              value={relationFilter}
+              onChange={(event) => handleRelationFilterChange(event.target.value)}
+              disabled={isPending}
+              className={styles.filterSelectField}
+              labelClassName={styles.filterLabel}
+              controlClassName={styles.filterSelectControl}
+              selectClassName={styles.filterSelectButton}
+              menuClassName={styles.filterSelectMenu}
+            >
+              <option value="">Todas las relaciones</option>
+              {EMPLOYMENT_RELATION_OPTIONS.map((relation) => (
+                <option key={relation.value} value={relation.value}>
+                  {relation.label}
+                </option>
+              ))}
+            </SelectInput>
+          </div>
         </div>
 
         {filteredEmployees.length ? (
@@ -1037,22 +1030,22 @@ export default function EmployeeManagement() {
               <div className={styles.paginationActions}>
                 <button
                   type="button"
-                  className="catalog-button-ghost"
                   onClick={() => handlePageChange(currentPage - 1)}
                   disabled={currentPage === 1}
+                  aria-label="Página anterior"
+                  title="Página anterior"
                 >
-                  Anterior
+                  <ChevronLeft size={16} aria-hidden="true" />
                 </button>
-                <strong>
-                  {currentPage} / {totalPages}
-                </strong>
+                <strong>Página {currentPage} de {totalPages}</strong>
                 <button
                   type="button"
-                  className="catalog-button-ghost"
                   onClick={() => handlePageChange(currentPage + 1)}
                   disabled={currentPage === totalPages}
+                  aria-label="Página siguiente"
+                  title="Página siguiente"
                 >
-                  Siguiente
+                  <ChevronRight size={16} aria-hidden="true" />
                 </button>
               </div>
             </div>
