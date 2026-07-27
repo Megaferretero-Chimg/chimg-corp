@@ -1,4 +1,4 @@
-import { differenceInCalendarDays, endOfMonth, format, isValid, parse, startOfMonth } from "date-fns";
+import { addDays, differenceInCalendarDays, endOfMonth, format, isValid, parse, startOfMonth } from "date-fns";
 
 import { makeEcuadorDate } from "@/lib/datetime/ecuador";
 
@@ -45,6 +45,11 @@ export function normalizeVacationPayload(body, employee) {
   }
 
   const totalCalendarDays = differenceInCalendarDays(endDate, startDate) + 1;
+  const coveredDateKeys = [];
+
+  for (let date = startDate; date <= endDate; date = addDays(date, 1)) {
+    coveredDateKeys.push(format(date, "yyyy-MM-dd"));
+  }
 
   return {
     employee: employee._id,
@@ -57,6 +62,7 @@ export function normalizeVacationPayload(body, employee) {
     endDate,
     startDateKey,
     endDateKey,
+    coveredDateKeys,
     totalCalendarDays,
     notes: String(body?.notes || "").trim(),
   };

@@ -54,6 +54,10 @@ const vacationRequestSchema = new Schema(
       required: true,
       trim: true,
     },
+    coveredDateKeys: {
+      type: [String],
+      default: [],
+    },
     totalCalendarDays: {
       type: Number,
       min: 1,
@@ -73,6 +77,14 @@ const vacationRequestSchema = new Schema(
 vacationRequestSchema.index({ employee: 1, startDate: 1, endDate: 1 });
 vacationRequestSchema.index({ startDate: 1, endDate: 1 });
 vacationRequestSchema.index({ employee: 1, startDateKey: 1, endDateKey: 1 });
+vacationRequestSchema.index(
+  { employee: 1, coveredDateKeys: 1 },
+  {
+    unique: true,
+    name: "employee_covered_vacation_date_unique",
+    partialFilterExpression: { "coveredDateKeys.0": { $exists: true } },
+  },
+);
 
 if (process.env.NODE_ENV !== "production" && mongoose.models.VacationRequest) {
   delete mongoose.models.VacationRequest;

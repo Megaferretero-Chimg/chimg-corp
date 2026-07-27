@@ -49,7 +49,17 @@ function buildShiftKey(shift) {
 }
 
 function formatClockTime(value) {
-  return formatTime24(value);
+  const formattedTime = formatTime24(value);
+
+  return formattedTime ? formattedTime.replace(":", "H") : "";
+}
+
+function formatScheduleTextWithH(value) {
+  return String(value || "").replace(/\b(\d{1,2}):(\d{2})\b/g, (match) => {
+    const formattedTime = formatTime24(match);
+
+    return formattedTime ? formattedTime.replace(":", "H") : match;
+  });
 }
 
 function formatMinutesAsTime(totalMinutes) {
@@ -462,17 +472,6 @@ function buildWeeklyApprovalState(assignments, employeeCount, weekStartKey) {
 }
 
 function isEmployeeActiveForPlanningWeek(employee, weekDateKeys = []) {
-  const weekStartKey = weekDateKeys[0] || "";
-  const employmentStartKey = dateKeyFromValue(employee?.employmentStartDate);
-
-  if (!weekStartKey) {
-    return false;
-  }
-
-  if (employmentStartKey && employmentStartKey > weekStartKey) {
-    return false;
-  }
-
   return weekDateKeys.some((dateKey) => isEmployeeActiveOnDate(employee, dateKey));
 }
 
@@ -1776,10 +1775,11 @@ export default function SchedulePlanner({ initialFilters = {}, basePath = "/sche
       .filter((template) => template.isActive !== false)
       .map((template) => ({
         value: template.id,
-        label: template.name || "Plantilla sin nombre",
+        label: formatScheduleTextWithH(template.name) || "Plantilla sin nombre",
         description: template.rotationGroup || template.notes || "",
         searchText: [
           template.name,
+          formatScheduleTextWithH(template.name),
           template.rotationGroup,
           template.notes,
           ...(template.weeklyRows || []).map(buildReadableShiftSchedule),
@@ -3040,7 +3040,12 @@ export default function SchedulePlanner({ initialFilters = {}, basePath = "/sche
               {selectedOverlay.raw?.startTime || selectedOverlay.raw?.endTime ? (
                 <div>
                   <dt>Horario indicado</dt>
-                  <dd>{[selectedOverlay.raw.startTime, selectedOverlay.raw.endTime].filter(Boolean).join(" - ")}</dd>
+                  <dd>
+                    {[selectedOverlay.raw.startTime, selectedOverlay.raw.endTime]
+                      .filter(Boolean)
+                      .map(formatClockTime)
+                      .join(" - ")}
+                  </dd>
                 </div>
               ) : null}
               {selectedOverlay.raw?.plannedStartTime || selectedOverlay.raw?.plannedEndTime ? (

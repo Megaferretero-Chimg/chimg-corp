@@ -16,18 +16,20 @@ import {
 import { Employee } from "@/modules/company/models";
 import { VacationRequest } from "@/modules/planner/models";
 
-async function hasOverlappingVacation({ employeeId, startDate, endDate, excludeId = "" }) {
+async function findOverlappingVacation({ employeeId, startDateKey, endDateKey, excludeId = "" }) {
   const query = {
     employee: employeeId,
-    startDate: { $lte: endDate },
-    endDate: { $gte: startDate },
+    startDateKey: { $lte: endDateKey },
+    endDateKey: { $gte: startDateKey },
   };
 
   if (excludeId) {
     query._id = { $ne: excludeId };
   }
 
-  return Boolean(await VacationRequest.exists(query));
+  return VacationRequest.findOne(query)
+    .select({ startDateKey: 1, endDateKey: 1 })
+    .lean();
 }
 
 export async function GET(request) {
@@ -94,15 +96,18 @@ export async function POST(request) {
 
     const employee = await Employee.findById(employeeId).lean();
     const payload = normalizeVacationPayload(body, employee);
-    const overlaps = await hasOverlappingVacation({
+    const overlappingVacation = await findOverlappingVacation({
       employeeId,
-      startDate: payload.startDate,
-      endDate: payload.endDate,
+      startDateKey: payload.startDateKey,
+      endDateKey: payload.endDateKey,
     });
 
-    if (overlaps) {
+    if (overlappingVacation) {
       return NextResponse.json(
-        { error: "El empleado ya tiene vacaciones programadas dentro de ese rango." },
+        {
+          error: `El empleado ya tiene vacaciones registradas del `
+            + `${overlappingVacation.startDateKey} al ${overlappingVacation.endDateKey}.`,
+        },
         { status: 409 },
       );
     }
@@ -117,6 +122,13 @@ export async function POST(request) {
       { status: 201 },
     );
   } catch (error) {
+    if (error?.code === 11000) {
+      return NextResponse.json(
+        { error: "El empleado ya tiene vacaciones registradas en ese rango de fechas." },
+        { status: 409 },
+      );
+    }
+
     return NextResponse.json(
       { error: error.message || "No se pudo registrar la vacacion." },
       { status: 400 },
