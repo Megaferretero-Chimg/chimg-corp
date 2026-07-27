@@ -113,6 +113,10 @@ const operationalExceptionSchema = new Schema(
       enum: ["workday", "off_day"],
       default: "workday",
     },
+    isExtraDay: {
+      type: Boolean,
+      default: false,
+    },
     plannedLunchStartTime: {
       type: String,
       trim: true,

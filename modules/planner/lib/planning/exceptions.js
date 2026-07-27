@@ -302,6 +302,7 @@ export function normalizeExceptionPayload(body, employee) {
   const destination = String(body?.destination || "").trim().toUpperCase();
   const countsAsWorkedTime = Boolean(body?.countsAsWorkedTime);
   const allowSupplementaryTime = Boolean(body?.allowSupplementaryTime);
+  const isExtraDay = Boolean(body?.isExtraDay);
   const planningSourceInput = String(body?.planningSource || "").trim();
   const planningSource = ["schedule_planner", "attendance_comparison"].includes(planningSourceInput)
     ? planningSourceInput
@@ -424,6 +425,7 @@ export function normalizeExceptionPayload(body, employee) {
     plannedStartTime,
     plannedEndTime,
     plannedDayType,
+    isExtraDay: effect === "planning_change" && plannedDayType === "workday" && isExtraDay,
     plannedLunchStartTime,
     plannedLunchEndTime,
     plannedLunchDurationMinutes,
@@ -465,7 +467,7 @@ export function serializeOperationalException(exception) {
     payMode,
     payModeLabel: getLabel(PAY_MODES, payMode),
     type,
-    typeLabel: getLabel(EXCEPTION_TYPES, type),
+    typeLabel: exception.isExtraDay ? "Día extra" : getLabel(EXCEPTION_TYPES, type),
     scope,
     scopeLabel: getLabel(EXCEPTION_SCOPES, scope),
     dateKey: exception.dateKey || "",
@@ -475,6 +477,7 @@ export function serializeOperationalException(exception) {
     plannedStartTime: exception.plannedStartTime || "",
     plannedEndTime: exception.plannedEndTime || "",
     plannedDayType: exception.plannedDayType === "off_day" ? "off_day" : "workday",
+    isExtraDay: Boolean(exception.isExtraDay),
     plannedLunchStartTime: exception.plannedLunchStartTime || "",
     plannedLunchEndTime: exception.plannedLunchEndTime || "",
     plannedLunchDurationMinutes: Number(exception.plannedLunchDurationMinutes) || 0,

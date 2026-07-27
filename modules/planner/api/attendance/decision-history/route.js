@@ -65,6 +65,14 @@ function attendanceDecisionSummary(decision = {}) {
 }
 
 function exceptionSummary(exception = {}) {
+  if (exception.isExtraDay) {
+    const lunch = exception.plannedLunchStartTime && exception.plannedLunchEndTime
+      ? ` · Almuerzo ${exception.plannedLunchStartTime}–${exception.plannedLunchEndTime}`
+      : "";
+
+    return `Día extra ${exception.plannedStartTime}–${exception.plannedEndTime}${lunch}`;
+  }
+
   if (exception.type === "missing_punch") {
     return exception.allowSupplementaryTime
       ? "Jornada calculada con la primera y última picada"

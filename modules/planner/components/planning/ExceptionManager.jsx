@@ -107,6 +107,7 @@ const EMPTY_FORM = {
   plannedStartTime: "",
   plannedEndTime: "",
   plannedDayType: "workday",
+  isExtraDay: false,
   plannedLunchStartTime: "",
   plannedLunchEndTime: "",
   plannedLunchDurationMinutes: 0,
@@ -162,6 +163,7 @@ function buildExceptionForm(exception) {
     plannedStartTime: exception.plannedStartTime || "",
     plannedEndTime: exception.plannedEndTime || "",
     plannedDayType: exception.plannedDayType === "off_day" ? "off_day" : "workday",
+    isExtraDay: Boolean(exception.isExtraDay),
     plannedLunchStartTime: exception.plannedLunchStartTime || "",
     plannedLunchEndTime: exception.plannedLunchEndTime || "",
     plannedLunchDurationMinutes: Number(exception.plannedLunchDurationMinutes) || 0,
@@ -613,6 +615,7 @@ export default function ExceptionManager({
       endDateKey: flow.category === "planning" ? current.endDateKey : "",
       countsAsWorkedTime: false,
       allowSupplementaryTime: false,
+      isExtraDay: false,
     }));
   }
 
@@ -701,6 +704,7 @@ export default function ExceptionManager({
       plannedStartTime: isRejected ? exception.plannedStartTime : exception.plannedStartTime || "",
       plannedEndTime: isRejected ? exception.plannedEndTime : exception.plannedEndTime || "",
       plannedDayType: exception.plannedDayType === "off_day" ? "off_day" : "workday",
+      isExtraDay: Boolean(exception.isExtraDay),
       plannedLunchStartTime: isRejected ? exception.plannedLunchStartTime : exception.plannedLunchStartTime || "",
       plannedLunchEndTime: isRejected ? exception.plannedLunchEndTime : exception.plannedLunchEndTime || "",
       plannedLunchDurationMinutes: isRejected ? exception.plannedLunchDurationMinutes : Number(exception.plannedLunchDurationMinutes) || 0,

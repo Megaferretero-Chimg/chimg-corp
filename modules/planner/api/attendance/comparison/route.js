@@ -1163,8 +1163,11 @@ function buildExceptionPlannedScheduleMap(exceptions = []) {
     if (!["planning_change", "external_work"].includes(effect)) return;
     if (exception.scope === "other") return;
 
+    const isAuthorizedExtraDay = effect === "planning_change" && exception.isExtraDay === true;
     const plannedDayType = effect === "planning_change" && exception.plannedDayType === "off_day"
       ? "off_day"
+      : isAuthorizedExtraDay
+        ? "weekend_overtime"
       : "workday";
     const startTime = plannedDayType === "off_day"
       ? ""
@@ -1209,6 +1212,7 @@ function buildExceptionPlannedScheduleMap(exceptions = []) {
         lunchDurationMinutes,
         authorizedExtraMinutes: 0,
         effect,
+        isAuthorizedExtraDay,
         source: "operational_exception_schedule",
       });
     }
@@ -1413,6 +1417,20 @@ function applyWeeklyExtraDayTypes(days = []) {
     [...weekDays]
       .sort((left, right) => String(left.dateKey || "").localeCompare(String(right.dateKey || "")))
       .forEach((day) => {
+        if (day.isAuthorizedExtraDay && day.startTime && day.endTime) {
+          const plannedExtraordinaryMinutes = resolveScheduledNetMinutes(day);
+
+          byDate.set(day.dateKey, {
+            ...day,
+            dayType: "weekend_overtime",
+            dayTypeLabel: dayTypeLabel("weekend_overtime"),
+            scheduleLabel: "Día extra autorizado",
+            authorizedExtraMinutes: plannedExtraordinaryMinutes,
+            weeklyAttendanceClassification: "extra",
+          });
+          return;
+        }
+
         if (!isPlannedWorkDay(day) || !day.startTime || !day.endTime) {
           byDate.set(day.dateKey, day);
           return;
@@ -1470,6 +1488,34 @@ function applyWeeklyExtraByAttendance(days = []) {
 
         if (!isWorkedAttendanceDay) {
           byDate.set(day.dateKey, day);
+          return;
+        }
+
+        if (day.isAuthorizedExtraDay) {
+          const plannedExtraordinaryMinutes =
+            Number(day.originalScheduledWorkedMinutes ?? day.scheduledWorkedMinutes)
+            || resolveScheduledNetMinutes(day);
+          const tags = (day.tags || []).filter((tag) => !UNPLANNED_WORK_TAGS.has(tag));
+          const approvedTags = [...new Set([...tags, "Día extra aprobado"])];
+
+          byDate.set(day.dateKey, {
+            ...day,
+            tags: approvedTags,
+            hasIssue: approvedTags.some(isAttendanceIssueTag),
+            dayType: "weekend_overtime",
+            dayTypeLabel: dayTypeLabel("weekend_overtime"),
+            scheduleLabel: "Día extra autorizado",
+            plannedRegularMinutes: 0,
+            plannedRegularLabel: "--",
+            plannedSupplementaryMinutes: 0,
+            plannedSupplementaryLabel: "--",
+            plannedExtraordinaryMinutes,
+            plannedExtraordinaryLabel: plannedExtraordinaryMinutes ? minutesLabel(plannedExtraordinaryMinutes) : "--",
+            scheduledWorkedMinutes: plannedExtraordinaryMinutes,
+            scheduledWorkedLabel: plannedExtraordinaryMinutes ? minutesLabel(plannedExtraordinaryMinutes) : "--",
+            authorizedExtraMinutes: plannedExtraordinaryMinutes,
+            weeklyAttendanceClassification: "extra",
+          });
           return;
         }
 

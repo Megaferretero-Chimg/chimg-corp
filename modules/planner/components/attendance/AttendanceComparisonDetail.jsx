@@ -64,6 +64,11 @@ function formatDecisionTimestamp(value) {
 
 const INLINE_EXCEPTION_OPTIONS = [
   {
+    value: "extra_day",
+    label: "Día extra",
+    description: "Aprueba como extraordinario el tiempo real entre las picadas de este día, sin crear una plantilla.",
+  },
+  {
     value: "schedule_change",
     label: "Cambiar planificación",
     description: "Autoriza el horario que debía aplicar en este día.",
@@ -903,6 +908,7 @@ function issueTagClass(tag) {
     "Jornada laboral completada",
     "Justificación operativa",
     "Trabajo fuera justificado",
+    "Día extra aprobado",
     "Aprobado",
     "Dia planificado pagado",
     "Todo autorizado",
@@ -1108,7 +1114,7 @@ function inlineExceptionOptionsForDay(day) {
   if (!day) return INLINE_EXCEPTION_OPTIONS;
 
   if (hasNoSchedulePunches(day)) {
-    return INLINE_EXCEPTION_OPTIONS.filter((option) => option.value === "schedule_change");
+    return INLINE_EXCEPTION_OPTIONS.filter((option) => ["extra_day", "schedule_change"].includes(option.value));
   }
 
   if (hasIncompletePunchTag(day)) {
@@ -1467,7 +1473,7 @@ function defaultInlineExceptionType(day) {
     return options[0].value;
   }
 
-  if (hasNoSchedulePunches(day)) return "schedule_change";
+  if (hasNoSchedulePunches(day)) return "extra_day";
   if (hasIncompletePunchTag(day)) return "missing_punch";
   if (displayLateMinutes(day) > 0) return "permission";
   return "outside_work";
@@ -1482,6 +1488,8 @@ function buildInlineExceptionDraft(row, day, nextType = "", templates = []) {
     ? scheduleTemplateOptionsForDay(row?.employee, templates, day)[0]
     : null;
   const recommendedRow = recommendedTemplate?.row;
+  const activePunches = activePunchesForDisplay(day);
+  const extraDayHasLunch = type === "extra_day" && activePunches.length === 4;
 
   return {
     employeeName: row?.employee?.fullName || "",
@@ -1489,18 +1497,27 @@ function buildInlineExceptionDraft(row, day, nextType = "", templates = []) {
     dateLabel: day?.dateLabel || "",
     dayLabel: day?.dayLabel || "",
     type,
+    punchCount: activePunches.length,
     startTime: ["outside_work", "permission"].includes(type) ? startTime : "",
     endTime: ["outside_work", "permission"].includes(type) ? endTime : "",
-    plannedStartTime: type === "schedule_change"
+    plannedStartTime: type === "extra_day"
+      ? firstPunchTime(day)
+      : type === "schedule_change"
       ? recommendedRow?.startTime || (hasSchedule ? day.startTime : "")
       : "",
-    plannedLunchStartTime: type === "schedule_change"
+    plannedLunchStartTime: type === "extra_day" && extraDayHasLunch
+      ? activePunches[1]?.time || ""
+      : type === "schedule_change"
       ? recommendedRow?.lunchStartTime || (hasSchedule ? day?.lunchStartTime || "" : "")
       : "",
-    plannedLunchEndTime: type === "schedule_change"
+    plannedLunchEndTime: type === "extra_day" && extraDayHasLunch
+      ? activePunches[2]?.time || ""
+      : type === "schedule_change"
       ? recommendedRow?.lunchEndTime || (hasSchedule ? day?.lunchEndTime || "" : "")
       : "",
-    plannedEndTime: type === "schedule_change"
+    plannedEndTime: type === "extra_day"
+      ? lastPunchTime(day)
+      : type === "schedule_change"
       ? recommendedRow?.endTime || (hasSchedule ? day.endTime : "")
       : "",
     plannedDayType: "workday",
@@ -1516,10 +1533,29 @@ function inlineExceptionPayload(employeeId, draft) {
     employeeId,
     dateKey: draft.dateKey,
     type: draft.type,
-    resolution: draft.type === "schedule_change" ? "reschedule" : "approved_work_time",
+    resolution: ["schedule_change", "extra_day"].includes(draft.type) ? "reschedule" : "approved_work_time",
     notes: draft.notes,
     autoResolve: true,
   };
+
+  if (draft.type === "extra_day") {
+    return {
+      ...common,
+      type: "schedule_change",
+      scope: "full_day",
+      effect: "planning_change",
+      attendanceMode: "use_punches",
+      payMode: "regular_and_extra",
+      plannedDayType: "workday",
+      plannedStartTime: draft.plannedStartTime,
+      plannedLunchStartTime: draft.plannedLunchStartTime,
+      plannedLunchEndTime: draft.plannedLunchEndTime,
+      plannedEndTime: draft.plannedEndTime,
+      applicableWeekdays: [dateFromDateKey(draft.dateKey).getUTCDay()],
+      isExtraDay: true,
+      allowSupplementaryTime: true,
+    };
+  }
 
   if (draft.type === "schedule_change") {
     const isRestDay = draft.plannedDayType === "off_day";
@@ -2015,6 +2051,11 @@ export default function AttendanceComparisonDetail({ employeeId, initialFilters 
         draft.plannedEndTime &&
         (!requiresTemplate || draft.templateId)
       );
+    }
+
+    if (draft.type === "extra_day") {
+      return [2, 4].includes(Number(draft.punchCount))
+        && Boolean(draft.plannedStartTime && draft.plannedEndTime);
     }
 
     if (["outside_work", "permission"].includes(draft.type)) {
@@ -3461,6 +3502,19 @@ export default function AttendanceComparisonDetail({ employeeId, initialFilters 
                       </>
                     )}
                   </>
+                ) : null}
+
+                {exceptionDraft.type === "extra_day" ? (
+                  <p className={styles.exceptionTypeHint}>
+                    <strong>Tiempo que se aprobará:</strong>{" "}
+                    {exceptionDraft.plannedStartTime || "--"} a {exceptionDraft.plannedEndTime || "--"}
+                    {exceptionDraft.plannedLunchStartTime && exceptionDraft.plannedLunchEndTime
+                      ? ` · almuerzo ${exceptionDraft.plannedLunchStartTime} a ${exceptionDraft.plannedLunchEndTime}`
+                      : ""}
+                    {!([2, 4].includes(Number(exceptionDraft.punchCount)))
+                      ? " Para usar Día extra deben quedar exactamente 2 o 4 picadas válidas."
+                      : ""}
+                  </p>
                 ) : null}
 
                 {exceptionDraft.type === "missing_punch" ? (
