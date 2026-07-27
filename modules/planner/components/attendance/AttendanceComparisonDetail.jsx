@@ -2432,9 +2432,9 @@ export default function AttendanceComparisonDetail({ employeeId, initialFilters 
       setPendingHistoryDelete(null);
       await loadReport(month, { background: true });
       await loadDecisionHistory(dateKey);
-      showNotice("success", "Decisión desactivada correctamente. El antecedente permanece en el historial.");
+      showNotice("success", payload.message || "Decisión desactivada correctamente. El antecedente permanece en el historial.");
     } catch (requestError) {
-      setError(requestError.message);
+      showNotice("error", requestError.message);
     } finally {
       setDeletingHistoryId("");
     }

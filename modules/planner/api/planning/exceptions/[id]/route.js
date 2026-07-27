@@ -145,6 +145,13 @@ export async function DELETE(_request, context) {
       return NextResponse.json({ error: "Excepcion no encontrada." }, { status: 404 });
     }
 
+    if (currentException.status === "void") {
+      return NextResponse.json(
+        { error: "La excepción ya fue anulada." },
+        { status: 409 },
+      );
+    }
+
     const user = plannerScope.user;
     const canApproveExceptions = await canUserApproveExceptions(user);
     const canDeleteOwn = hasAccessPermission(user, "planner.exceptions.deleteOwn");
@@ -152,15 +159,16 @@ export async function DELETE(_request, context) {
     const isPending = currentException.resolution === "pending" && currentException.status !== "void";
     const canResetAttendanceExecution = currentException.planningSource === "attendance_comparison"
       && hasAccessPermission(user, "planner.attendance.review");
+    const canVoidResolvedException = canApproveExceptions || canResetAttendanceExecution;
 
-    if (!isPending) {
+    if (!isPending && !canVoidResolvedException) {
       return NextResponse.json(
-        { error: "Las excepciones aprobadas o resueltas no se pueden eliminar." },
-        { status: 409 },
+        { error: "Solo un administrador de excepciones puede anular registros aprobados o resueltos." },
+        { status: 403 },
       );
     }
 
-    if (!canApproveExceptions && !canResetAttendanceExecution && !(canDeleteOwn && isOwner)) {
+    if (!canVoidResolvedException && !(isPending && canDeleteOwn && isOwner)) {
       return NextResponse.json(
         { error: "Solo puedes eliminar tus propios registros mientras estén pendientes." },
         { status: 403 },
@@ -186,14 +194,17 @@ export async function DELETE(_request, context) {
     const actor = user?.employeeName || user?.username || user?.id || "SISTEMA";
     const employeeId = currentException.employee?.toString?.() || String(currentException.employee || "");
     const before = serializeOperationalException(currentException);
+    const voidReason = isPending
+      ? "Registro pendiente anulado por el usuario."
+      : "Registro aprobado o resuelto anulado por un administrador.";
 
     const voidedException = await OperationalException.findByIdAndUpdate(
       exceptionId,
       {
         $set: {
           status: "void",
-          resolution: "no_action",
-          resolutionNotes: currentException.resolutionNotes || "Registro pendiente anulado por el usuario.",
+          resolution: isPending ? "no_action" : currentException.resolution,
+          resolutionNotes: currentException.resolutionNotes || voidReason,
           manualPunch: null,
           manualPunchTime: "",
         },
@@ -221,7 +232,9 @@ export async function DELETE(_request, context) {
     return NextResponse.json({
       success: true,
       action: "voided",
-      message: "Excepcion pendiente eliminada correctamente.",
+      message: isPending
+        ? "Excepción pendiente eliminada correctamente."
+        : "Excepción aprobada anulada correctamente. El antecedente permanece en el historial.",
     });
   } catch (error) {
     return NextResponse.json(
