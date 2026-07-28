@@ -891,6 +891,28 @@ const PLANNED_ADJUSTMENT_TYPES = [
   },
 ];
 
+const PLANNED_ADJUSTMENT_CATEGORY_OPTIONS = [
+  {
+    value: "permission",
+    label: "Permiso",
+  },
+  {
+    value: "outside_work",
+    label: "Trabajo externo",
+  },
+];
+
+const PERMISSION_DURATION_OPTIONS = [
+  {
+    value: "permission_partial",
+    label: "Por horas",
+  },
+  {
+    value: "permission_full_day",
+    label: "Jornada completa",
+  },
+];
+
 const DEFAULT_ADJUSTMENT_FORM = {
   kind: "permission_partial",
   scheduleTemplateId: "",
@@ -1761,7 +1783,6 @@ export default function SchedulePlanner({ initialFilters = {}, basePath = "/sche
       .map((template) => ({
         value: template.id,
         label: formatScheduleTextWithH(template.name) || "Plantilla sin nombre",
-        description: template.rotationGroup || template.notes || "",
         searchText: [
           template.name,
           formatScheduleTextWithH(template.name),
@@ -2495,8 +2516,11 @@ export default function SchedulePlanner({ initialFilters = {}, basePath = "/sche
     const { employee, dateKey, day } = adjustmentTarget;
     const requiresSchedule = selectedType.requiresSchedule;
     const usesTimeRange = selectedType.requiresTimeRange;
-    const requiresTemplateSelection =
+    const supportsCustomSchedule =
       selectedType.value === "outside_work"
+      || selectedType.value === "permission_full_day";
+    const requiresTemplateSelection =
+      supportsCustomSchedule
       && !adjustmentForm.useCustomSchedule;
     const plannedDay = requiresSchedule
       ? buildPlannedScheduleDay(dateKey, {
@@ -2958,10 +2982,15 @@ export default function SchedulePlanner({ initialFilters = {}, basePath = "/sche
   }
 
   const selectedAdjustmentType = PLANNED_ADJUSTMENT_TYPES.find((option) => option.value === adjustmentForm.kind) || PLANNED_ADJUSTMENT_TYPES[0];
+  const isPermissionAdjustment = selectedAdjustmentType.type === "permission";
   const isExternalWorkAdjustment = selectedAdjustmentType.value === "outside_work";
+  const supportsCustomSchedule =
+    isExternalWorkAdjustment
+    || selectedAdjustmentType.value === "permission_full_day";
+  const adjustmentCategoryValue = isPermissionAdjustment ? "permission" : selectedAdjustmentType.value;
   const showsCustomScheduleFields =
     selectedAdjustmentType.requiresSchedule
-    && (!isExternalWorkAdjustment || adjustmentForm.useCustomSchedule);
+    && (!supportsCustomSchedule || adjustmentForm.useCustomSchedule);
 
   return (
     <div className={styles.layout}>
@@ -3115,23 +3144,35 @@ export default function SchedulePlanner({ initialFilters = {}, basePath = "/sche
             <AutocompleteSelect
               label="Tipo de ajuste"
               className={styles.adjustmentSelect}
-              value={adjustmentForm.kind}
-              onChange={(nextKind) => updateAdjustmentField("kind", nextKind || PLANNED_ADJUSTMENT_TYPES[0].value)}
-              options={PLANNED_ADJUSTMENT_TYPES.map((option) => ({
-                value: option.value,
-                label: option.label,
-              }))}
+              value={adjustmentCategoryValue}
+              onChange={(nextKind) => updateAdjustmentField(
+                "kind",
+                nextKind === "permission" ? "permission_partial" : nextKind || PLANNED_ADJUSTMENT_TYPES[0].value,
+              )}
+              options={PLANNED_ADJUSTMENT_CATEGORY_OPTIONS}
               placeholder="Seleccionar ajuste"
               searchPlaceholder="Buscar ajuste"
               emptyText="No hay ajustes con ese criterio"
             />
+            {isPermissionAdjustment ? (
+              <AutocompleteSelect
+                label="Duración del permiso"
+                className={styles.adjustmentSelect}
+                value={adjustmentForm.kind}
+                onChange={(permissionKind) => updateAdjustmentField("kind", permissionKind || "permission_partial")}
+                options={PERMISSION_DURATION_OPTIONS}
+                placeholder="Seleccionar duración"
+                searchPlaceholder="Buscar duración"
+                emptyText="No hay duraciones con ese criterio"
+              />
+            ) : null}
             {selectedAdjustmentType?.requiresTimeRange ? (
               <div className={styles.adjustmentGrid}>
-                <TextInput label="Desde" type="time" separator="H" value={adjustmentForm.startTime} onChange={(event) => updateAdjustmentField("startTime", event.target.value)} />
-                <TextInput label="Hasta" type="time" separator="H" value={adjustmentForm.endTime} onChange={(event) => updateAdjustmentField("endTime", event.target.value)} />
+                <TextInput className={styles.adjustmentTimeField} label="Desde" type="time" separator="H" value={adjustmentForm.startTime} onChange={(event) => updateAdjustmentField("startTime", event.target.value)} />
+                <TextInput className={styles.adjustmentTimeField} label="Hasta" type="time" separator="H" value={adjustmentForm.endTime} onChange={(event) => updateAdjustmentField("endTime", event.target.value)} />
               </div>
             ) : null}
-            {isExternalWorkAdjustment ? (
+            {supportsCustomSchedule ? (
               <label className={styles.customScheduleToggle}>
                 <input
                   type="checkbox"
@@ -3153,7 +3194,7 @@ export default function SchedulePlanner({ initialFilters = {}, basePath = "/sche
                   placeholder="Seleccionar plantilla"
                   searchPlaceholder="Buscar plantilla"
                   emptyText="No hay plantillas con ese criterio"
-                  disabled={isAdjustmentSaving || (isExternalWorkAdjustment && adjustmentForm.useCustomSchedule)}
+                  disabled={isAdjustmentSaving || (supportsCustomSchedule && adjustmentForm.useCustomSchedule)}
                 />
                 <button
                   type="button"
@@ -3161,7 +3202,7 @@ export default function SchedulePlanner({ initialFilters = {}, basePath = "/sche
                   onClick={openQuickTemplateModal}
                   aria-label="Crear plantilla de horario"
                   title="Crear plantilla"
-                  disabled={isAdjustmentSaving || (isExternalWorkAdjustment && adjustmentForm.useCustomSchedule)}
+                  disabled={isAdjustmentSaving || (supportsCustomSchedule && adjustmentForm.useCustomSchedule)}
                 >
                   <Plus size={18} />
                 </button>
@@ -3169,10 +3210,10 @@ export default function SchedulePlanner({ initialFilters = {}, basePath = "/sche
             ) : null}
             {showsCustomScheduleFields ? (
               <div className={styles.adjustmentGrid}>
-                <TextInput label="Entrada planificada" type="time" separator="H" value={adjustmentForm.plannedStartTime} onChange={(event) => updateAdjustmentField("plannedStartTime", event.target.value)} />
-                <TextInput label="Fin manana" type="time" separator="H" value={adjustmentForm.plannedLunchStartTime} onChange={(event) => updateAdjustmentField("plannedLunchStartTime", event.target.value)} />
-                <TextInput label="Inicio tarde" type="time" separator="H" value={adjustmentForm.plannedLunchEndTime} onChange={(event) => updateAdjustmentField("plannedLunchEndTime", event.target.value)} />
-                <TextInput label="Salida planificada" type="time" separator="H" value={adjustmentForm.plannedEndTime} onChange={(event) => updateAdjustmentField("plannedEndTime", event.target.value)} />
+                <TextInput className={styles.adjustmentTimeField} label="Entrada planificada" type="time" separator="H" value={adjustmentForm.plannedStartTime} onChange={(event) => updateAdjustmentField("plannedStartTime", event.target.value)} />
+                <TextInput className={styles.adjustmentTimeField} label="Fin manana" type="time" separator="H" value={adjustmentForm.plannedLunchStartTime} onChange={(event) => updateAdjustmentField("plannedLunchStartTime", event.target.value)} />
+                <TextInput className={styles.adjustmentTimeField} label="Inicio tarde" type="time" separator="H" value={adjustmentForm.plannedLunchEndTime} onChange={(event) => updateAdjustmentField("plannedLunchEndTime", event.target.value)} />
+                <TextInput className={styles.adjustmentTimeField} label="Salida planificada" type="time" separator="H" value={adjustmentForm.plannedEndTime} onChange={(event) => updateAdjustmentField("plannedEndTime", event.target.value)} />
               </div>
             ) : null}
             <label className={styles.adjustmentTextareaField}>
@@ -3198,8 +3239,8 @@ export default function SchedulePlanner({ initialFilters = {}, basePath = "/sche
       >
         <div className={styles.quickTemplateModal}>
           <div className={styles.adjustmentGrid}>
-            <TextInput label="Entrada" type="time" separator="H" value={quickTemplateForm.startTime} onChange={(event) => updateQuickTemplateField("startTime", event.target.value)} />
-            <TextInput label="Salida" type="time" separator="H" value={quickTemplateForm.endTime} onChange={(event) => updateQuickTemplateField("endTime", event.target.value)} />
+            <TextInput className={styles.adjustmentTimeField} label="Entrada" type="time" separator="H" value={quickTemplateForm.startTime} onChange={(event) => updateQuickTemplateField("startTime", event.target.value)} />
+            <TextInput className={styles.adjustmentTimeField} label="Salida" type="time" separator="H" value={quickTemplateForm.endTime} onChange={(event) => updateQuickTemplateField("endTime", event.target.value)} />
           </div>
           <label className={styles.quickTemplateToggle}>
             <input
@@ -3211,8 +3252,8 @@ export default function SchedulePlanner({ initialFilters = {}, basePath = "/sche
           </label>
           {quickTemplateForm.hasLunch ? (
             <div className={styles.adjustmentGrid}>
-              <TextInput label="Fin manana" type="time" separator="H" value={quickTemplateForm.lunchStartTime} onChange={(event) => updateQuickTemplateField("lunchStartTime", event.target.value)} />
-              <TextInput label="Inicio tarde" type="time" separator="H" value={quickTemplateForm.lunchEndTime} onChange={(event) => updateQuickTemplateField("lunchEndTime", event.target.value)} />
+              <TextInput className={styles.adjustmentTimeField} label="Fin manana" type="time" separator="H" value={quickTemplateForm.lunchStartTime} onChange={(event) => updateQuickTemplateField("lunchStartTime", event.target.value)} />
+              <TextInput className={styles.adjustmentTimeField} label="Inicio tarde" type="time" separator="H" value={quickTemplateForm.lunchEndTime} onChange={(event) => updateQuickTemplateField("lunchEndTime", event.target.value)} />
             </div>
           ) : null}
           <label className={styles.adjustmentTextareaField}>

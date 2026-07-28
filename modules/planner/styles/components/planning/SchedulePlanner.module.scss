@@ -288,6 +288,7 @@
 .adjustmentTextareaLabel { color: #52627a; font-size: var(--font-size-xs); font-weight: 650; }
 .adjustmentTextareaField textarea { width: 100%; border: 1px solid #dfe8f5; border-radius: 0.6rem; background: #fff; color: #10213e; font: inherit; min-height: 4rem; outline: 0; padding: 0.56rem 0.68rem; resize: vertical; }
 .adjustmentGrid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0.5rem; }
+.adjustmentTimeField { font-weight: 400; }
 .adjustmentContext { display: grid; gap: 0.12rem; border: 1px solid #e8eef8; border-radius: 0.65rem; background: #f8fbff; padding: 0.58rem 0.68rem; }
 .adjustmentContext span { color: #64748b; font-size: var(--font-size-sm); font-weight: 500; }
 .adjustmentContext .adjustmentEmployee { color: #10213e; font-weight: 650; }
