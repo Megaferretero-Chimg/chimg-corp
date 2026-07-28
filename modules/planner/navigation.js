@@ -27,7 +27,7 @@ export const DASHBOARD_NAVIGATION = [
       {
         href: planningModulePath("/planning/time-off"),
         label: "Vacaciones programadas",
-        description: "Registro de vacaciones por empleado",
+        description: "Solicitudes y aprobación de vacaciones",
         permission: "planner.timeOff.view",
       },
       {

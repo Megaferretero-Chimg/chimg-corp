@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 
+import { createAuditLog } from "@/lib/audit";
 import { getAuthenticatedUser } from "@/lib/auth";
 import connectToDatabase from "@/lib/db/mongodb";
 import { hasAccessPermission } from "@/modules/company/submodules/access/lib/permissions";
@@ -9,6 +10,7 @@ import {
   resolvePlannerEmployeeScope,
 } from "@/modules/planner/lib/planning/accessScope";
 import {
+  APPROVED_VACATION_STATUS_QUERY,
   buildMonthVacationQuery,
   normalizeVacationPayload,
   serializeVacationRecord,
@@ -19,6 +21,7 @@ import { VacationRequest } from "@/modules/planner/models";
 async function findOverlappingVacation({ employeeId, startDateKey, endDateKey, excludeId = "" }) {
   const query = {
     employee: employeeId,
+    status: { $ne: "rejected" },
     startDateKey: { $lte: endDateKey },
     endDateKey: { $gte: startDateKey },
   };
@@ -45,9 +48,11 @@ export async function GET(request) {
     const { searchParams } = new URL(request.url);
     const query = buildMonthVacationQuery(searchParams.get("month"));
     const plannerScope = await resolvePlannerEmployeeScope();
+    const canViewVacationRequests = hasAccessPermission(user, "planner.timeOff.view");
+    const canManageVacationRequests = hasAccessPermission(user, "planner.timeOff.manage");
 
     if (
-      !hasAccessPermission(user, "planner.timeOff.view")
+      !canViewVacationRequests
       && !hasAccessPermission(user, "planner.schedules.weekly.view")
     ) {
       return NextResponse.json({ error: "No tienes permiso para ver vacaciones." }, { status: 403 });
@@ -55,12 +60,20 @@ export async function GET(request) {
 
     applyPlannerScopeToEmployeeReferenceQuery(query, plannerScope);
 
+    if (searchParams.get("includeRequests") !== "true" || !canViewVacationRequests) {
+      query.status = APPROVED_VACATION_STATUS_QUERY;
+    }
+
     const vacations = await VacationRequest.find(query)
       .sort({ startDate: 1, employeeName: 1 })
       .lean();
 
     return NextResponse.json({
       vacations: vacations.map(serializeVacationRecord),
+      capabilities: {
+        canRequest: canViewVacationRequests,
+        canManage: canManageVacationRequests,
+      },
     });
   } catch (error) {
     return NextResponse.json(
@@ -80,8 +93,11 @@ export async function POST(request) {
   try {
     await connectToDatabase();
 
-    if (!hasAccessPermission(user, "planner.timeOff.manage")) {
-      return NextResponse.json({ error: "No tienes permiso para gestionar vacaciones." }, { status: 403 });
+    const canRequestVacation = hasAccessPermission(user, "planner.timeOff.view");
+    const canManageVacation = hasAccessPermission(user, "planner.timeOff.manage");
+
+    if (!canRequestVacation) {
+      return NextResponse.json({ error: "No tienes permiso para solicitar vacaciones." }, { status: 403 });
     }
 
     const body = await request.json();
@@ -95,7 +111,19 @@ export async function POST(request) {
     assertEmployeesInPlannerScope([employeeId], plannerScope);
 
     const employee = await Employee.findById(employeeId).lean();
-    const payload = normalizeVacationPayload(body, employee);
+    const actor = String(user?.employeeName || user?.username || user?.id || "SISTEMA").trim();
+    const actorUser = String(user?.id || user?.username || "").trim();
+    const payload = {
+      ...normalizeVacationPayload(body, employee),
+      status: canManageVacation ? "approved" : "pending",
+      requestedBy: actor,
+      requestedByUser: actorUser,
+      ...(canManageVacation ? {
+        reviewedAt: new Date(),
+        reviewedBy: actor,
+        reviewedByUser: actorUser,
+      } : {}),
+    };
     const overlappingVacation = await findOverlappingVacation({
       employeeId,
       startDateKey: payload.startDateKey,
@@ -113,11 +141,29 @@ export async function POST(request) {
     }
 
     const vacation = await VacationRequest.create(payload);
+    const serializedVacation = serializeVacationRecord(vacation);
+
+    await createAuditLog({
+      actor,
+      action: canManageVacation ? "vacation.create.approved" : "vacation.request.create",
+      entityType: "vacationRequest",
+      entityId: vacation._id.toString(),
+      entityLabel: `${employee.fullName || employeeId} ${payload.startDateKey} - ${payload.endDateKey}`,
+      route: "/api/planner/planning/vacations",
+      details: {
+        employeeId,
+        employeeName: employee.fullName || "",
+        status: payload.status,
+        after: serializedVacation,
+      },
+    });
 
     return NextResponse.json(
       {
-        message: "Vacaciones programadas correctamente.",
-        vacation: serializeVacationRecord(vacation),
+        message: canManageVacation
+          ? "Vacaciones programadas correctamente."
+          : "Solicitud de vacaciones registrada para revisión.",
+        vacation: serializedVacation,
       },
       { status: 201 },
     );

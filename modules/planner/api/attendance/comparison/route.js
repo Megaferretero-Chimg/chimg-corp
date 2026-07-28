@@ -31,6 +31,7 @@ import {
 import { OperationalException } from "@/modules/planner/models";
 import { calculatePayrollAdditionalRate, calculatePayrollHourlyRate } from "@/modules/planner/lib/payroll/rates";
 import { resolveOperationalExceptionEffect } from "@/modules/planner/lib/planning/exceptions";
+import { APPROVED_VACATION_STATUS_QUERY } from "@/modules/planner/lib/planning/vacations";
 import { ScheduleAssignment } from "@/modules/planner/models";
 import { ScheduleRuleConfig } from "@/modules/planner/models";
 import { VacationRequest } from "@/modules/planner/models";
@@ -2949,6 +2950,7 @@ export async function GET(request) {
         },
       }).select({ dateKey: 1 }).lean(),
       VacationRequest.find({
+        status: APPROVED_VACATION_STATUS_QUERY,
         startDate: { $lt: contextEnd },
         endDate: { $gte: contextStart },
       }).select({ employee: 1, startDateKey: 1, endDateKey: 1 }).lean(),
@@ -3335,6 +3337,19 @@ export async function GET(request) {
       const approvedPayrollTotal =
         (summary.supplementaryMinutes / 60) * calculatePayrollAdditionalRate(hourlyRate, SUPPLEMENTARY_SURCHARGE_MULTIPLIER) +
         (summary.extraordinaryMinutes / 60) * calculatePayrollAdditionalRate(hourlyRate, EXTRAORDINARY_SURCHARGE_MULTIPLIER);
+      const approvedExtraMinutes =
+        Math.max(0, Number(summary.supplementaryMinutes) || 0) +
+        Math.max(0, Number(summary.extraordinaryMinutes) || 0);
+      const potentialExtraMinutes =
+        Math.max(
+          Math.max(0, Number(summary.supplementaryMinutes) || 0),
+          Math.max(0, Number(summary.detectedSupplementaryMinutes) || 0),
+        ) +
+        Math.max(
+          Math.max(0, Number(summary.extraordinaryMinutes) || 0),
+          Math.max(0, Number(summary.detectedExtraordinaryMinutes) || 0),
+        );
+      const pendingExtraMinutes = Math.max(0, potentialExtraMinutes - approvedExtraMinutes);
       const salaryPlanned = salaryBaseAfterAttendance + plannedPayrollTotal;
       const salaryReal = salaryBaseAfterAttendance + realPayrollTotal;
       const salaryApproved = salaryBaseAfterAttendance + approvedPayrollTotal;
@@ -3398,6 +3413,12 @@ export async function GET(request) {
           detectedSupplementaryLabel: minutesLabel(summary.detectedSupplementaryMinutes),
           extraordinaryLabel: minutesLabel(summary.extraordinaryMinutes),
           detectedExtraordinaryLabel: minutesLabel(summary.detectedExtraordinaryMinutes),
+          approvedExtraMinutes,
+          approvedExtraLabel: minutesLabel(approvedExtraMinutes),
+          potentialExtraMinutes,
+          potentialExtraLabel: minutesLabel(potentialExtraMinutes),
+          pendingExtraMinutes,
+          pendingExtraLabel: minutesLabel(pendingExtraMinutes),
           unplannedExtraLabel: minutesLabel(summary.unplannedExtraMinutes),
           additionalSupplementaryLabel: minutesLabel(summary.additionalSupplementaryMinutes),
           justifiedWorkLabel: minutesLabel(summary.justifiedWorkMinutes),

@@ -2600,6 +2600,15 @@ export default function AttendanceComparisonDetail({ employeeId, initialFilters 
               <strong>{minutesBadge(row.summary.extraordinaryLabel)}</strong>
               <small>Planificadas {minutesBadge(row.summary.plannedExtraordinaryLabel)}</small>
             </article>
+            <article className={styles.potentialExtraMetric}>
+              <span>Tiempo extra posible</span>
+              <strong>{minutesBadge(row.summary.potentialExtraLabel)}</strong>
+              <small>
+                Aprobado {minutesBadge(row.summary.approvedExtraLabel)}
+                {" · "}
+                Pendiente {minutesBadge(row.summary.pendingExtraLabel)}
+              </small>
+            </article>
             <article>
               <span>Tiempo no cumplido</span>
               <strong>{minutesBadge(formatMinutes(monthlyUnfulfilledMinutes))}</strong>

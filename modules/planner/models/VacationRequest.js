@@ -68,6 +68,42 @@ const vacationRequestSchema = new Schema(
       trim: true,
       default: "",
     },
+    status: {
+      type: String,
+      enum: ["pending", "approved", "rejected"],
+      default: "approved",
+    },
+    requestedBy: {
+      type: String,
+      trim: true,
+      uppercase: true,
+      default: "",
+    },
+    requestedByUser: {
+      type: String,
+      trim: true,
+      default: "",
+    },
+    reviewedAt: {
+      type: Date,
+      default: null,
+    },
+    reviewedBy: {
+      type: String,
+      trim: true,
+      uppercase: true,
+      default: "",
+    },
+    reviewedByUser: {
+      type: String,
+      trim: true,
+      default: "",
+    },
+    reviewNotes: {
+      type: String,
+      trim: true,
+      default: "",
+    },
   },
   {
     timestamps: true,
@@ -77,6 +113,7 @@ const vacationRequestSchema = new Schema(
 vacationRequestSchema.index({ employee: 1, startDate: 1, endDate: 1 });
 vacationRequestSchema.index({ startDate: 1, endDate: 1 });
 vacationRequestSchema.index({ employee: 1, startDateKey: 1, endDateKey: 1 });
+vacationRequestSchema.index({ status: 1, startDateKey: 1, endDateKey: 1 });
 vacationRequestSchema.index(
   { employee: 1, coveredDateKeys: 1 },
   {

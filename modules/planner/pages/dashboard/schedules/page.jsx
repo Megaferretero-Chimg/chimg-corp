@@ -25,6 +25,7 @@ export default async function DashboardSchedulesPage({ searchParams }) {
         initialFilters={{ month, groupId, week }}
         capabilities={{
           canManageSchedules: hasAccessPermission(user, "planner.schedules.manage"),
+          canRequestPlanningUnlock: hasAccessPermission(user, "planner.schedules.manage"),
           canPasteSchedules: hasAccessPermission(user, "planner.schedules.weekly.view"),
           canApprovePlanning: hasAccessPermission(user, "planner.updates.manage"),
           canExportSchedule: hasAccessPermission(user, "planner.schedules.export"),

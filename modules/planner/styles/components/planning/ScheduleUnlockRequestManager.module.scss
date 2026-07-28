@@ -1,0 +1,143 @@
+.panel {
+  margin-bottom: 1rem;
+  border: 1px solid rgba(16, 33, 62, 0.08);
+  border-radius: 8px;
+  background: #fff;
+  box-shadow: var(--shadow-soft);
+  padding: 1rem;
+}
+
+.header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.header span {
+  color: #2563eb;
+  font-size: var(--font-size-xs);
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.header h3 {
+  margin: 0.2rem 0 0;
+  color: #10213e;
+  font-size: var(--font-size-title-xs);
+}
+
+.header p {
+  margin: 0.25rem 0 0;
+  color: #64748b;
+  font-size: var(--font-size-sm);
+}
+
+.header > strong {
+  min-width: 2.25rem;
+  border-radius: 999px;
+  background: #eff6ff;
+  color: #1d4ed8;
+  padding: 0.42rem 0.65rem;
+  text-align: center;
+}
+
+.tableWrap {
+  margin-top: 0.9rem;
+  overflow-x: auto;
+}
+
+.table {
+  width: 100%;
+  min-width: 880px;
+  border-collapse: collapse;
+}
+
+.table th,
+.table td {
+  border-bottom: 1px solid rgba(16, 33, 62, 0.08);
+  padding: 0.75rem 0.6rem;
+  text-align: left;
+  vertical-align: middle;
+}
+
+.table th {
+  color: #64748b;
+  font-size: var(--font-size-micro);
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+}
+
+.table td {
+  color: #263955;
+  font-size: var(--font-size-sm);
+}
+
+.table td strong,
+.table td span {
+  display: block;
+}
+
+.table td span {
+  margin-top: 0.18rem;
+  color: #7890ad;
+  font-size: var(--font-size-xs);
+}
+
+.reasonCell {
+  max-width: 24rem;
+  line-height: 1.45;
+}
+
+.actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.4rem;
+}
+
+.actions button {
+  width: 2.2rem;
+  height: 2.2rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  cursor: pointer;
+}
+
+.approveButton {
+  border: 1px solid rgba(5, 150, 105, 0.22);
+  background: #ecfdf5;
+  color: #047857;
+}
+
+.rejectButton {
+  border: 1px solid rgba(220, 38, 38, 0.2);
+  background: #fff1f2;
+  color: #be123c;
+}
+
+.actions button:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+.loading,
+.empty {
+  min-height: 7rem;
+  display: grid;
+  place-items: center;
+  align-content: center;
+  gap: 0.4rem;
+  margin-top: 0.9rem;
+  border: 1px dashed rgba(16, 33, 62, 0.14);
+  border-radius: 8px;
+  background: #f8fbff;
+  color: #64748b;
+  font-size: var(--font-size-sm);
+}
+
+.empty strong {
+  color: #334155;
+}

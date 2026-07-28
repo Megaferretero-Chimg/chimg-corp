@@ -17,7 +17,11 @@ import {
 } from "@/modules/planner/lib/planning/accessScope";
 import { parseMonthKey, serializeHoliday } from "@/modules/planner/lib/planning/holidays";
 import { serializeOperationalException } from "@/modules/planner/lib/planning/exceptions";
-import { serializeVacationRecord } from "@/modules/planner/lib/planning/vacations";
+import { serializeScheduleUnlockRequest } from "@/modules/planner/lib/planning/scheduleUnlockRequests";
+import {
+  APPROVED_VACATION_STATUS_QUERY,
+  serializeVacationRecord,
+} from "@/modules/planner/lib/planning/vacations";
 import {
   buildAssignmentPayload,
   buildGeneratedDays,
@@ -32,6 +36,7 @@ import { Employee, Role } from "@/modules/company/models";
 import { Holiday } from "@/modules/planner/models";
 import { OperationalException } from "@/modules/planner/models";
 import { ScheduleAssignment } from "@/modules/planner/models";
+import { ScheduleUnlockRequest } from "@/modules/planner/models";
 import { PlanningWorkGroup } from "@/modules/planner/models";
 import { VacationRequest } from "@/modules/planner/models";
 
@@ -668,6 +673,7 @@ export async function GET(request) {
       ],
     } : null;
     const vacationOverlayQuery = weekDateKeys.length ? {
+      status: APPROVED_VACATION_STATUS_QUERY,
       startDateKey: { $lte: weekDateKeys.at(-1) },
       endDateKey: { $gte: weekDateKeys[0] },
     } : null;
@@ -772,9 +778,18 @@ export async function GET(request) {
       !fixedEmployeeIds.has(assignment.employee?.toString?.() || ""),
     );
 
+    const pendingUnlockRequest = groupId && weekStartKey
+      ? await ScheduleUnlockRequest.findOne({
+        group: groupId,
+        weekStartKey,
+        status: "pending",
+      }).lean()
+      : null;
+
     return NextResponse.json({
       assignments: mergeAssignmentsByEmployee([...fixedAssignments, ...variableAssignments], monthKey)
         .map((assignment) => serializeScheduleAssignmentForWeek(assignment, weekStartKey, groupId)),
+      unlockRequest: serializeScheduleUnlockRequest(pendingUnlockRequest),
       overlays: includeOverlays ? {
         exceptions: exceptionOverlays.map(serializeOperationalException),
         vacations: vacationOverlays.map(serializeVacationRecord),
@@ -830,6 +845,7 @@ export async function POST(request) {
         Holiday.find({ dateKey: { $regex: `^${monthKey}-` } }).lean(),
         VacationRequest.exists({
           employee: employeeId,
+          status: APPROVED_VACATION_STATUS_QUERY,
           startDateKey: { $lte: dateKey },
           endDateKey: { $gte: dateKey },
         }),
@@ -949,6 +965,7 @@ export async function POST(request) {
         Holiday.find({ dateKey: { $in: submittedDateKeys } }).lean(),
         VacationRequest.find({
           employee: { $in: employeeIds },
+          status: APPROVED_VACATION_STATUS_QUERY,
           startDateKey: { $lte: submittedDateKeys.at(-1) || "" },
           endDateKey: { $gte: submittedDateKeys[0] || "" },
         }).lean(),
@@ -1237,6 +1254,23 @@ export async function POST(request) {
           unlockedVersionKeys,
         },
       });
+
+      await ScheduleUnlockRequest.updateMany(
+        {
+          group: groupObjectId,
+          weekStartKey,
+          status: "pending",
+        },
+        {
+          $set: {
+            status: "approved",
+            reviewedAt: unlockedAt,
+            reviewedBy: unlockedBy,
+            reviewedByUser: unlockedByUser,
+            reviewNotes: "Aprobada mediante desbloqueo directo desde la planificación.",
+          },
+        },
+      );
 
       const responseEmployeeIds = [...new Set([
         ...(workGroup?.members || [])

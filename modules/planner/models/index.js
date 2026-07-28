@@ -13,6 +13,7 @@ export { default as PayrollLateDecision } from "@/modules/planner/models/Payroll
 export { default as PayrollPayment } from "@/modules/planner/models/PayrollPayment";
 export { default as PayrollSupplementaryDecision } from "@/modules/planner/models/PayrollSupplementaryDecision";
 export { default as ScheduleAssignment } from "@/modules/planner/models/ScheduleAssignment";
+export { default as ScheduleUnlockRequest } from "@/modules/planner/models/ScheduleUnlockRequest";
 export { default as ScheduleRuleConfig } from "@/modules/planner/models/ScheduleRuleConfig";
 export { default as VacationRequest } from "@/modules/planner/models/VacationRequest";
 export { default as WorkSchedule } from "@/modules/planner/models/WorkSchedule";

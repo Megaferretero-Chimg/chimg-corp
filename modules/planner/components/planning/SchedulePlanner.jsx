@@ -1677,6 +1677,7 @@ export default function SchedulePlanner({ initialFilters = {}, basePath = "/sche
   const [isApprovalConfirmOpen, setIsApprovalConfirmOpen] = useState(false);
   const [isUnlockConfirmOpen, setIsUnlockConfirmOpen] = useState(false);
   const [unlockReason, setUnlockReason] = useState("");
+  const [unlockRequest, setUnlockRequest] = useState(null);
   const [viewedVersionKey, setViewedVersionKey] = useState("");
   const [selectedOverlay, setSelectedOverlay] = useState(null);
   const [exceptionToDelete, setExceptionToDelete] = useState(null);
@@ -1708,6 +1709,7 @@ export default function SchedulePlanner({ initialFilters = {}, basePath = "/sche
   );
   const dailyBaseHours = ECUADOR_DAILY_BASE_HOURS;
   const canManageSchedules = capabilities.canManageSchedules === true;
+  const canRequestPlanningUnlock = capabilities.canRequestPlanningUnlock === true;
   const canPasteSchedules = capabilities.canPasteSchedules === true;
   const canApprovePlanning = capabilities.canApprovePlanning === true;
   const canExportSchedule = capabilities.canExportSchedule === true;
@@ -1861,6 +1863,11 @@ export default function SchedulePlanner({ initialFilters = {}, basePath = "/sche
   [viewedVersionKey, weeklyApprovalState]);
   const approvedHistoryVersion = weeklyApprovalState.approvedVersion || null;
   const isScheduleReadOnly = weeklyApprovalState.isApproved;
+  const currentUnlockRequest =
+    unlockRequest?.groupId === groupId
+    && unlockRequest?.weekStartKey === selectedWeek?.weekStartKey
+      ? unlockRequest
+      : null;
 
   const coverageRolesForEmployee = useCallback((employee) => {
     const assignments = Array.isArray(employee?.roleAssignments) ? employee.roleAssignments : [];
@@ -2211,6 +2218,7 @@ export default function SchedulePlanner({ initialFilters = {}, basePath = "/sche
         if (!isCancelled) {
           setIsAssignmentsLoading(false);
           setLoadedAssignmentsKey("");
+          setUnlockRequest(null);
         }
         return;
       }
@@ -2231,6 +2239,7 @@ export default function SchedulePlanner({ initialFilters = {}, basePath = "/sche
             setExceptions([]);
             setVacations([]);
             setHolidays([]);
+            setUnlockRequest(null);
             const nextDraftDays = buildDraftDays(nextAssignments, baseShiftOptions);
 
             setSavedDraftDays(nextDraftDays);
@@ -2259,6 +2268,7 @@ export default function SchedulePlanner({ initialFilters = {}, basePath = "/sche
           const overlaysPayload = payload.overlays || {};
 
           setAssignments(nextAssignments);
+          setUnlockRequest(payload.unlockRequest || null);
           setExceptions(overlaysPayload.exceptions || []);
           setVacations(overlaysPayload.vacations || []);
           setHolidays(overlaysPayload.holidays || []);
@@ -2878,11 +2888,49 @@ export default function SchedulePlanner({ initialFilters = {}, basePath = "/sche
         if (!response.ok) throw new Error(payload.error || "No se pudo desbloquear la planificación.");
 
         setAssignments(payload.assignments || []);
+        setUnlockRequest(null);
         setIsUnlockConfirmOpen(false);
         setUnlockReason("");
         showNotice("success", payload.message || "Planificación desbloqueada correctamente.");
       } catch (error) {
         showNotice("error", error.message || "No se pudo desbloquear la planificación.");
+      }
+    });
+  }
+
+  function requestWeekUnlock() {
+    const normalizedReason = unlockReason.trim();
+
+    if (normalizedReason.length < 10) {
+      showNotice("error", "Describe el motivo del desbloqueo con al menos 10 caracteres.");
+      return;
+    }
+
+    startTransition(async () => {
+      try {
+        const response = await fetch("/api/planner/planning/schedule-unlock-requests", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            monthKey,
+            groupId,
+            weekStartKey: selectedWeek?.weekStartKey || "",
+            reason: normalizedReason,
+          }),
+        });
+        const payload = await response.json();
+
+        if (!response.ok) {
+          if (payload.request) setUnlockRequest(payload.request);
+          throw new Error(payload.error || "No se pudo solicitar el desbloqueo.");
+        }
+
+        setUnlockRequest(payload.request || null);
+        setIsUnlockConfirmOpen(false);
+        setUnlockReason("");
+        showNotice("success", payload.message || "Solicitud de desbloqueo enviada.");
+      } catch (error) {
+        showNotice("error", error.message || "No se pudo solicitar el desbloqueo.");
       }
     });
   }
@@ -3464,6 +3512,17 @@ export default function SchedulePlanner({ initialFilters = {}, basePath = "/sche
               <LockOpen size={15} aria-hidden="true" />
               Desbloquear
             </button>
+          ) : canRequestPlanningUnlock ? (
+            <button
+              type="button"
+              className={styles.unlockPlanningButton}
+              onClick={() => setIsUnlockConfirmOpen(true)}
+              disabled={isPending || Boolean(currentUnlockRequest)}
+              title={currentUnlockRequest ? "La solicitud está pendiente de revisión" : "Solicitar desbloqueo"}
+            >
+              {currentUnlockRequest ? <RefreshCw size={15} aria-hidden="true" /> : <LockOpen size={15} aria-hidden="true" />}
+              {currentUnlockRequest ? "Solicitud pendiente" : "Solicitar desbloqueo"}
+            </button>
           ) : null}
         </div>
       ) : null}
@@ -3696,9 +3755,11 @@ export default function SchedulePlanner({ initialFilters = {}, basePath = "/sche
 
       <ConfirmDialog
         isOpen={isUnlockConfirmOpen}
-        title="Desbloquear planificación"
-        message="La aprobación actual quedará como antecedente y la semana volverá a estar disponible para edición. Después deberás guardar una nueva versión y aprobarla nuevamente."
-        confirmLabel="Desbloquear"
+        title={canApprovePlanning ? "Desbloquear planificación" : "Solicitar desbloqueo"}
+        message={canApprovePlanning
+          ? "La aprobación actual quedará como antecedente y la semana volverá a estar disponible para edición. Después deberás guardar una nueva versión y aprobarla nuevamente."
+          : "La planificación continuará bloqueada hasta que un usuario autorizado revise y apruebe esta solicitud."}
+        confirmLabel={canApprovePlanning ? "Desbloquear" : "Enviar solicitud"}
         cancelLabel="Cancelar"
         tone="warning"
         layout="form"
@@ -3708,7 +3769,7 @@ export default function SchedulePlanner({ initialFilters = {}, basePath = "/sche
           setIsUnlockConfirmOpen(false);
           setUnlockReason("");
         }}
-        onConfirm={unlockWeek}
+        onConfirm={canApprovePlanning ? unlockWeek : requestWeekUnlock}
       >
         <label className={styles.unlockReasonField}>
           <span className={styles.unlockReasonHeader}>

@@ -2,6 +2,16 @@ import { addDays, differenceInCalendarDays, endOfMonth, format, isValid, parse, 
 
 import { makeEcuadorDate } from "@/lib/datetime/ecuador";
 
+export const APPROVED_VACATION_STATUS_QUERY = {
+  $nin: ["pending", "rejected"],
+};
+
+const VACATION_STATUS_LABELS = {
+  pending: "Pendiente",
+  approved: "Aprobada",
+  rejected: "Rechazada",
+};
+
 export function parseMonthKey(value) {
   const monthKey = String(value || "").trim();
 
@@ -85,6 +95,10 @@ export function buildMonthVacationQuery(monthKey) {
 }
 
 export function serializeVacationRecord(vacation) {
+  const status = ["pending", "approved", "rejected"].includes(vacation.status)
+    ? vacation.status
+    : "approved";
+
   return {
     id: vacation._id.toString(),
     employeeId: vacation.employee?.toString?.() || String(vacation.employee || ""),
@@ -97,6 +111,14 @@ export function serializeVacationRecord(vacation) {
     endDateKey: vacation.endDateKey || "",
     totalCalendarDays: vacation.totalCalendarDays || 0,
     notes: vacation.notes || "",
+    status,
+    statusLabel: VACATION_STATUS_LABELS[status],
+    requestedBy: vacation.requestedBy || "",
+    requestedByUser: vacation.requestedByUser || "",
+    reviewedAt: vacation.reviewedAt || null,
+    reviewedBy: vacation.reviewedBy || "",
+    reviewedByUser: vacation.reviewedByUser || "",
+    reviewNotes: vacation.reviewNotes || "",
     createdAt: vacation.createdAt,
     updatedAt: vacation.updatedAt,
   };
