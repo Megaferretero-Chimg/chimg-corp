@@ -1014,6 +1014,27 @@ function buildOperationalExceptionDecisionMap(exceptions = []) {
     const employeeId = toId(exception.employee);
     if (!employeeId || !exception.dateKey) return;
 
+    if (effect === "authorized_overtime" && exception.resolution === "approved_work_time") {
+      const authorizedMinutes = justifiedIntervalMinutes(exception);
+
+      if (!authorizedMinutes) return;
+
+      decisions.set(`${employeeId}|${exception.dateKey}`, {
+        employee: exception.employee,
+        dateKey: exception.dateKey,
+        decision: "full",
+        authorizedAdditionalMinutes: authorizedMinutes,
+        allowSupplementaryTime: true,
+        note: [
+          "Autorización de tiempo adicional",
+          exception.resolutionNotes || exception.notes || "",
+        ].filter(Boolean).join(": "),
+        decidedBy: exception.authorizedBy || exception.registeredBy || "TALENTO HUMANO",
+        source: "operational_exception",
+      });
+      return;
+    }
+
     const scope = exception.scope || "full_day";
     if (scope === "partial_day" || scope === "other") return;
 
@@ -1106,6 +1127,7 @@ function buildJustifiedWorkIntervalMap(exceptions = []) {
         allowSupplementaryTime: exception.payMode === "regular_and_extra" || exception.allowSupplementaryTime !== false,
         note: exception.resolutionNotes || exception.notes || "",
         decidedBy: exception.authorizedBy || exception.registeredBy || "",
+        statusLabel: effect === "paid_partial_leave" ? "Permiso sin descuento" : "Trabajo fuera justificado",
       });
     }
   });
@@ -1615,13 +1637,15 @@ function applyJustifiedWorkIntervals(day, intervals = []) {
   const nextTags = cleanPayrollTags(day.tags || [])
     .filter((tag) => !["Sin picadas", "Salida anticipada", "Atraso"].includes(tag));
   const allowSupplementaryTime = intervals.some((interval) => interval.allowSupplementaryTime !== false);
+  const statusLabels = [...new Set(intervals.map((interval) => interval.statusLabel).filter(Boolean))];
+  const statusLabel = statusLabels.join(" / ") || "Trabajo fuera justificado";
   const workedMinutes = (Number(day.workedMinutes) || 0) + justifiedWorkMinutes;
   const plannedRegularMinutes = Number(day.plannedRegularMinutes) || REGULAR_DAY_MINUTES;
   const regularFloor = Math.min(workedMinutes, plannedRegularMinutes);
 
   return {
     ...day,
-    tags: [...new Set([...nextTags, "Trabajo fuera justificado"])],
+    tags: [...new Set([...nextTags, statusLabel])],
     hasIssue: nextTags.some(isAttendanceIssueTag),
     workedMinutes,
     workedLabel: workedMinutes ? minutesLabel(workedMinutes) : "--",
@@ -1642,6 +1666,7 @@ function applyJustifiedWorkIntervals(day, intervals = []) {
         note: interval.note,
         decidedBy: interval.decidedBy,
         allowSupplementaryTime: interval.allowSupplementaryTime,
+        statusLabel: interval.statusLabel,
       })),
     ],
     payrollPolicy: {
@@ -1651,7 +1676,7 @@ function applyJustifiedWorkIntervals(day, intervals = []) {
     authorization: {
       ...(day.authorization || {}),
       decision: "approved_work_time",
-      statusLabel: "Trabajo fuera justificado",
+      statusLabel,
       note: intervals.map((interval) => interval.note).filter(Boolean).join(" | "),
       decidedBy: intervals.find((interval) => interval.decidedBy)?.decidedBy || "",
       isSaved: false,
@@ -1806,13 +1831,22 @@ function applyDayDecision(day, decision) {
         ? Number(day.scheduledWorkedMinutes) || 0
         : Number(day.plannedExtraordinaryMinutes) || 0),
   );
-  const effectiveDecision = decision || {
-    decision: "planned",
-    authorizedSupplementaryMinutes: plannedSupplementaryMinutes,
-    authorizedExtraordinaryMinutes: plannedExtraordinaryMinutes,
-    note: "",
-    decidedBy: "",
-  };
+  const authorizedAdditionalMinutes = Math.max(0, Number(decision?.authorizedAdditionalMinutes) || 0);
+  const effectiveDecision = decision
+    ? authorizedAdditionalMinutes
+      ? {
+          ...decision,
+          authorizedSupplementaryMinutes: plannedSupplementaryMinutes + authorizedAdditionalMinutes,
+          authorizedExtraordinaryMinutes: plannedExtraordinaryMinutes + authorizedAdditionalMinutes,
+        }
+      : decision
+    : {
+        decision: "planned",
+        authorizedSupplementaryMinutes: plannedSupplementaryMinutes,
+        authorizedExtraordinaryMinutes: plannedExtraordinaryMinutes,
+        note: "",
+        decidedBy: "",
+      };
   const isAutomaticDecision = !decision;
   const plannedPaidRegularMinutes = Math.max(0, Number(day.plannedRegularMinutes) || 0);
   const plannedPaidSupplementaryMinutes = policy.appliesSupplementaryHours === false
@@ -2205,6 +2239,15 @@ function applyDayDecision(day, decision) {
     "Tiempo adicional sin justificar",
   ].includes(tag));
   if (!isSavedDecision && authorizedExtraordinaryMinutes > 0) issueAdjustedTags.push("Extraordinaria");
+  if (
+    isSavedDecision
+    && (
+      detectedSupplementaryMinutes - authorizedSupplementaryMinutes > additionalApprovalToleranceMinutes
+      || detectedExtraordinaryMinutes - authorizedExtraordinaryMinutes > additionalApprovalToleranceMinutes
+    )
+  ) {
+    issueAdjustedTags.push("Tiempo adicional");
+  }
   if (shouldShowLateWarning) issueAdjustedTags.push("Atraso");
   if (adjustedEarlyLeaveMinutes > 0) issueAdjustedTags.push("Salida anticipada");
   if (shouldCompleteLaborForJustifiedEarlyLeave) issueAdjustedTags.push("Salida justificada");

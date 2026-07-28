@@ -24,15 +24,42 @@ import styles from "@/modules/planner/styles/components/planning/ExceptionManage
 const EXCEPTION_FLOWS = [
   {
     category: "planning",
-    value: "full_day_permission",
-    label: "Permiso",
-    description: "Cubre una ausencia autorizada dentro de la jornada. No representa trabajo realizado.",
-    type: "permission",
+    value: "absence_report",
+    label: "Falta o ausencia",
+    description: "Registra una falta informada por la jefatura para que Talento Humano decida si corresponde descontar la jornada.",
+    type: "absence",
     scope: "full_day",
     resolution: "approved_work_time",
     effect: "paid_absence",
     attendanceMode: "ignore_attendance",
     payMode: "regular_only",
+    reviewMode: "deduction",
+  },
+  {
+    category: "planning",
+    value: "hourly_permission",
+    label: "Permiso de salida",
+    description: "Registra un permiso por horas para que Talento Humano decida si ese tiempo se descuenta.",
+    type: "permission",
+    scope: "partial_day",
+    resolution: "approved_work_time",
+    effect: "paid_partial_leave",
+    attendanceMode: "ignore_attendance",
+    payMode: "regular_only",
+    reviewMode: "deduction",
+  },
+  {
+    category: "planning",
+    value: "overtime_authorization",
+    label: "Autorización de tiempo adicional",
+    description: "Solicita autorizar un rango adicional trabajado; al aprobarse se clasifica como suplementario o extraordinario según el día.",
+    type: "overtime_authorization",
+    scope: "partial_day",
+    resolution: "approved_work_time",
+    effect: "authorized_overtime",
+    attendanceMode: "use_punches",
+    payMode: "regular_and_extra",
+    reviewMode: "approval",
   },
   {
     category: "planning",
@@ -82,7 +109,6 @@ const FLOW_OPTIONS = EXCEPTION_FLOWS.map((flow) => ({
   searchText: FLOW_GROUPS.find((group) => group.value === flow.category)?.label || "",
 }));
 const FLOW_VALUES = new Set(EXCEPTION_FLOWS.map((flow) => flow.value));
-const NON_APPROVED_RESOLUTIONS = new Set(["pending", "discount_day", "no_action"]);
 const WEEKDAY_OPTIONS = [
   { value: 1, label: "Lun" },
   { value: 2, label: "Mar" },
@@ -97,8 +123,8 @@ const DEFAULT_APPLICABLE_WEEKDAYS = [1, 2, 3, 4, 5];
 const EMPTY_FORM = {
   id: "",
   employeeId: "",
-  flowType: "full_day_permission",
-  type: "permission",
+  flowType: "absence_report",
+  type: "absence",
   scope: "full_day",
   dateKey: format(new Date(), "yyyy-MM-dd"),
   endDateKey: "",
@@ -129,6 +155,8 @@ const EMPTY_FORM = {
 const DEFAULT_FLOW = EXCEPTION_FLOWS[0];
 
 function getFlowDefinition(flowType) {
+  if (flowType === "full_day_permission") return EXCEPTION_FLOWS.find((flow) => flow.value === "absence_report");
+
   return EXCEPTION_FLOWS.find((flow) => flow.value === flowType) || DEFAULT_FLOW;
 }
 
@@ -138,11 +166,14 @@ function inferFlowType(exception) {
   const resolution = String(exception?.resolution || "");
   const scope = String(exception?.scope || "");
 
+  if (type === "overtime_authorization" || effect === "authorized_overtime") return "overtime_authorization";
   if (effect === "manual_punch" || type === "missing_punch" || type === "outside_work_punch" || scope === "missing_punch") return "missed_punch";
   if (effect === "planning_change" || type === "schedule_change" || resolution === "reschedule") return "temporary_schedule_change";
   if (effect === "external_work" || type === "outside_work") return "external_work";
 
-  return "full_day_permission";
+  if (type === "permission" && scope === "partial_day") return "hourly_permission";
+
+  return "absence_report";
 }
 
 function buildExceptionForm(exception) {
@@ -193,6 +224,10 @@ function normalizeSearch(value) {
     .trim();
 }
 
+function formatTimeLabel(value) {
+  return String(value || "").replace(":", "H");
+}
+
 function deriveResolutionEffect(form) {
   const flow = getFlowDefinition(form.flowType);
 
@@ -226,13 +261,21 @@ function deriveResolutionEffect(form) {
     };
   }
 
-  if (flow.value === "full_day_permission") {
-    const isHourlyPermission = form.scope === "partial_day";
-
+  if (flow.value === "absence_report" || flow.value === "hourly_permission") {
     return {
       type: flow.type,
-      scope: isHourlyPermission ? "partial_day" : flow.scope,
-      effect: isHourlyPermission ? "paid_partial_leave" : flow.effect,
+      scope: flow.scope,
+      effect: flow.effect,
+      attendanceMode: flow.attendanceMode,
+      payMode: flow.payMode,
+    };
+  }
+
+  if (flow.value === "overtime_authorization") {
+    return {
+      type: flow.type,
+      scope: flow.scope,
+      effect: flow.effect,
       attendanceMode: flow.attendanceMode,
       payMode: flow.payMode,
     };
@@ -325,8 +368,13 @@ export default function ExceptionManager({
     () => (onlyPending ? exceptions.filter((exception) => exception.resolution === "pending") : exceptions),
     [exceptions, onlyPending],
   );
+  const noDiscountCount = scopedExceptions.filter((exception) =>
+    exception.resolution === "approved_work_time"
+    && getFlowDefinition(inferFlowType(exception)).reviewMode === "deduction",
+  ).length;
   const approvedCount = scopedExceptions.filter((exception) =>
-    !NON_APPROVED_RESOLUTIONS.has(exception.resolution),
+    !["pending", "discount_day", "no_action"].includes(exception.resolution)
+    && getFlowDefinition(inferFlowType(exception)).reviewMode !== "deduction",
   ).length;
   const discountCount = scopedExceptions.filter((exception) => exception.resolution === "discount_day").length;
   const rejectedCount = scopedExceptions.filter((exception) => exception.resolution === "no_action").length;
@@ -383,13 +431,11 @@ export default function ExceptionManager({
   const paginationEnd = Math.min(safeCurrentPage * EXCEPTIONS_PAGE_SIZE, orderedExceptions.length);
   const hasDateRange = Boolean(form.endDateKey);
   const selectedFlow = getFlowDefinition(form.flowType);
-  const isPermissionFlow = selectedFlow.value === "full_day_permission";
-  const isHourlyPermission = isPermissionFlow && form.scope === "partial_day";
   const createsManualPunch = selectedFlow.effect === "manual_punch";
-  const needsTimeRange = isHourlyPermission;
+  const needsTimeRange = ["hourly_permission", "overtime_authorization"].includes(selectedFlow.value);
   const needsTemporarySchedule = selectedFlow.effect === "planning_change";
   const canUseDateRange = selectedFlow.category === "planning" && !needsTimeRange;
-  const willApproveOnSave = Boolean(form.id && canResolveExceptions && form.resolution === "pending");
+  const isEditingException = Boolean(form.id);
   const canSave = Boolean(
     form.employeeId
     && selectedFlow.value
@@ -510,20 +556,21 @@ export default function ExceptionManager({
       : dateKey.slice(0, 7);
     const flowType = FLOW_VALUES.has(initialDraft.flowType)
       ? initialDraft.flowType
-      : "full_day_permission";
-    const initialScope = ["full_day", "partial_day"].includes(initialDraft.scope)
-      ? initialDraft.scope
-      : initialDraft.flowType === "hourly_permission"
-        ? "partial_day"
-        : EMPTY_FORM.scope;
+      : initialDraft.flowType === "full_day_permission"
+        ? "absence_report"
+        : "absence_report";
     const employee = activeEmployees.find((entry) => entry.id === initialDraft.employeeId);
 
     setMonthDate(new Date(`${month}-01T12:00:00.000Z`));
     setForm({
       ...EMPTY_FORM,
       employeeId: initialDraft.employeeId || "",
-      flowType: flowType === "hourly_permission" ? "full_day_permission" : flowType,
-      scope: flowType === "full_day_permission" || flowType === "hourly_permission" ? initialScope : EMPTY_FORM.scope,
+      flowType,
+      type: getFlowDefinition(flowType).type,
+      scope: getFlowDefinition(flowType).scope,
+      effect: getFlowDefinition(flowType).effect,
+      attendanceMode: getFlowDefinition(flowType).attendanceMode,
+      payMode: getFlowDefinition(flowType).payMode,
       dateKey,
       notes: initialDraft.notes || "",
       resolution: "pending",
@@ -613,32 +660,17 @@ export default function ExceptionManager({
         : DEFAULT_APPLICABLE_WEEKDAYS,
       manualPunchTime: flow.effect === "manual_punch" ? current.manualPunchTime : "",
       endDateKey: flow.category === "planning" ? current.endDateKey : "",
-      countsAsWorkedTime: false,
-      allowSupplementaryTime: false,
+      countsAsWorkedTime: flow.value === "hourly_permission",
+      allowSupplementaryTime: flow.value === "overtime_authorization",
       isExtraDay: false,
     }));
-  }
-
-  function updatePermissionScope(scope) {
-    setForm((current) => {
-      const isPartialScope = scope === "partial_day";
-
-      return {
-        ...current,
-        scope: isPartialScope ? "partial_day" : "full_day",
-        effect: isPartialScope ? "paid_partial_leave" : "paid_absence",
-        startTime: isPartialScope ? current.startTime : "",
-        endTime: isPartialScope ? current.endTime : "",
-        endDateKey: isPartialScope ? "" : current.endDateKey,
-      };
-    });
   }
 
   function describeExceptionTime(exception) {
     const range = exception.endDateKey ? `${exception.dateKey} hasta ${exception.endDateKey}` : exception.dateKey;
 
     if (exception.effect === "manual_punch" && exception.manualPunchTime) {
-      return `${range} · picada ${exception.manualPunchTime}`;
+      return `${range} · picada ${formatTimeLabel(exception.manualPunchTime)}`;
     }
 
     return range;
@@ -688,6 +720,9 @@ export default function ExceptionManager({
   function buildReviewPayload(exception, resolution) {
     const flow = getFlowDefinition(inferFlowType(exception));
     const isRejected = resolution === "no_action";
+    const isDiscounted = resolution === "discount_day";
+    const isDeductionDecision = flow.reviewMode === "deduction";
+    const isAuthorizedOvertime = flow.value === "overtime_authorization" && resolution === "approved_work_time";
 
     return {
       id: exception.id,
@@ -711,9 +746,23 @@ export default function ExceptionManager({
       applicableWeekdays: Array.isArray(exception.applicableWeekdays) && exception.applicableWeekdays.length
         ? exception.applicableWeekdays
         : DEFAULT_APPLICABLE_WEEKDAYS,
-      effect: isRejected ? "alert_review" : exception.effect || flow.effect,
-      attendanceMode: isRejected ? "none" : exception.attendanceMode || flow.attendanceMode,
-      payMode: isRejected ? "no_pay_change" : exception.payMode || flow.payMode,
+      effect: isRejected
+        ? "alert_review"
+        : isDiscounted
+          ? "unpaid_absence"
+          : flow.effect || exception.effect,
+      attendanceMode: isRejected
+        ? "none"
+        : isDiscounted
+          ? "ignore_attendance"
+          : flow.attendanceMode || exception.attendanceMode,
+      payMode: isRejected
+        ? "no_pay_change"
+        : isDiscounted
+          ? "discount"
+          : flow.payMode || exception.payMode,
+      countsAsWorkedTime: isDeductionDecision && !isDiscounted,
+      allowSupplementaryTime: isAuthorizedOvertime,
       resolution,
       resolutionNotes: reviewNotes.trim(),
       notes: exception.notes || "",
@@ -739,7 +788,20 @@ export default function ExceptionManager({
         await loadExceptions();
         setReviewException(null);
         setReviewNotes("");
-        showNotice("success", resolution === "no_action" ? "Justificacion rechazada." : "Justificacion aprobada.");
+        const flow = getFlowDefinition(inferFlowType(reviewException));
+        const message = flow.reviewMode === "deduction"
+          ? resolution === "discount_day"
+            ? "Novedad resuelta con descuento de horas."
+            : "Novedad resuelta sin descuento de horas."
+          : flow.value === "overtime_authorization" && resolution === "no_action"
+            ? "Autorización rechazada."
+            : flow.value === "overtime_authorization"
+              ? "Autorización aprobada."
+              : resolution === "no_action"
+                ? "Justificación rechazada."
+                : "Justificación aprobada.";
+
+        showNotice("success", message);
       } catch (error) {
         showNotice("error", error.message);
       }
@@ -763,12 +825,7 @@ export default function ExceptionManager({
     const endpoint = form.id ? `/api/planner/planning/exceptions/${form.id}` : "/api/planner/planning/exceptions";
     const method = form.id ? "PATCH" : "POST";
     const resolutionEffect = deriveResolutionEffect(form);
-    const canResolveCurrentException = Boolean(form.id && canResolveExceptions);
-    const resolution = canResolveCurrentException
-      ? form.resolution === "pending"
-        ? selectedFlow.resolution
-        : form.resolution
-      : "pending";
+    const resolution = form.id ? form.resolution : "pending";
     const requestBody = {
       ...form,
       ...resolutionEffect,
@@ -785,8 +842,12 @@ export default function ExceptionManager({
       applicableWeekdays: needsTemporarySchedule ? form.applicableWeekdays : undefined,
       manualPunchTime: createsManualPunch ? form.manualPunchTime : "",
       destination: "",
-      countsAsWorkedTime: false,
-      allowSupplementaryTime: false,
+      countsAsWorkedTime:
+        resolution === "approved_work_time"
+        && selectedFlow.value === "hourly_permission",
+      allowSupplementaryTime:
+        resolution === "approved_work_time"
+        && selectedFlow.value === "overtime_authorization",
       resolutionNotes: "",
     };
 
@@ -942,13 +1003,13 @@ export default function ExceptionManager({
               {reviewException.startTime || reviewException.endTime ? (
                 <div>
                   <dt>Rango</dt>
-                  <dd>{[reviewException.startTime, reviewException.endTime].filter(Boolean).join(" - ")}</dd>
+                  <dd>{[reviewException.startTime, reviewException.endTime].filter(Boolean).map(formatTimeLabel).join(" - ")}</dd>
                 </div>
               ) : null}
               {reviewException.manualPunchTime ? (
                 <div>
                   <dt>Picada</dt>
-                  <dd>{reviewException.manualPunchTime}</dd>
+                  <dd>{formatTimeLabel(reviewException.manualPunchTime)}</dd>
                 </div>
               ) : null}
               {reviewException.plannedDayType === "off_day" ? (
@@ -959,7 +1020,7 @@ export default function ExceptionManager({
               ) : reviewException.plannedStartTime || reviewException.plannedEndTime ? (
                 <div>
                   <dt>Horario temporal</dt>
-                  <dd>{[reviewException.plannedStartTime, reviewException.plannedEndTime].filter(Boolean).join(" - ")}</dd>
+                  <dd>{[reviewException.plannedStartTime, reviewException.plannedEndTime].filter(Boolean).map(formatTimeLabel).join(" - ")}</dd>
                 </div>
               ) : null}
             </dl>
@@ -988,24 +1049,45 @@ export default function ExceptionManager({
             ) : null}
 
             {canResolveExceptions && reviewException.resolution === "pending" ? (
-              <div className={styles.reviewActions}>
-                <button
-                  type="button"
-                  className={styles.dangerButton}
-                  onClick={() => reviewCurrentException("no_action")}
-                  disabled={isPending}
-                >
-                  Rechazar
-                </button>
-                <button
-                  type="button"
-                  className={styles.primaryButton}
-                  onClick={() => reviewCurrentException(getFlowDefinition(inferFlowType(reviewException)).resolution)}
-                  disabled={isPending}
-                >
-                  Aprobar
-                </button>
-              </div>
+              getFlowDefinition(inferFlowType(reviewException)).reviewMode === "deduction" ? (
+                <div className={styles.reviewActions}>
+                  <button
+                    type="button"
+                    className={styles.dangerButton}
+                    onClick={() => reviewCurrentException("discount_day")}
+                    disabled={isPending}
+                  >
+                    Resolver con descuento
+                  </button>
+                  <button
+                    type="button"
+                    className={styles.primaryButton}
+                    onClick={() => reviewCurrentException("approved_work_time")}
+                    disabled={isPending}
+                  >
+                    Resolver sin descuento
+                  </button>
+                </div>
+              ) : (
+                <div className={styles.reviewActions}>
+                  <button
+                    type="button"
+                    className={styles.dangerButton}
+                    onClick={() => reviewCurrentException("no_action")}
+                    disabled={isPending}
+                  >
+                    Rechazar
+                  </button>
+                  <button
+                    type="button"
+                    className={styles.primaryButton}
+                    onClick={() => reviewCurrentException(getFlowDefinition(inferFlowType(reviewException)).resolution)}
+                    disabled={isPending}
+                  >
+                    Aprobar
+                  </button>
+                </div>
+              )
             ) : null}
           </div>
         ) : null}
@@ -1062,7 +1144,7 @@ export default function ExceptionManager({
 
           {isLoading ? (
             <div className={styles.summaryGrid} aria-hidden="true">
-              {Array.from({ length: 5 }, (_, index) => (
+              {Array.from({ length: 6 }, (_, index) => (
                 <div key={index} className={styles.metricSkeleton}>
                   <span className={styles.skeletonLineShort} />
                   <span className={styles.skeletonNumber} />
@@ -1080,11 +1162,15 @@ export default function ExceptionManager({
                 <strong>{pendingCount}</strong>
               </div>
               <div className={styles.metric}>
+                <span>Sin descuento</span>
+                <strong>{noDiscountCount}</strong>
+              </div>
+              <div className={styles.metric}>
                 <span>Aprobadas</span>
                 <strong>{approvedCount}</strong>
               </div>
               <div className={styles.metric}>
-                <span>Rechazadas</span>
+                <span>Autorizaciones rechazadas</span>
                 <strong>{rejectedCount}</strong>
               </div>
               <div className={styles.metric}>
@@ -1331,6 +1417,7 @@ export default function ExceptionManager({
           ) : null}
 
           <AutocompleteSelect
+            className={styles.adjustmentTypeSelect}
             label="Tipo de ajuste"
             options={FLOW_OPTIONS}
             value={form.flowType}
@@ -1340,27 +1427,10 @@ export default function ExceptionManager({
             onChange={updateFlowType}
           />
 
-          {isPermissionFlow ? (
-            <div className={styles.presetPanel}>
-              <span>Alcance del permiso</span>
-              <div className={styles.presetActions}>
-                <button
-                  type="button"
-                  data-active={form.scope !== "partial_day"}
-                  onClick={() => updatePermissionScope("full_day")}
-                >
-                  Dia completo
-                </button>
-                <button
-                  type="button"
-                  data-active={form.scope === "partial_day"}
-                  onClick={() => updatePermissionScope("partial_day")}
-                >
-                  Por horas
-                </button>
-              </div>
-            </div>
-          ) : null}
+          <div className={styles.presetPanel}>
+            <span>Cómo se procesa</span>
+            <p>{selectedFlow.description}</p>
+          </div>
 
           <div className={styles.twoColumnGrid}>
             <label className={styles.field}>
@@ -1395,6 +1465,7 @@ export default function ExceptionManager({
               <TimeInput24
                 value={form.manualPunchTime}
                 onChange={(event) => updateForm("manualPunchTime", event.target.value)}
+                separator="H"
               />
             </label>
           ) : null}
@@ -1402,12 +1473,12 @@ export default function ExceptionManager({
           {needsTimeRange ? (
             <div className={styles.twoColumnGrid}>
               <label className={styles.field}>
-                <span>Hora inicio permiso</span>
-                <TimeInput24 value={form.startTime} onChange={(event) => updateForm("startTime", event.target.value)} />
+                <span>{selectedFlow.value === "overtime_authorization" ? "Inicio autorizado" : "Inicio del permiso"}</span>
+                <TimeInput24 separator="H" value={form.startTime} onChange={(event) => updateForm("startTime", event.target.value)} />
               </label>
               <label className={styles.field}>
-                <span>Hora fin permiso</span>
-                <TimeInput24 value={form.endTime} onChange={(event) => updateForm("endTime", event.target.value)} />
+                <span>{selectedFlow.value === "overtime_authorization" ? "Fin autorizado" : "Fin del permiso"}</span>
+                <TimeInput24 separator="H" value={form.endTime} onChange={(event) => updateForm("endTime", event.target.value)} />
               </label>
             </div>
           ) : null}
@@ -1427,21 +1498,21 @@ export default function ExceptionManager({
                   <div className={styles.twoColumnGrid}>
                     <label className={styles.field}>
                       <span>Entrada</span>
-                      <TimeInput24 value={form.plannedStartTime} onChange={(event) => updateForm("plannedStartTime", event.target.value)} />
+                      <TimeInput24 separator="H" value={form.plannedStartTime} onChange={(event) => updateForm("plannedStartTime", event.target.value)} />
                     </label>
                     <label className={styles.field}>
                       <span>Salida</span>
-                      <TimeInput24 value={form.plannedEndTime} onChange={(event) => updateForm("plannedEndTime", event.target.value)} />
+                      <TimeInput24 separator="H" value={form.plannedEndTime} onChange={(event) => updateForm("plannedEndTime", event.target.value)} />
                     </label>
                   </div>
                   <div className={styles.twoColumnGrid}>
                     <label className={styles.field}>
                       <span>Inicio almuerzo</span>
-                      <TimeInput24 value={form.plannedLunchStartTime} onChange={(event) => updateForm("plannedLunchStartTime", event.target.value)} />
+                      <TimeInput24 separator="H" value={form.plannedLunchStartTime} onChange={(event) => updateForm("plannedLunchStartTime", event.target.value)} />
                     </label>
                     <label className={styles.field}>
                       <span>Fin almuerzo</span>
-                      <TimeInput24 value={form.plannedLunchEndTime} onChange={(event) => updateForm("plannedLunchEndTime", event.target.value)} />
+                      <TimeInput24 separator="H" value={form.plannedLunchEndTime} onChange={(event) => updateForm("plannedLunchEndTime", event.target.value)} />
                     </label>
                   </div>
                 </>
@@ -1484,7 +1555,7 @@ export default function ExceptionManager({
             </button>
             <button type="submit" className={styles.primaryButton} disabled={!canSave || isPending}>
               <Save size={16} />
-              {isPending ? "Guardando..." : willApproveOnSave ? "Aprobar justificacion" : "Guardar justificacion"}
+              {isPending ? "Guardando..." : isEditingException ? "Guardar cambios" : "Guardar justificacion"}
             </button>
           </div>
         </form>

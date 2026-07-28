@@ -3,9 +3,11 @@ import { endOfMonth, format, isValid, parse, startOfMonth } from "date-fns";
 import { isValidTime24, makeEcuadorDate } from "@/lib/datetime/ecuador";
 
 export const EXCEPTION_TYPES = [
+  { value: "absence", label: "Falta o ausencia" },
+  { value: "overtime_authorization", label: "Autorización de tiempo adicional" },
   { value: "outside_work", label: "Trabajo externo" },
   { value: "missing_punch", label: "Picada omitida" },
-  { value: "permission", label: "Permiso o ausencia" },
+  { value: "permission", label: "Permiso de salida" },
   { value: "schedule_change", label: "Ajuste de horario" },
   { value: "other", label: "Otro" },
 ];
@@ -18,6 +20,7 @@ export const EXCEPTION_RESOLUTIONS = [
 ];
 
 export const RESOLUTION_EFFECTS = [
+  { value: "authorized_overtime", label: "Tiempo adicional autorizado" },
   { value: "planning_change", label: "Cambio de planificacion" },
   { value: "paid_absence", label: "Ausencia justificada" },
   { value: "paid_partial_leave", label: "Permiso parcial" },
@@ -92,7 +95,15 @@ function normalizeExceptionType(value) {
     return "outside_work";
   }
 
-  if (["absence", "permission"].includes(type)) {
+  if (type === "absence") {
+    return "absence";
+  }
+
+  if (type === "overtime_authorization") {
+    return "overtime_authorization";
+  }
+
+  if (type === "permission") {
     return "permission";
   }
 
@@ -132,6 +143,10 @@ export function resolveOperationalExceptionEffect(exception = {}) {
     return "unpaid_absence";
   }
 
+  if (type === "overtime_authorization") {
+    return resolution === "approved_work_time" ? "authorized_overtime" : "alert_review";
+  }
+
   if (hasManualPunch) {
     return "manual_punch";
   }
@@ -152,7 +167,7 @@ export function resolveOperationalExceptionEffect(exception = {}) {
     return "paid_partial_leave";
   }
 
-  if (["permission", "medical_appointment"].includes(type) || ["paid_leave", "approved_work_time", "complete_scheduled_time", "justified_record"].includes(resolution)) {
+  if (["absence", "permission", "medical_appointment"].includes(type) || ["paid_leave", "approved_work_time", "complete_scheduled_time", "justified_record"].includes(resolution)) {
     return "paid_absence";
   }
 
@@ -160,6 +175,7 @@ export function resolveOperationalExceptionEffect(exception = {}) {
 }
 
 function defaultAttendanceModeForEffect(effect, exception = {}) {
+  if (effect === "authorized_overtime") return "use_punches";
   if (effect === "manual_punch") return "add_manual_punch";
   if (effect === "external_work") {
     return "use_authorized_schedule";
@@ -171,6 +187,7 @@ function defaultAttendanceModeForEffect(effect, exception = {}) {
 }
 
 function defaultPayModeForEffect(effect, exception = {}) {
+  if (effect === "authorized_overtime") return "regular_and_extra";
   if (effect === "unpaid_absence") return "discount";
   if (effect === "external_work") return exception.allowSupplementaryTime === false ? "regular_only" : "regular_and_extra";
   if (effect === "planning_change") return "no_pay_change";
@@ -493,7 +510,16 @@ export function serializeOperationalException(exception) {
     registeredBy: exception.registeredBy || "",
     authorizedBy: exception.authorizedBy || "",
     resolution,
-    resolutionLabel: getLabel(EXCEPTION_RESOLUTIONS, resolution),
+    resolutionLabel:
+      ["absence", "permission"].includes(type) && resolution === "approved_work_time"
+        ? "Sin descuento de horas"
+        : ["absence", "permission"].includes(type) && resolution === "discount_day"
+          ? "Con descuento de horas"
+          : type === "overtime_authorization" && resolution === "approved_work_time"
+            ? "Autorización aprobada"
+            : type === "overtime_authorization" && resolution === "no_action"
+              ? "Autorización rechazada"
+              : getLabel(EXCEPTION_RESOLUTIONS, resolution),
     resolutionNotes: exception.resolutionNotes || "",
     notes: exception.notes || "",
     status: exception.status || "open",

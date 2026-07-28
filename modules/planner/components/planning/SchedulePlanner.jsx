@@ -3101,8 +3101,8 @@ export default function SchedulePlanner({ initialFilters = {}, basePath = "/sche
             />
             {selectedAdjustmentType?.requiresTimeRange ? (
               <div className={styles.adjustmentGrid}>
-                <TextInput label="Desde" type="time" value={adjustmentForm.startTime} onChange={(event) => updateAdjustmentField("startTime", event.target.value)} />
-                <TextInput label="Hasta" type="time" value={adjustmentForm.endTime} onChange={(event) => updateAdjustmentField("endTime", event.target.value)} />
+                <TextInput label="Desde" type="time" separator="H" value={adjustmentForm.startTime} onChange={(event) => updateAdjustmentField("startTime", event.target.value)} />
+                <TextInput label="Hasta" type="time" separator="H" value={adjustmentForm.endTime} onChange={(event) => updateAdjustmentField("endTime", event.target.value)} />
               </div>
             ) : null}
             {selectedAdjustmentType?.requiresSchedule ? (
@@ -3130,10 +3130,10 @@ export default function SchedulePlanner({ initialFilters = {}, basePath = "/sche
             ) : null}
             {selectedAdjustmentType?.requiresSchedule ? (
               <div className={styles.adjustmentGrid}>
-                <TextInput label="Entrada planificada" type="time" value={adjustmentForm.plannedStartTime} onChange={(event) => updateAdjustmentField("plannedStartTime", event.target.value)} />
-                <TextInput label="Fin manana" type="time" value={adjustmentForm.plannedLunchStartTime} onChange={(event) => updateAdjustmentField("plannedLunchStartTime", event.target.value)} />
-                <TextInput label="Inicio tarde" type="time" value={adjustmentForm.plannedLunchEndTime} onChange={(event) => updateAdjustmentField("plannedLunchEndTime", event.target.value)} />
-                <TextInput label="Salida planificada" type="time" value={adjustmentForm.plannedEndTime} onChange={(event) => updateAdjustmentField("plannedEndTime", event.target.value)} />
+                <TextInput label="Entrada planificada" type="time" separator="H" value={adjustmentForm.plannedStartTime} onChange={(event) => updateAdjustmentField("plannedStartTime", event.target.value)} />
+                <TextInput label="Fin manana" type="time" separator="H" value={adjustmentForm.plannedLunchStartTime} onChange={(event) => updateAdjustmentField("plannedLunchStartTime", event.target.value)} />
+                <TextInput label="Inicio tarde" type="time" separator="H" value={adjustmentForm.plannedLunchEndTime} onChange={(event) => updateAdjustmentField("plannedLunchEndTime", event.target.value)} />
+                <TextInput label="Salida planificada" type="time" separator="H" value={adjustmentForm.plannedEndTime} onChange={(event) => updateAdjustmentField("plannedEndTime", event.target.value)} />
               </div>
             ) : null}
             <label className={styles.adjustmentTextareaField}>
@@ -3159,8 +3159,8 @@ export default function SchedulePlanner({ initialFilters = {}, basePath = "/sche
       >
         <div className={styles.quickTemplateModal}>
           <div className={styles.adjustmentGrid}>
-            <TextInput label="Entrada" type="time" value={quickTemplateForm.startTime} onChange={(event) => updateQuickTemplateField("startTime", event.target.value)} />
-            <TextInput label="Salida" type="time" value={quickTemplateForm.endTime} onChange={(event) => updateQuickTemplateField("endTime", event.target.value)} />
+            <TextInput label="Entrada" type="time" separator="H" value={quickTemplateForm.startTime} onChange={(event) => updateQuickTemplateField("startTime", event.target.value)} />
+            <TextInput label="Salida" type="time" separator="H" value={quickTemplateForm.endTime} onChange={(event) => updateQuickTemplateField("endTime", event.target.value)} />
           </div>
           <label className={styles.quickTemplateToggle}>
             <input
@@ -3172,8 +3172,8 @@ export default function SchedulePlanner({ initialFilters = {}, basePath = "/sche
           </label>
           {quickTemplateForm.hasLunch ? (
             <div className={styles.adjustmentGrid}>
-              <TextInput label="Fin manana" type="time" value={quickTemplateForm.lunchStartTime} onChange={(event) => updateQuickTemplateField("lunchStartTime", event.target.value)} />
-              <TextInput label="Inicio tarde" type="time" value={quickTemplateForm.lunchEndTime} onChange={(event) => updateQuickTemplateField("lunchEndTime", event.target.value)} />
+              <TextInput label="Fin manana" type="time" separator="H" value={quickTemplateForm.lunchStartTime} onChange={(event) => updateQuickTemplateField("lunchStartTime", event.target.value)} />
+              <TextInput label="Inicio tarde" type="time" separator="H" value={quickTemplateForm.lunchEndTime} onChange={(event) => updateQuickTemplateField("lunchEndTime", event.target.value)} />
             </div>
           ) : null}
           <label className={styles.adjustmentTextareaField}>

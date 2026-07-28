@@ -357,7 +357,7 @@
 .summaryGrid {
   margin-top: 1rem;
   display: grid;
-  grid-template-columns: repeat(5, minmax(0, 1fr));
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 0.8rem;
 }
 
@@ -701,10 +701,22 @@
   padding: 0.75rem;
 }
 
+.adjustmentTypeSelect {
+  --autocomplete-font-weight: 400;
+  --autocomplete-option-font-weight: 400;
+}
+
 .presetPanel > span {
   color: #40516e;
   font-size: var(--font-size-sm);
   font-weight: 800;
+}
+
+.presetPanel > p {
+  margin: 0;
+  color: #5a6d92;
+  font-size: var(--font-size-sm);
+  line-height: 1.45;
 }
 
 .weekdayPicker {

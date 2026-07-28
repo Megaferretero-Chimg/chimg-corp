@@ -15,7 +15,9 @@ function isTimeDraftWithinRange(hours, minutes) {
 }
 
 function sanitizeTimeDraft(value, previousValue = "") {
-  const source = String(value || "").replace(/[^\d:]/g, "");
+  const source = String(value || "")
+    .replace(/[hH]/g, ":")
+    .replace(/[^\d:]/g, "");
   let hours = "";
   let minutes = "";
   let nextValue = "";
@@ -36,7 +38,10 @@ function sanitizeTimeDraft(value, previousValue = "") {
 }
 
 export function normalizeTime24(value) {
-  const match = String(value || "").trim().match(/^(\d{1,2}):(\d{1,2})$/);
+  const match = String(value || "")
+    .trim()
+    .replace(/[hH]/g, ":")
+    .match(/^(\d{1,2}):(\d{1,2})$/);
 
   if (!match) return "";
 
@@ -53,12 +58,22 @@ const TimeInput24 = forwardRef(function TimeInput24(
     value = "",
     onChange,
     onBlur,
-    placeholder = "HH:mm",
-    title = "Formato de 24 horas: HH:mm",
+    separator = ":",
+    placeholder,
+    title,
     ...props
   },
   ref,
 ) {
+  const usesHourSeparator = String(separator || "").toUpperCase() === "H";
+  const visibleValue = usesHourSeparator
+    ? String(value || "").replace(":", "H")
+    : value;
+  const resolvedPlaceholder = placeholder || (usesHourSeparator ? "08H00" : "HH:mm");
+  const resolvedTitle = title || (usesHourSeparator
+    ? "Formato de 24 horas: 08H00"
+    : "Formato de 24 horas: HH:mm");
+
   function handleChange(event) {
     const nextValue = sanitizeTimeDraft(event.currentTarget.value, value);
 
@@ -71,7 +86,11 @@ const TimeInput24 = forwardRef(function TimeInput24(
     const normalizedValue = normalizeTime24(event.currentTarget.value);
 
     if (event.currentTarget.value && !normalizedValue) {
-      event.currentTarget.setCustomValidity("Ingresa una hora válida entre 00:00 y 24:00.");
+      event.currentTarget.setCustomValidity(
+        usesHourSeparator
+          ? "Ingresa una hora válida entre 00H00 y 24H00."
+          : "Ingresa una hora válida entre 00:00 y 24:00.",
+      );
     } else {
       event.currentTarget.setCustomValidity("");
 
@@ -92,10 +111,10 @@ const TimeInput24 = forwardRef(function TimeInput24(
       inputMode="numeric"
       autoComplete="off"
       maxLength={5}
-      pattern={TIME_PATTERN}
-      placeholder={placeholder}
-      title={title}
-      value={value}
+      pattern={usesHourSeparator ? "(?:(?:[01]\\d|2[0-3])[hH][0-5]\\d|24[hH]00)" : TIME_PATTERN}
+      placeholder={resolvedPlaceholder}
+      title={resolvedTitle}
+      value={visibleValue}
       onChange={handleChange}
       onBlur={handleBlur}
     />

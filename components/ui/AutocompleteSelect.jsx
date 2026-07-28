@@ -65,10 +65,10 @@ const AutocompleteSelect = forwardRef(function AutocompleteSelect(
       }
     }
 
-    document.addEventListener("pointerdown", handleDocumentPointerDown);
+    document.addEventListener("pointerdown", handleDocumentPointerDown, true);
 
     return () => {
-      document.removeEventListener("pointerdown", handleDocumentPointerDown);
+      document.removeEventListener("pointerdown", handleDocumentPointerDown, true);
     };
   }, []);
 

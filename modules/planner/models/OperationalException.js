@@ -40,6 +40,7 @@ const operationalExceptionSchema = new Schema(
       type: String,
       enum: [
         "planning_change",
+        "authorized_overtime",
         "paid_absence",
         "paid_partial_leave",
         "unpaid_absence",
@@ -62,7 +63,7 @@ const operationalExceptionSchema = new Schema(
     },
     type: {
       type: String,
-      enum: ["absence", "sick_leave", "permission", "schedule_change", "replacement", "medical_appointment", "early_leave", "late_arrival", "missing_punch", "outside_work", "outside_work_punch", "material_pickup", "field_visit", "other"],
+      enum: ["absence", "overtime_authorization", "sick_leave", "permission", "schedule_change", "replacement", "medical_appointment", "early_leave", "late_arrival", "missing_punch", "outside_work", "outside_work_punch", "material_pickup", "field_visit", "other"],
       required: true,
     },
     scope: {
