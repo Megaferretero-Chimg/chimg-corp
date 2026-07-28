@@ -894,6 +894,7 @@ const PLANNED_ADJUSTMENT_TYPES = [
 const DEFAULT_ADJUSTMENT_FORM = {
   kind: "permission_partial",
   scheduleTemplateId: "",
+  useCustomSchedule: false,
   startTime: "",
   endTime: "",
   plannedStartTime: "",
@@ -2324,7 +2325,25 @@ export default function SchedulePlanner({ initialFilters = {}, basePath = "/sche
         kind: selectedType.value,
         startTime: selectedType.requiresTimeRange ? current.startTime : "",
         endTime: selectedType.requiresTimeRange ? current.endTime : "",
-        scheduleTemplateId: selectedType.requiresSchedule ? current.scheduleTemplateId : "",
+        scheduleTemplateId: "",
+        useCustomSchedule: false,
+      }));
+      return;
+    }
+
+    if (field === "useCustomSchedule") {
+      const useCustomSchedule = Boolean(value);
+
+      setAdjustmentForm((current) => ({
+        ...current,
+        useCustomSchedule,
+        scheduleTemplateId: "",
+        ...(!useCustomSchedule ? {
+          plannedStartTime: "",
+          plannedLunchStartTime: "",
+          plannedLunchEndTime: "",
+          plannedEndTime: "",
+        } : {}),
       }));
       return;
     }
@@ -2476,6 +2495,9 @@ export default function SchedulePlanner({ initialFilters = {}, basePath = "/sche
     const { employee, dateKey, day } = adjustmentTarget;
     const requiresSchedule = selectedType.requiresSchedule;
     const usesTimeRange = selectedType.requiresTimeRange;
+    const requiresTemplateSelection =
+      selectedType.value === "outside_work"
+      && !adjustmentForm.useCustomSchedule;
     const plannedDay = requiresSchedule
       ? buildPlannedScheduleDay(dateKey, {
         startTime: adjustmentForm.plannedStartTime,
@@ -2488,6 +2510,11 @@ export default function SchedulePlanner({ initialFilters = {}, basePath = "/sche
     const plannedLunchStartTime = requiresSchedule ? plannedDay.lunchStartTime : day.lunchStartTime || "";
     const plannedLunchEndTime = requiresSchedule ? plannedDay.lunchEndTime : day.lunchEndTime || "";
     const plannedEndTime = requiresSchedule ? plannedDay.endTime : day.endTime || "";
+
+    if (requiresTemplateSelection && !adjustmentForm.scheduleTemplateId) {
+      showNotice("error", "Selecciona una plantilla o activa el horario personalizado.");
+      return;
+    }
 
     if (requiresSchedule && !hasPlannedScheduleFields(plannedDay)) {
       showNotice("error", "Selecciona una plantilla o indica entrada y salida para el horario planificado.");
@@ -2931,6 +2958,10 @@ export default function SchedulePlanner({ initialFilters = {}, basePath = "/sche
   }
 
   const selectedAdjustmentType = PLANNED_ADJUSTMENT_TYPES.find((option) => option.value === adjustmentForm.kind) || PLANNED_ADJUSTMENT_TYPES[0];
+  const isExternalWorkAdjustment = selectedAdjustmentType.value === "outside_work";
+  const showsCustomScheduleFields =
+    selectedAdjustmentType.requiresSchedule
+    && (!isExternalWorkAdjustment || adjustmentForm.useCustomSchedule);
 
   return (
     <div className={styles.layout}>
@@ -3016,15 +3047,10 @@ export default function SchedulePlanner({ initialFilters = {}, basePath = "/sche
                   <dd>{selectedOverlay.resolutionLabel}</dd>
                 </div>
               ) : null}
-              {selectedOverlay.raw?.startTime || selectedOverlay.raw?.endTime ? (
+              {selectedOverlay.kind === "exception" ? (
                 <div>
                   <dt>Horario indicado</dt>
-                  <dd>
-                    {[selectedOverlay.raw.startTime, selectedOverlay.raw.endTime]
-                      .filter(Boolean)
-                      .map(formatClockTime)
-                      .join(" - ")}
-                  </dd>
+                  <dd>{formatShiftLabel(selectedOverlay.indicatedDay)}</dd>
                 </div>
               ) : null}
               {selectedOverlay.raw?.plannedStartTime || selectedOverlay.raw?.plannedEndTime ? (
@@ -3105,6 +3131,17 @@ export default function SchedulePlanner({ initialFilters = {}, basePath = "/sche
                 <TextInput label="Hasta" type="time" separator="H" value={adjustmentForm.endTime} onChange={(event) => updateAdjustmentField("endTime", event.target.value)} />
               </div>
             ) : null}
+            {isExternalWorkAdjustment ? (
+              <label className={styles.customScheduleToggle}>
+                <input
+                  type="checkbox"
+                  checked={adjustmentForm.useCustomSchedule}
+                  onChange={(event) => updateAdjustmentField("useCustomSchedule", event.target.checked)}
+                  disabled={isAdjustmentSaving}
+                />
+                <span>Usar horario personalizado</span>
+              </label>
+            ) : null}
             {selectedAdjustmentType?.requiresSchedule ? (
               <div className={styles.templateSelectRow}>
                 <AutocompleteSelect
@@ -3116,6 +3153,7 @@ export default function SchedulePlanner({ initialFilters = {}, basePath = "/sche
                   placeholder="Seleccionar plantilla"
                   searchPlaceholder="Buscar plantilla"
                   emptyText="No hay plantillas con ese criterio"
+                  disabled={isAdjustmentSaving || (isExternalWorkAdjustment && adjustmentForm.useCustomSchedule)}
                 />
                 <button
                   type="button"
@@ -3123,12 +3161,13 @@ export default function SchedulePlanner({ initialFilters = {}, basePath = "/sche
                   onClick={openQuickTemplateModal}
                   aria-label="Crear plantilla de horario"
                   title="Crear plantilla"
+                  disabled={isAdjustmentSaving || (isExternalWorkAdjustment && adjustmentForm.useCustomSchedule)}
                 >
                   <Plus size={18} />
                 </button>
               </div>
             ) : null}
-            {selectedAdjustmentType?.requiresSchedule ? (
+            {showsCustomScheduleFields ? (
               <div className={styles.adjustmentGrid}>
                 <TextInput label="Entrada planificada" type="time" separator="H" value={adjustmentForm.plannedStartTime} onChange={(event) => updateAdjustmentField("plannedStartTime", event.target.value)} />
                 <TextInput label="Fin manana" type="time" separator="H" value={adjustmentForm.plannedLunchStartTime} onChange={(event) => updateAdjustmentField("plannedLunchStartTime", event.target.value)} />
@@ -3489,6 +3528,7 @@ export default function SchedulePlanner({ initialFilters = {}, basePath = "/sche
                                 onClick={() => setSelectedOverlay({
                                   ...overlay,
                                   employeeName: employee.fullName,
+                                  indicatedDay: dayFromDraft(dateKey, shiftKey, shiftOptionsByKey),
                                 })}
                                 title={overlay.title || overlayLabel || "Ver ajuste"}
                                 aria-label={overlay.title || overlayLabel || "Ver ajuste"}
