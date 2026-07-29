@@ -7,8 +7,10 @@ import {
   CircleCheck,
   ClipboardCheck,
   History,
+  Plus,
   RefreshCw,
   ShieldCheck,
+  X,
 } from "lucide-react";
 
 import CatalogDrawer from "@/components/catalog/CatalogDrawer";
@@ -47,7 +49,14 @@ function formatMinutes(value) {
 }
 
 function formatScheduleHour(value) {
-  return formatTime24(value);
+  return formatTime24(value).replace(":", "H");
+}
+
+function formatScheduleText(value) {
+  return formatTimeText24(value)
+    .replace(/\b(\d{2}):(\d{2})\b/g, "$1H$2")
+    .replace(/\s+/g, " ")
+    .trim();
 }
 
 function normalizeScheduleText(value) {
@@ -76,7 +85,7 @@ const INLINE_EXCEPTION_OPTIONS = [
   {
     value: "missing_punch",
     label: "Picada omitida",
-    description: "Reconoce la jornada sin crear una picada ficticia. Puedes decidir si también se calcula el tiempo adicional.",
+    description: "Completa la asistencia con picadas manuales o con el horario planificado.",
   },
   {
     value: "outside_work",
@@ -303,7 +312,7 @@ function scheduleTemplateOptionsForDay(employee, templates = [], day) {
 
       return {
         id: template.id,
-        name: normalizeScheduleText(template.name) || "Plantilla",
+        name: formatScheduleText(template.name) || "Plantilla",
         scheduleLabel,
         row,
         distance: templateDistanceFromPunches(punchMinutes, row),
@@ -402,7 +411,7 @@ function punchLabel(index, punchCount) {
 }
 
 function punchDisplayLabel(punch, index, punchCount) {
-  if (punch?.isIgnored) return "ANU";
+  if (punch?.isIgnored) return "PIC";
   return punch?.adjustedFrom ? `${punchLabel(index, punchCount)} AJ` : punchLabel(index, punchCount);
 }
 
@@ -411,7 +420,7 @@ function activePunchesForDisplay(day) {
 }
 
 function punchDisplayLabelForDay(day, punch) {
-  if (punch?.isIgnored) return "ANU";
+  if (punch?.isIgnored) return "PIC";
 
   const activePunches = activePunchesForDisplay(day);
   const activeIndex = activePunches.findIndex((candidate) => candidate.id === punch?.id);
@@ -487,11 +496,15 @@ function hasPendingLunchOverage(day) {
   return !hasSavedDayDecision(day) && plannedLunchMinutes > 0 && actualLunchMinutes - plannedLunchMinutes > graceMinutes;
 }
 
-function punchChipClass(day, index) {
+function punchChipClass(day, index, punch) {
   const hasEntryWarning = index === 0 && hasPendingEntryLate(day);
   const hasLunchWarning = [1, 2].includes(index) && hasPendingLunchOverage(day);
+  const classes = [];
 
-  return hasEntryWarning || hasLunchWarning ? styles.punchWarning : undefined;
+  if (punch?.source === "manual") classes.push(styles.punchManual);
+  if (hasEntryWarning || hasLunchWarning) classes.push(styles.punchWarning);
+
+  return classes.join(" ") || undefined;
 }
 
 function isIgnorableRestDay(day) {
@@ -1492,6 +1505,8 @@ function buildInlineExceptionDraft(row, day, nextType = "", templates = []) {
   const recommendedRow = recommendedTemplate?.row;
   const activePunches = activePunchesForDisplay(day);
   const extraDayHasLunch = type === "extra_day" && activePunches.length === 4;
+  const expectedPunches = Math.max(0, Number(day?.expectedPunches) || 0);
+  const missingPunchCount = Math.min(4, Math.max(1, expectedPunches - activePunches.length));
 
   return {
     employeeName: row?.employee?.fullName || "",
@@ -1524,6 +1539,8 @@ function buildInlineExceptionDraft(row, day, nextType = "", templates = []) {
       : "",
     plannedDayType: "workday",
     templateId: recommendedTemplate?.id || "",
+    missingPunchMode: "manual",
+    manualPunchTimes: Array.from({ length: missingPunchCount }, () => ""),
     allowSupplementaryTime: type === "outside_work",
     permissionPayTreatment: "without_discount",
     notes: exceptionNoteForDay(day),
@@ -1579,6 +1596,19 @@ function inlineExceptionPayload(employeeId, draft) {
   }
 
   if (draft.type === "missing_punch") {
+    if (draft.missingPunchMode === "manual") {
+      return {
+        ...common,
+        scope: "missing_punch",
+        effect: "manual_punch",
+        attendanceMode: "add_manual_punch",
+        payMode: "no_pay_change",
+        manualPunchTime: draft.manualPunchTime,
+        countsAsWorkedTime: true,
+        allowSupplementaryTime: true,
+      };
+    }
+
     return {
       ...common,
       scope: "missing_punch",
@@ -2023,6 +2053,34 @@ export default function AttendanceComparisonDetail({ employeeId, initialFilters 
     setExceptionDraft((current) => current ? { ...current, [field]: value } : current);
   }
 
+  function updateManualPunchTime(index, value) {
+    setExceptionDraft((current) => {
+      if (!current) return current;
+
+      const manualPunchTimes = [...(current.manualPunchTimes || [""])];
+      manualPunchTimes[index] = value;
+
+      return { ...current, manualPunchTimes };
+    });
+  }
+
+  function addManualPunchTime() {
+    setExceptionDraft((current) => {
+      if (!current || (current.manualPunchTimes || []).length >= 4) return current;
+      return { ...current, manualPunchTimes: [...(current.manualPunchTimes || []), ""] };
+    });
+  }
+
+  function removeManualPunchTime(index) {
+    setExceptionDraft((current) => {
+      if (!current) return current;
+
+      const manualPunchTimes = (current.manualPunchTimes || []).filter((_, currentIndex) => currentIndex !== index);
+
+      return { ...current, manualPunchTimes: manualPunchTimes.length ? manualPunchTimes : [""] };
+    });
+  }
+
   function selectExceptionType(type) {
     if (!selectedDay) return;
     setExceptionDraft(buildInlineExceptionDraft(row, selectedDay, type, templates));
@@ -2066,6 +2124,21 @@ export default function AttendanceComparisonDetail({ employeeId, initialFilters 
         && Boolean(draft.plannedStartTime && draft.plannedEndTime);
     }
 
+    if (draft.type === "missing_punch" && draft.missingPunchMode === "manual") {
+      const manualPunchTimes = (draft.manualPunchTimes || [])
+        .map((time) => formatTime24(time))
+        .filter(Boolean);
+      const uniqueManualTimes = new Set(manualPunchTimes);
+      const existingPunchTimes = new Set(activePunchesForDisplay(selectedDay).map((punch) => punch.time));
+
+      return Boolean(
+        manualPunchTimes.length &&
+        manualPunchTimes.length === (draft.manualPunchTimes || []).length &&
+        uniqueManualTimes.size === manualPunchTimes.length &&
+        manualPunchTimes.every((time) => !existingPunchTimes.has(time))
+      );
+    }
+
     if (["outside_work", "permission"].includes(draft.type)) {
       return Boolean(draft.startTime && draft.endTime);
     }
@@ -2080,6 +2153,43 @@ export default function AttendanceComparisonDetail({ employeeId, initialFilters 
       setIsSavingException(true);
       setError("");
       clearNotice();
+
+      if (exceptionDraft.type === "missing_punch" && exceptionDraft.missingPunchMode === "manual") {
+        const manualPunchTimes = exceptionDraft.manualPunchTimes.map((time) => formatTime24(time));
+
+        for (const manualPunchTime of manualPunchTimes) {
+          const exceptionResponse = await fetch("/api/planner/planning/exceptions", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify(inlineExceptionPayload(employeeId, {
+              ...exceptionDraft,
+              manualPunchTime,
+            })),
+          });
+          const exceptionPayload = await exceptionResponse.json();
+
+          if (!exceptionResponse.ok) {
+            throw new Error(exceptionPayload.error || "No se pudo registrar la picada manual.");
+          }
+        }
+
+        const dayKey = exceptionDraft.dateKey;
+        const punchCount = manualPunchTimes.length;
+
+        setExceptionDraft(null);
+        setSelectedDayKey(dayKey);
+        await loadReport(month, { background: true });
+        await loadDecisionHistory(dayKey);
+        showNotice(
+          "success",
+          punchCount === 1
+            ? "Picada manual registrada y jornada recalculada."
+            : `${punchCount} picadas manuales registradas y jornada recalculada.`,
+        );
+        return;
+      }
 
       const response = await fetch("/api/planner/planning/exceptions", {
         method: "POST",
@@ -2802,8 +2912,12 @@ export default function AttendanceComparisonDetail({ employeeId, initialFilters 
                                       ? activePunchesForDisplay(day).map((punch, index) => (
                                         <span
                                           key={punch.id}
-                                          className={punchChipClass(day, index)}
-                                          title={punch.adjustedFrom ? `Picada real: ${punch.adjustedFrom}` : undefined}
+                                          className={punchChipClass(day, index, punch)}
+                                          title={punch.source === "manual"
+                                            ? "Picada registrada manualmente"
+                                            : punch.adjustedFrom
+                                              ? `Picada real: ${punch.adjustedFrom}`
+                                              : undefined}
                                         >
                                           <small>{punchDisplayLabelForDay(day, punch)} </small>
                                           {punch.time}
@@ -3014,18 +3128,24 @@ export default function AttendanceComparisonDetail({ employeeId, initialFilters 
                     <button
                       key={punch.id}
                       type="button"
-                      className={`${styles.punchChipButton} ${punch.adjustedFrom ? styles.punchChipAdjusted : ""} ${punch.isIgnored ? styles.punchChipIgnored : ""}`}
+                      className={`${styles.punchChipButton} ${punch.adjustedFrom ? styles.punchChipAdjusted : ""} ${punch.source === "manual" ? styles.punchChipManual : ""} ${punch.isIgnored ? styles.punchChipIgnored : ""}`}
                       onClick={() => openDeletePunch(selectedDay, punch)}
                       disabled={selectedIsReviewed || punch.isIgnored || isSavingPunch || savingDay === selectedDay.dateKey}
-                      title={punch.isIgnored ? `Picada anulada: ${punch.ignoredReason || "sin motivo"}` : punch.adjustedFrom ? `Picada real: ${punch.adjustedFrom}` : "Anular picada"}
+                      title={punch.isIgnored
+                        ? `Picada anulada: ${punch.ignoredReason || "sin motivo"}`
+                        : punch.source === "manual"
+                          ? "Picada manual. Selecciona para anularla."
+                          : punch.adjustedFrom
+                            ? `Picada real: ${punch.adjustedFrom}`
+                            : "Anular picada"}
+                      aria-label={punch.isIgnored
+                        ? `Picada anulada a las ${punch.time}`
+                        : `${punch.source === "manual" ? "Picada manual" : "Picada"} a las ${punch.time}. Selecciona para anularla.`}
                     >
                       <small>{punchDisplayLabelForDay(selectedDay, punch)}</small>
                       <span className={styles.punchChipTime}>{punch.time}</span>
                       {punch.adjustedFrom ? (
                         <span className={styles.punchChipMeta}>Real {punch.adjustedFrom}</span>
-                      ) : null}
-                      {punch.isIgnored ? (
-                        <span className={styles.punchChipMeta}>Anulada</span>
                       ) : null}
                       <span className={styles.punchDeleteOverlay} aria-hidden="true">
                         <Ban size={14} />
@@ -3410,7 +3530,11 @@ export default function AttendanceComparisonDetail({ employeeId, initialFilters 
             isOpen={Boolean(exceptionDraft)}
             title="Crear excepción"
             message={exceptionDraft ? `${exceptionDraft.dayLabel} ${exceptionDraft.dateLabel}` : ""}
-            confirmLabel="Guardar excepción"
+            confirmLabel={exceptionDraft?.type === "missing_punch" && exceptionDraft?.missingPunchMode === "manual"
+              ? (exceptionDraft.manualPunchTimes || []).length > 1
+                ? "Registrar picadas"
+                : "Registrar picada"
+              : "Guardar excepción"}
             cancelLabel="Cancelar"
             tone="default"
             isPending={isSavingException}
@@ -3452,6 +3576,7 @@ export default function AttendanceComparisonDetail({ employeeId, initialFilters 
                       <>
                         <AutocompleteSelect
                           label="Plantilla de horario"
+                          controlClassName={styles.exceptionTemplateControl}
                           value={exceptionDraft.templateId || ""}
                           options={exceptionTemplateOptions.map((option) => ({
                             value: option.id,
@@ -3477,7 +3602,6 @@ export default function AttendanceComparisonDetail({ employeeId, initialFilters 
                             <TimeInput24
                               value={exceptionDraft.plannedStartTime}
                               separator="H"
-                              disabled={Boolean(exceptionTemplateOptions.length)}
                               onChange={(event) => updateExceptionDraft("plannedStartTime", event.target.value)}
                             />
                           </label>
@@ -3486,7 +3610,6 @@ export default function AttendanceComparisonDetail({ employeeId, initialFilters 
                             <TimeInput24
                               value={exceptionDraft.plannedLunchStartTime}
                               separator="H"
-                              disabled={Boolean(exceptionTemplateOptions.length)}
                               onChange={(event) => updateExceptionDraft("plannedLunchStartTime", event.target.value)}
                             />
                           </label>
@@ -3495,7 +3618,6 @@ export default function AttendanceComparisonDetail({ employeeId, initialFilters 
                             <TimeInput24
                               value={exceptionDraft.plannedLunchEndTime}
                               separator="H"
-                              disabled={Boolean(exceptionTemplateOptions.length)}
                               onChange={(event) => updateExceptionDraft("plannedLunchEndTime", event.target.value)}
                             />
                           </label>
@@ -3504,7 +3626,6 @@ export default function AttendanceComparisonDetail({ employeeId, initialFilters 
                             <TimeInput24
                               value={exceptionDraft.plannedEndTime}
                               separator="H"
-                              disabled={Boolean(exceptionTemplateOptions.length)}
                               onChange={(event) => updateExceptionDraft("plannedEndTime", event.target.value)}
                             />
                           </label>
@@ -3534,14 +3655,65 @@ export default function AttendanceComparisonDetail({ employeeId, initialFilters 
                 ) : null}
 
                 {exceptionDraft.type === "missing_punch" ? (
-                  <label className={styles.exceptionToggle}>
-                    <input
-                      type="checkbox"
-                      checked={exceptionDraft.allowSupplementaryTime}
-                      onChange={(event) => updateExceptionDraft("allowSupplementaryTime", event.target.checked)}
-                    />
-                    <span>Calcular HS/HE usando la primera y última picada</span>
-                  </label>
+                  <>
+                    <SelectInput
+                      label="Cómo completar la asistencia"
+                      value={exceptionDraft.missingPunchMode || "manual"}
+                      onChange={(event) => updateExceptionDraft("missingPunchMode", event.target.value)}
+                    >
+                      <option value="manual">Registrar picadas manuales</option>
+                      <option value="planned">Completar con el horario planificado</option>
+                    </SelectInput>
+
+                    {exceptionDraft.missingPunchMode === "manual" ? (
+                      <div className={styles.manualPunchPanel}>
+                        <p>
+                          Estas picadas se identificarán como manuales y la jornada se recalculará con sus horas reales.
+                        </p>
+                        <div className={styles.manualPunchList}>
+                          {(exceptionDraft.manualPunchTimes || [""]).map((manualPunchTime, index) => (
+                            <label key={index} className={styles.manualPunchField}>
+                              <span>Picada manual {index + 1}</span>
+                              <div>
+                                <TimeInput24
+                                  value={manualPunchTime}
+                                  separator="H"
+                                  onChange={(event) => updateManualPunchTime(index, event.target.value)}
+                                />
+                                <button
+                                  type="button"
+                                  onClick={() => removeManualPunchTime(index)}
+                                  disabled={(exceptionDraft.manualPunchTimes || []).length <= 1}
+                                  aria-label={`Quitar picada manual ${index + 1}`}
+                                  title="Quitar picada"
+                                >
+                                  <X size={15} />
+                                </button>
+                              </div>
+                            </label>
+                          ))}
+                        </div>
+                        <button
+                          type="button"
+                          className={styles.addManualPunchButton}
+                          onClick={addManualPunchTime}
+                          disabled={(exceptionDraft.manualPunchTimes || []).length >= 4}
+                        >
+                          <Plus size={15} />
+                          Agregar otra picada
+                        </button>
+                      </div>
+                    ) : (
+                      <label className={styles.exceptionToggle}>
+                        <input
+                          type="checkbox"
+                          checked={exceptionDraft.allowSupplementaryTime}
+                          onChange={(event) => updateExceptionDraft("allowSupplementaryTime", event.target.checked)}
+                        />
+                        <span>Calcular HS/HE usando la primera y última picada</span>
+                      </label>
+                    )}
+                  </>
                 ) : null}
 
                 {exceptionDraft.type === "permission" ? (

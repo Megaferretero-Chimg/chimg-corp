@@ -2030,6 +2030,44 @@ function applyDayDecision(day, decision) {
     };
   }
 
+  const hasCurrentIncompletePunchIssue = (day.tags || []).some((tag) =>
+    ["Sin picadas", "Picadas incompletas"].includes(normalizeAttendanceTag(tag)),
+  );
+  const hasCompletedPunchesAfterJustification =
+    effectiveDecision.decision === "justify_incomplete_punches" &&
+    !hasCurrentIncompletePunchIssue;
+
+  if (hasCompletedPunchesAfterJustification) {
+    const statusLabel = "Picadas justificadas";
+    const preservedTags = cleanPayrollTags(day.tags || []);
+    const nextTags = [...new Set([...preservedTags, statusLabel])];
+
+    return {
+      ...day,
+      tags: nextTags,
+      hasIssue: preservedTags.some(isAttendanceIssueTag),
+      detectedSupplementaryMinutes,
+      detectedSupplementaryLabel: detectedSupplementaryMinutes ? minutesLabel(detectedSupplementaryMinutes) : "--",
+      detectedExtraordinaryMinutes,
+      detectedExtraordinaryLabel: detectedExtraordinaryMinutes ? minutesLabel(detectedExtraordinaryMinutes) : "--",
+      authorization: {
+        ...(day.authorization || {}),
+        decision: effectiveDecision.decision,
+        statusLabel,
+        authorizedSupplementaryMinutes: Number(day.supplementaryMinutes) || 0,
+        authorizedExtraordinaryMinutes: Number(day.extraordinaryMinutes) || 0,
+        detectedLateMinutes,
+        adjustedLateMinutes: detectedLateMinutes,
+        detectedEarlyLeaveMinutes,
+        adjustedEarlyLeaveMinutes: detectedEarlyLeaveMinutes,
+        note: effectiveDecision.note || "",
+        decidedBy: effectiveDecision.decidedBy || "",
+        source: effectiveDecision.source || "attendance_decision",
+        isSaved: Boolean(decision),
+      },
+    };
+  }
+
   const shouldPayPlannedRegularOnly =
     Boolean(decision) &&
     effectiveDecision.decision === "planned" &&

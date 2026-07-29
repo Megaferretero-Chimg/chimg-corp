@@ -539,6 +539,94 @@
   line-height: 1.4;
 }
 
+.exceptionTemplateControl {
+  font-weight: 400;
+}
+
+.manualPunchPanel {
+  display: grid;
+  gap: 0.7rem;
+  border: 1px solid rgba(67, 56, 202, 0.16);
+  border-radius: 0.82rem;
+  background: #f7f7ff;
+  padding: 0.78rem;
+}
+
+.manualPunchPanel > p {
+  margin: 0;
+  color: #5553a5;
+  font-size: var(--font-size-xs);
+  font-weight: 500;
+  line-height: 1.4;
+}
+
+.manualPunchList {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.62rem;
+}
+
+.manualPunchField {
+  display: grid;
+  gap: 0.32rem;
+}
+
+.manualPunchField > span {
+  color: #5553a5;
+  font-size: var(--font-size-sm);
+  font-weight: 600;
+}
+
+.manualPunchField > div {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 2.65rem;
+  gap: 0.4rem;
+}
+
+.manualPunchField input {
+  width: 100%;
+  min-height: 2.75rem;
+  border: 1px solid #cfd0f5;
+  border-radius: 0.72rem;
+  background: #fff;
+  color: var(--text);
+  font: inherit;
+  padding: 0.55rem 0.72rem;
+}
+
+.manualPunchField button,
+.addManualPunchButton {
+  border: 1px solid #cfd0f5;
+  border-radius: 0.72rem;
+  background: #fff;
+  color: #4338ca;
+  cursor: pointer;
+}
+
+.manualPunchField button {
+  display: grid;
+  min-height: 2.75rem;
+  place-items: center;
+}
+
+.manualPunchField button:disabled,
+.addManualPunchButton:disabled {
+  cursor: not-allowed;
+  opacity: 0.42;
+}
+
+.addManualPunchButton {
+  align-items: center;
+  display: inline-flex;
+  gap: 0.42rem;
+  justify-self: start;
+  min-height: 2.35rem;
+  padding: 0.42rem 0.68rem;
+  font: inherit;
+  font-size: var(--font-size-xs);
+  font-weight: 600;
+}
+
 .exceptionWarning {
   display: flex;
   align-items: flex-start;
@@ -994,6 +1082,16 @@
   background: #fef3f2;
   color: #b42318;
   box-shadow: inset 0 0 0 1px rgba(180, 35, 24, 0.12);
+}
+
+.punchLine .punchManual {
+  background: #eef2ff;
+  color: #4338ca;
+  box-shadow: inset 0 0 0 1px rgba(67, 56, 202, 0.16);
+}
+
+.punchLine .punchManual small {
+  color: #5553a5;
 }
 
 .punchLine .punchWarning small {
@@ -1474,16 +1572,19 @@
   padding-block: 0.34rem;
 }
 
-.punchChipIgnored {
-  opacity: 0.42;
-  text-decoration: line-through;
-  filter: grayscale(0.45);
+.punchChipManual {
+  background: #eef2ff;
+  color: #4338ca;
+  box-shadow: inset 0 0 0 1px rgba(67, 56, 202, 0.16);
 }
 
 .punchChipIgnored {
   cursor: default;
-  background: #f2f4f7;
-  color: #667085;
+  background: #fff1f0;
+  color: #b42318;
+  box-shadow: inset 0 0 0 1px rgba(180, 35, 24, 0.16);
+  opacity: 1;
+  text-decoration: line-through;
 }
 
 .punchChipTime {
@@ -1558,10 +1659,22 @@
   transform: none;
 }
 
+.punchChipButton.punchChipIgnored:disabled {
+  opacity: 1;
+}
+
 .modalPunches small {
   color: var(--text-muted);
   font-size: 0.66rem;
   font-weight: 800;
+}
+
+.modalPunches .punchChipManual small {
+  color: #5553a5;
+}
+
+.modalPunches .punchChipIgnored small {
+  color: #b42318;
 }
 
 .decisionHistory {
@@ -1886,6 +1999,10 @@
 
   .metricGrid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .manualPunchList {
+    grid-template-columns: 1fr;
   }
 
 }
