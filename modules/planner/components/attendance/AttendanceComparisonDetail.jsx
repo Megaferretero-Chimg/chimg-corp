@@ -1779,13 +1779,14 @@ export default function AttendanceComparisonDetail({ employeeId, initialFilters 
       hasUnapprovedExtraTime(selectedDay) &&
       !hasNoSchedulePunches(selectedDay)
     : false;
-  const selectedHasQuickActions = !selectedIsReviewed && Boolean(
-    selectedHasOnlyAdditionalTime ||
-    selectedHasCleanableAlert ||
-    hasNoSchedulePunches(selectedDay) ||
-    selectedCanDiscountPlannedDay ||
-    selectedHasLateStage ||
-    selectedCanUsePlannedDay
+  const selectedHasQuickActions = selectedHasOnlyAdditionalTime || (
+    !selectedIsReviewed && Boolean(
+      selectedHasCleanableAlert ||
+      hasNoSchedulePunches(selectedDay) ||
+      selectedCanDiscountPlannedDay ||
+      selectedHasLateStage ||
+      selectedCanUsePlannedDay
+    )
   );
   const selectedPlannedDayDecision = selectedHasIncompletePunches ? "justify_incomplete_punches" : "justify_no_punches";
 

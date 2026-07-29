@@ -1474,7 +1474,9 @@ function applyWeeklyExtraDayTypes(days = []) {
         byDate.set(day.dateKey, {
           ...day,
           dayType: "weekend_overtime",
+          dayTypeLabel: dayTypeLabel("weekend_overtime"),
           authorizedExtraMinutes: resolveScheduledNetMinutes(day),
+          weeklyAttendanceClassification: "extra",
           source: day.source || "weekly_extra_rule",
         });
       });
@@ -1508,26 +1510,33 @@ function applyWeeklyExtraByAttendance(days = []) {
         const workedMinutes = Math.max(0, Number(day.workedMinutes) || 0);
         const hasPlannedSchedule = day.plannedScheduleExists === true;
         const isWorkedAttendanceDay = workedMinutes > 0 && day.dayType !== "vacation" && !day.isHoliday;
+        const isPlannedWeeklyExtraDay =
+          day.weeklyAttendanceClassification === "extra" ||
+          day.plannedDayType === "weekend_overtime";
 
         if (!isWorkedAttendanceDay) {
           byDate.set(day.dateKey, day);
           return;
         }
 
-        if (day.isAuthorizedExtraDay) {
+        if (day.isAuthorizedExtraDay || isPlannedWeeklyExtraDay) {
           const plannedExtraordinaryMinutes =
             Number(day.originalScheduledWorkedMinutes ?? day.scheduledWorkedMinutes)
             || resolveScheduledNetMinutes(day);
           const tags = (day.tags || []).filter((tag) => !UNPLANNED_WORK_TAGS.has(tag));
-          const approvedTags = [...new Set([...tags, "Día extra aprobado"])];
+          const extraDayTags = day.isAuthorizedExtraDay
+            ? [...new Set([...tags, "Día extra aprobado"])]
+            : tags;
 
           byDate.set(day.dateKey, {
             ...day,
-            tags: approvedTags,
-            hasIssue: approvedTags.some(isAttendanceIssueTag),
+            tags: extraDayTags,
+            hasIssue: extraDayTags.some(isAttendanceIssueTag),
             dayType: "weekend_overtime",
             dayTypeLabel: dayTypeLabel("weekend_overtime"),
-            scheduleLabel: "Día extra autorizado",
+            scheduleLabel: day.isAuthorizedExtraDay
+              ? "Día extra autorizado"
+              : day.scheduleLabel || dayTypeLabel("weekend_overtime"),
             plannedRegularMinutes: 0,
             plannedRegularLabel: "--",
             plannedSupplementaryMinutes: 0,
@@ -2778,6 +2787,7 @@ function compareDay(day, punches, employee = {}, scheduleRules = {}) {
     plannedExtraordinaryMinutes,
     plannedExtraordinaryLabel: plannedExtraordinaryMinutes ? minutesLabel(plannedExtraordinaryMinutes) : "--",
     plannedDayType: day.dayType || "off_day",
+    weeklyAttendanceClassification: day.weeklyAttendanceClassification || "",
     originalScheduledWorkedMinutes: plannedMinutes.scheduledWorkedMinutes,
     originalPlannedRegularMinutes: plannedMinutes.plannedRegularMinutes,
     originalPlannedSupplementaryMinutes: plannedMinutes.plannedSupplementaryMinutes,
