@@ -1130,7 +1130,9 @@ function inlineExceptionOptionsForDay(day) {
   }
 
   if (displayLateMinutes(day) > 0 || (Number(day?.earlyLeaveMinutes) || 0) > 0) {
-    return INLINE_EXCEPTION_OPTIONS.filter((option) => option.value === "schedule_change");
+    return INLINE_EXCEPTION_OPTIONS.filter((option) =>
+      ["permission", "schedule_change"].includes(option.value),
+    );
   }
 
   if (hasUnapprovedExtraTime(day)) {
@@ -1523,6 +1525,7 @@ function buildInlineExceptionDraft(row, day, nextType = "", templates = []) {
     plannedDayType: "workday",
     templateId: recommendedTemplate?.id || "",
     allowSupplementaryTime: type === "outside_work",
+    permissionPayTreatment: "without_discount",
     notes: exceptionNoteForDay(day),
   };
 }
@@ -1600,14 +1603,18 @@ function inlineExceptionPayload(employeeId, draft) {
     };
   }
 
+  const permissionHasDiscount = draft.permissionPayTreatment === "with_discount";
+
   return {
     ...common,
+    resolution: permissionHasDiscount ? "discount_day" : "approved_work_time",
     scope: "partial_day",
-    effect: "paid_partial_leave",
+    effect: permissionHasDiscount ? "unpaid_absence" : "paid_partial_leave",
     attendanceMode: "ignore_attendance",
-    payMode: "regular_only",
+    payMode: permissionHasDiscount ? "discount" : "regular_only",
     startTime: draft.startTime,
     endTime: draft.endTime,
+    countsAsWorkedTime: !permissionHasDiscount,
   };
 }
 
@@ -3468,6 +3475,7 @@ export default function AttendanceComparisonDetail({ employeeId, initialFilters 
                             <span>Entrada</span>
                             <TimeInput24
                               value={exceptionDraft.plannedStartTime}
+                              separator="H"
                               disabled={Boolean(exceptionTemplateOptions.length)}
                               onChange={(event) => updateExceptionDraft("plannedStartTime", event.target.value)}
                             />
@@ -3476,6 +3484,7 @@ export default function AttendanceComparisonDetail({ employeeId, initialFilters 
                             <span>Almuerzo sale</span>
                             <TimeInput24
                               value={exceptionDraft.plannedLunchStartTime}
+                              separator="H"
                               disabled={Boolean(exceptionTemplateOptions.length)}
                               onChange={(event) => updateExceptionDraft("plannedLunchStartTime", event.target.value)}
                             />
@@ -3484,6 +3493,7 @@ export default function AttendanceComparisonDetail({ employeeId, initialFilters 
                             <span>Almuerzo vuelve</span>
                             <TimeInput24
                               value={exceptionDraft.plannedLunchEndTime}
+                              separator="H"
                               disabled={Boolean(exceptionTemplateOptions.length)}
                               onChange={(event) => updateExceptionDraft("plannedLunchEndTime", event.target.value)}
                             />
@@ -3492,6 +3502,7 @@ export default function AttendanceComparisonDetail({ employeeId, initialFilters 
                             <span>Salida</span>
                             <TimeInput24
                               value={exceptionDraft.plannedEndTime}
+                              separator="H"
                               disabled={Boolean(exceptionTemplateOptions.length)}
                               onChange={(event) => updateExceptionDraft("plannedEndTime", event.target.value)}
                             />
@@ -3532,12 +3543,24 @@ export default function AttendanceComparisonDetail({ employeeId, initialFilters 
                   </label>
                 ) : null}
 
+                {exceptionDraft.type === "permission" ? (
+                  <SelectInput
+                    label="Tratamiento del permiso"
+                    value={exceptionDraft.permissionPayTreatment}
+                    onChange={(event) => updateExceptionDraft("permissionPayTreatment", event.target.value)}
+                  >
+                    <option value="without_discount">Sin descuento de horas</option>
+                    <option value="with_discount">Con descuento de horas</option>
+                  </SelectInput>
+                ) : null}
+
                 {["outside_work", "permission"].includes(exceptionDraft.type) ? (
                   <div className={styles.exceptionTimeGrid}>
                     <label>
                       <span>Desde</span>
                       <TimeInput24
                         value={exceptionDraft.startTime}
+                        separator="H"
                         onChange={(event) => updateExceptionDraft("startTime", event.target.value)}
                       />
                     </label>
@@ -3545,6 +3568,7 @@ export default function AttendanceComparisonDetail({ employeeId, initialFilters 
                       <span>Hasta</span>
                       <TimeInput24
                         value={exceptionDraft.endTime}
+                        separator="H"
                         onChange={(event) => updateExceptionDraft("endTime", event.target.value)}
                       />
                     </label>
