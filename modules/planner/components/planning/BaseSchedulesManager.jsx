@@ -46,7 +46,7 @@ function minutesLabel(minutes) {
 }
 
 function formatClockLabel(value) {
-  return formatTime24(value, "--");
+  return formatTime24(value, "--").replace(":", "H");
 }
 
 function calculateLunchMinutes(row) {
@@ -446,14 +446,14 @@ export default function BaseSchedulesManager() {
         </div>
 
         <fieldset className={styles.createGrid} disabled={isPending}>
-          <TextInput label="Entrada" type="time" value={row.startTime || ""} onChange={(event) => updateRow({ startTime: event.target.value })} />
+          <TextInput label="Entrada" type="time" separator="H" value={row.startTime || ""} onChange={(event) => updateRow({ startTime: event.target.value })} />
           {row.hasLunch ? (
             <>
-              <TextInput label="Fin manana" type="time" value={row.lunchStartTime || ""} onChange={(event) => updateRow({ lunchStartTime: event.target.value })} />
-              <TextInput label="Inicio tarde" type="time" value={row.lunchEndTime || ""} onChange={(event) => updateRow({ lunchEndTime: event.target.value })} />
+              <TextInput label="Fin manana" type="time" separator="H" value={row.lunchStartTime || ""} onChange={(event) => updateRow({ lunchStartTime: event.target.value })} />
+              <TextInput label="Inicio tarde" type="time" separator="H" value={row.lunchEndTime || ""} onChange={(event) => updateRow({ lunchEndTime: event.target.value })} />
             </>
           ) : null}
-          <TextInput label="Salida" type="time" value={row.endTime || ""} onChange={(event) => updateRow({ endTime: event.target.value })} />
+          <TextInput label="Salida" type="time" separator="H" value={row.endTime || ""} onChange={(event) => updateRow({ endTime: event.target.value })} />
           <TextInput className={styles.notesField} label="Notas" value={form.notes} onChange={(event) => updateField("notes", event.target.value)} placeholder="Uso interno opcional" />
         </fieldset>
 
@@ -473,7 +473,7 @@ export default function BaseSchedulesManager() {
             type="search"
             value={templateFilters.query}
             onChange={(event) => setTemplateFilters((current) => ({ ...current, query: event.target.value }))}
-            placeholder="08:00 A 12:00 13:00 A 17:00"
+            placeholder="08H00 A 12H00 13H00 A 17H00"
           />
           <button type="button" className={styles.ghostButton} onClick={clearTemplateFilters}>
             <RotateCcw size={15} />
