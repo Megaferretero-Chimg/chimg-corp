@@ -1020,9 +1020,10 @@ function buildOperationalExceptionDecisionMap(exceptions = []) {
 
       if (!authorizedMinutes) return;
 
-      decisions.set(`${employeeId}|${exception.dateKey}`, {
+      const startKey = exception.dateKey;
+      const endKey = exception.endDateKey || startKey;
+      const baseDecision = {
         employee: exception.employee,
-        dateKey: exception.dateKey,
         decision: "full",
         authorizedAdditionalMinutes: authorizedMinutes,
         allowSupplementaryTime: true,
@@ -1032,7 +1033,17 @@ function buildOperationalExceptionDecisionMap(exceptions = []) {
         ].filter(Boolean).join(": "),
         decidedBy: exception.authorizedBy || exception.registeredBy || "TALENTO HUMANO",
         source: "operational_exception",
-      });
+      };
+
+      for (let cursor = new Date(`${startKey}T12:00:00.000Z`); formatEcuadorDateKey(cursor) <= endKey; cursor = addDays(cursor, 1)) {
+        const dateKey = formatEcuadorDateKey(cursor);
+
+        decisions.set(`${employeeId}|${dateKey}`, {
+          ...baseDecision,
+          dateKey,
+        });
+      }
+
       return;
     }
 
@@ -1090,6 +1101,52 @@ function justifiedIntervalMinutes(exception) {
   return Math.max(0, Math.round((end - start) / 60000));
 }
 
+function isDeparturePermission(exception = {}) {
+  return exception.type === "permission"
+    && exception.scope === "partial_day"
+    && Boolean(exception.startTime)
+    && !exception.endTime;
+}
+
+function plannedWorkMinutesAfter(day, departureTime) {
+  const departureMinutes = parseScheduleTimeToMinutes(departureTime);
+  const startMinutes = parseScheduleTimeToMinutes(day?.startTime);
+  const endMinutes = parseScheduleTimeToMinutes(day?.endTime);
+
+  if (departureMinutes === null || startMinutes === null || endMinutes === null || endMinutes <= startMinutes) {
+    return 0;
+  }
+
+  const lunchStartMinutes = parseScheduleTimeToMinutes(day?.lunchStartTime);
+  const lunchEndMinutes = parseScheduleTimeToMinutes(day?.lunchEndTime);
+  const hasLunch = lunchStartMinutes !== null
+    && lunchEndMinutes !== null
+    && lunchStartMinutes > startMinutes
+    && lunchEndMinutes > lunchStartMinutes
+    && lunchEndMinutes < endMinutes;
+  const workIntervals = hasLunch
+    ? [[startMinutes, lunchStartMinutes], [lunchEndMinutes, endMinutes]]
+    : [[startMinutes, endMinutes]];
+
+  return workIntervals.reduce(
+    (total, [intervalStart, intervalEnd]) =>
+      total + Math.max(0, intervalEnd - Math.max(departureMinutes, intervalStart)),
+    0,
+  );
+}
+
+function resolveIntervalForDay(interval, day) {
+  if (!interval.usesPlannedEndTime) {
+    return interval;
+  }
+
+  return {
+    ...interval,
+    endTime: day?.endTime || "",
+    minutes: plannedWorkMinutesAfter(day, interval.startTime),
+  };
+}
+
 function buildJustifiedWorkIntervalMap(exceptions = []) {
   const intervalsByKey = new Map();
 
@@ -1105,9 +1162,10 @@ function buildJustifiedWorkIntervalMap(exceptions = []) {
     if (effect === "planning_change" || effect === "manual_punch" || effect === "alert_review") return;
 
     const employeeId = toId(exception.employee);
+    const usesPlannedEndTime = isDeparturePermission(exception);
     const minutes = justifiedIntervalMinutes(exception);
 
-    if (!employeeId || !exception.dateKey || !minutes) return;
+    if (!employeeId || !exception.dateKey || (!minutes && !usesPlannedEndTime)) return;
 
     const startKey = exception.dateKey;
     const endKey = exception.endDateKey || startKey;
@@ -1129,6 +1187,7 @@ function buildJustifiedWorkIntervalMap(exceptions = []) {
         note: exception.resolutionNotes || exception.notes || "",
         decidedBy: exception.authorizedBy || exception.registeredBy || "",
         statusLabel: effect === "paid_partial_leave" ? "Permiso sin descuento" : "Trabajo fuera justificado",
+        usesPlannedEndTime,
       });
     }
   });
@@ -1147,9 +1206,10 @@ function buildDiscountedWorkIntervalMap(exceptions = []) {
     if (effect !== "unpaid_absence" && exception.resolution !== "discount_day") return;
 
     const employeeId = toId(exception.employee);
+    const usesPlannedEndTime = isDeparturePermission(exception);
     const minutes = justifiedIntervalMinutes(exception);
 
-    if (!employeeId || !exception.dateKey || !minutes) return;
+    if (!employeeId || !exception.dateKey || (!minutes && !usesPlannedEndTime)) return;
 
     const startKey = exception.dateKey;
     const endKey = exception.endDateKey || startKey;
@@ -1168,6 +1228,7 @@ function buildDiscountedWorkIntervalMap(exceptions = []) {
         endTime: exception.endTime || "",
         note: exception.resolutionNotes || exception.notes || "",
         decidedBy: exception.authorizedBy || exception.registeredBy || "",
+        usesPlannedEndTime,
       });
     }
   });
@@ -1640,14 +1701,17 @@ function applyWeeklyExtraByAttendance(days = []) {
 function applyJustifiedWorkIntervals(day, intervals = []) {
   if (!intervals.length) return day;
 
-  const justifiedWorkMinutes = intervals.reduce((total, interval) => total + Math.max(0, Number(interval.minutes) || 0), 0);
+  const resolvedIntervals = intervals
+    .map((interval) => resolveIntervalForDay(interval, day))
+    .filter((interval) => Number(interval.minutes) > 0);
+  const justifiedWorkMinutes = resolvedIntervals.reduce((total, interval) => total + Math.max(0, Number(interval.minutes) || 0), 0);
 
   if (!justifiedWorkMinutes) return day;
 
   const nextTags = cleanPayrollTags(day.tags || [])
     .filter((tag) => !["Sin picadas", "Salida anticipada", "Atraso"].includes(tag));
-  const allowSupplementaryTime = intervals.some((interval) => interval.allowSupplementaryTime !== false);
-  const statusLabels = [...new Set(intervals.map((interval) => interval.statusLabel).filter(Boolean))];
+  const allowSupplementaryTime = resolvedIntervals.some((interval) => interval.allowSupplementaryTime !== false);
+  const statusLabels = [...new Set(resolvedIntervals.map((interval) => interval.statusLabel).filter(Boolean))];
   const statusLabel = statusLabels.join(" / ") || "Trabajo fuera justificado";
   const workedMinutes = (Number(day.workedMinutes) || 0) + justifiedWorkMinutes;
   const plannedRegularMinutes = Number(day.plannedRegularMinutes) || REGULAR_DAY_MINUTES;
@@ -1667,7 +1731,7 @@ function applyJustifiedWorkIntervals(day, intervals = []) {
     justifiedWorkLabel: minutesLabel((Number(day.justifiedWorkMinutes) || 0) + justifiedWorkMinutes),
     justifiedWorkIntervals: [
       ...(day.justifiedWorkIntervals || []),
-      ...intervals.map((interval) => ({
+      ...resolvedIntervals.map((interval) => ({
         startTime: interval.startTime,
         endTime: interval.endTime,
         minutes: interval.minutes,
@@ -1687,8 +1751,8 @@ function applyJustifiedWorkIntervals(day, intervals = []) {
       ...(day.authorization || {}),
       decision: "approved_work_time",
       statusLabel,
-      note: intervals.map((interval) => interval.note).filter(Boolean).join(" | "),
-      decidedBy: intervals.find((interval) => interval.decidedBy)?.decidedBy || "",
+      note: resolvedIntervals.map((interval) => interval.note).filter(Boolean).join(" | "),
+      decidedBy: resolvedIntervals.find((interval) => interval.decidedBy)?.decidedBy || "",
       isSaved: false,
     },
   };
@@ -1697,7 +1761,10 @@ function applyJustifiedWorkIntervals(day, intervals = []) {
 function applyDiscountedWorkIntervals(day, intervals = []) {
   if (!intervals.length) return day;
 
-  const discountedMinutes = intervals.reduce((total, interval) => total + Math.max(0, Number(interval.minutes) || 0), 0);
+  const resolvedIntervals = intervals
+    .map((interval) => resolveIntervalForDay(interval, day))
+    .filter((interval) => Number(interval.minutes) > 0);
+  const discountedMinutes = resolvedIntervals.reduce((total, interval) => total + Math.max(0, Number(interval.minutes) || 0), 0);
 
   if (!discountedMinutes) return day;
 
@@ -1730,7 +1797,7 @@ function applyDiscountedWorkIntervals(day, intervals = []) {
     discountedWorkLabel: minutesLabel((Number(day.discountedWorkMinutes) || 0) + discountedMinutes),
     discountedWorkIntervals: [
       ...(day.discountedWorkIntervals || []),
-      ...intervals.map((interval) => ({
+      ...resolvedIntervals.map((interval) => ({
         startTime: interval.startTime,
         endTime: interval.endTime,
         minutes: interval.minutes,
@@ -1743,8 +1810,8 @@ function applyDiscountedWorkIntervals(day, intervals = []) {
       ...(day.authorization || {}),
       decision: "discount_hours",
       statusLabel: "Horas descontadas",
-      note: intervals.map((interval) => interval.note).filter(Boolean).join(" | "),
-      decidedBy: intervals.find((interval) => interval.decidedBy)?.decidedBy || "",
+      note: resolvedIntervals.map((interval) => interval.note).filter(Boolean).join(" | "),
+      decidedBy: resolvedIntervals.find((interval) => interval.decidedBy)?.decidedBy || "",
       isSaved: false,
     },
   };

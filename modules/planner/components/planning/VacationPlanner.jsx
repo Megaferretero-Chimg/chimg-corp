@@ -329,8 +329,8 @@ export default function VacationPlanner() {
           throw new Error(payload.error || "No se pudo eliminar la vacacion.");
         }
 
-        setVacationToDelete(null);
         await loadVacations();
+        setVacationToDelete(null);
         showNotice("success", "Vacaciones eliminadas correctamente.");
       } catch (error) {
         showNotice("error", error.message);
@@ -356,8 +356,8 @@ export default function VacationPlanner() {
           throw new Error(payload.error || "No se pudo resolver la solicitud.");
         }
 
-        setVacationDecision(null);
         await loadVacations();
+        setVacationDecision(null);
         showNotice("success", payload.message || "Solicitud resuelta correctamente.");
       } catch (error) {
         showNotice("error", error.message);

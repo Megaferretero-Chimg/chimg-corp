@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState, useTransition } from "react";
-import { addMonths, format, subMonths } from "date-fns";
+import { addDays, addMonths, format, isValid, parseISO, subMonths } from "date-fns";
 import { es } from "date-fns/locale";
 import {
   AlertTriangle,
@@ -39,7 +39,7 @@ const EXCEPTION_FLOWS = [
     category: "planning",
     value: "hourly_permission",
     label: "Permiso de salida",
-    description: "Registra un permiso por horas para que Talento Humano decida si ese tiempo se descuenta.",
+    description: "Registra la hora de salida para que Talento Humano decida si el tiempo restante de la jornada se descuenta.",
     type: "permission",
     scope: "partial_day",
     resolution: "approved_work_time",
@@ -108,22 +108,23 @@ const FLOW_OPTIONS = EXCEPTION_FLOWS.map((flow) => ({
   label: flow.label,
   searchText: FLOW_GROUPS.find((group) => group.value === flow.category)?.label || "",
 }));
+
+function getNextDateKey(dateKey) {
+  if (!dateKey) {
+    return "";
+  }
+
+  const parsedDate = parseISO(dateKey);
+
+  return isValid(parsedDate) ? format(addDays(parsedDate, 1), "yyyy-MM-dd") : "";
+}
 const DAY_TYPE_OPTIONS = [
   { value: "workday", label: "Horario laboral" },
   { value: "off_day", label: "Descanso" },
 ];
 const CUSTOM_SCHEDULE_TEMPLATE = "custom";
 const FLOW_VALUES = new Set(EXCEPTION_FLOWS.map((flow) => flow.value));
-const WEEKDAY_OPTIONS = [
-  { value: 1, label: "Lun" },
-  { value: 2, label: "Mar" },
-  { value: 3, label: "Mie" },
-  { value: 4, label: "Jue" },
-  { value: 5, label: "Vie" },
-  { value: 6, label: "Sab" },
-  { value: 0, label: "Dom" },
-];
-const DEFAULT_APPLICABLE_WEEKDAYS = [1, 2, 3, 4, 5];
+const DEFAULT_APPLICABLE_WEEKDAYS = [0, 1, 2, 3, 4, 5, 6];
 
 const EMPTY_FORM = {
   id: "",
@@ -205,9 +206,7 @@ function buildExceptionForm(exception) {
     plannedLunchStartTime: exception.plannedLunchStartTime || "",
     plannedLunchEndTime: exception.plannedLunchEndTime || "",
     plannedLunchDurationMinutes: Number(exception.plannedLunchDurationMinutes) || 0,
-    applicableWeekdays: Array.isArray(exception.applicableWeekdays) && exception.applicableWeekdays.length
-      ? exception.applicableWeekdays
-      : DEFAULT_APPLICABLE_WEEKDAYS,
+    applicableWeekdays: DEFAULT_APPLICABLE_WEEKDAYS,
     manualPunchTime: exception.manualPunchTime || "",
     destination: exception.destination || "",
     effect: exception.effect || "other",
@@ -299,7 +298,7 @@ function deriveResolutionEffect(form) {
   if (flow.value === "overtime_authorization") {
     return {
       type: flow.type,
-      scope: flow.scope,
+      scope: form.endDateKey ? "date_range" : flow.scope,
       effect: flow.effect,
       attendanceMode: flow.attendanceMode,
       payMode: flow.payMode,
@@ -469,26 +468,32 @@ export default function ExceptionManager({
     : 0;
   const paginationEnd = Math.min(safeCurrentPage * EXCEPTIONS_PAGE_SIZE, orderedExceptions.length);
   const hasDateRange = Boolean(form.endDateKey);
+  const hasValidDateRange = !hasDateRange || (
+    Boolean(form.dateKey)
+    && form.endDateKey > form.dateKey
+  );
   const selectedFlow = getFlowDefinition(form.flowType);
   const createsManualPunch = selectedFlow.effect === "manual_punch";
-  const needsTimeRange = ["hourly_permission", "overtime_authorization"].includes(selectedFlow.value);
+  const needsDepartureTime = selectedFlow.value === "hourly_permission";
+  const needsTimeRange = selectedFlow.value === "overtime_authorization";
   const needsTemporarySchedule = selectedFlow.effect === "planning_change";
-  const canUseDateRange = selectedFlow.category === "planning" && !needsTimeRange;
+  const canUseDateRange = selectedFlow.category === "planning"
+    && !needsDepartureTime;
   const isEditingException = Boolean(form.id);
   const canSave = Boolean(
     form.employeeId
     && selectedFlow.value
     && form.dateKey
+    && hasValidDateRange
     && form.notes.trim()
     && (!createsManualPunch || form.manualPunchTime)
+    && (!needsDepartureTime || form.startTime)
     && (!needsTimeRange || (form.startTime && form.endTime))
     && (!needsTemporarySchedule || (
       (
         form.plannedDayType === "off_day"
         || (form.plannedTemplateId && form.plannedStartTime && form.plannedEndTime)
       )
-      && Array.isArray(form.applicableWeekdays)
-      && form.applicableWeekdays.length
     )),
   );
 
@@ -677,15 +682,31 @@ export default function ExceptionManager({
         return { ...current, endDateKey: "" };
       }
 
+      const minimumEndDateKey = getNextDateKey(current.dateKey);
+
       return {
         ...current,
-        endDateKey: current.endDateKey || current.dateKey,
+        endDateKey: current.endDateKey > current.dateKey
+          ? current.endDateKey
+          : minimumEndDateKey,
       };
     });
   }
 
+  function updateStartDate(dateKey) {
+    setForm((current) => ({
+      ...current,
+      dateKey,
+      endDateKey: current.endDateKey && current.endDateKey <= dateKey
+        ? getNextDateKey(dateKey)
+        : current.endDateKey,
+    }));
+  }
+
   function updateFlowType(value) {
     const flow = getFlowDefinition(value);
+    const flowCanUseDateRange = flow.category === "planning"
+      && flow.value !== "hourly_permission";
 
     setForm((current) => ({
       ...current,
@@ -705,11 +726,9 @@ export default function ExceptionManager({
       plannedLunchStartTime: flow.effect === "planning_change" ? current.plannedLunchStartTime : "",
       plannedLunchEndTime: flow.effect === "planning_change" ? current.plannedLunchEndTime : "",
       plannedLunchDurationMinutes: flow.effect === "planning_change" ? current.plannedLunchDurationMinutes : 0,
-      applicableWeekdays: flow.effect === "planning_change"
-        ? current.applicableWeekdays || DEFAULT_APPLICABLE_WEEKDAYS
-        : DEFAULT_APPLICABLE_WEEKDAYS,
+      applicableWeekdays: DEFAULT_APPLICABLE_WEEKDAYS,
       manualPunchTime: flow.effect === "manual_punch" ? current.manualPunchTime : "",
-      endDateKey: flow.category === "planning" ? current.endDateKey : "",
+      endDateKey: flowCanUseDateRange ? current.endDateKey : "",
       countsAsWorkedTime: flow.value === "hourly_permission",
       allowSupplementaryTime: flow.value === "overtime_authorization",
       isExtraDay: false,
@@ -826,9 +845,17 @@ export default function ExceptionManager({
         ? exception.scope
         : exception.scope || (exception.endDateKey && flow.category === "planning" ? "date_range" : flow.scope),
       dateKey: exception.dateKey,
-      endDateKey: isRejected ? exception.endDateKey : exception.endDateKey || "",
+      endDateKey: flow.value === "hourly_permission"
+        ? ""
+        : isRejected
+          ? exception.endDateKey
+          : exception.endDateKey || "",
       startTime: isRejected ? exception.startTime : exception.startTime || "",
-      endTime: isRejected ? exception.endTime : exception.endTime || "",
+      endTime: flow.value === "hourly_permission"
+        ? ""
+        : isRejected
+          ? exception.endTime
+          : exception.endTime || "",
       manualPunchTime: isRejected ? exception.manualPunchTime : exception.manualPunchTime || "",
       plannedStartTime: isRejected ? exception.plannedStartTime : exception.plannedStartTime || "",
       plannedEndTime: isRejected ? exception.plannedEndTime : exception.plannedEndTime || "",
@@ -837,9 +864,9 @@ export default function ExceptionManager({
       plannedLunchStartTime: isRejected ? exception.plannedLunchStartTime : exception.plannedLunchStartTime || "",
       plannedLunchEndTime: isRejected ? exception.plannedLunchEndTime : exception.plannedLunchEndTime || "",
       plannedLunchDurationMinutes: isRejected ? exception.plannedLunchDurationMinutes : Number(exception.plannedLunchDurationMinutes) || 0,
-      applicableWeekdays: Array.isArray(exception.applicableWeekdays) && exception.applicableWeekdays.length
-        ? exception.applicableWeekdays
-        : DEFAULT_APPLICABLE_WEEKDAYS,
+      applicableWeekdays: flow.value === "temporary_schedule_change"
+        ? DEFAULT_APPLICABLE_WEEKDAYS
+        : exception.applicableWeekdays,
       effect: isRejected
         ? "alert_review"
         : isDiscounted
@@ -911,6 +938,11 @@ export default function ExceptionManager({
   function saveException(event) {
     event.preventDefault();
 
+    if (hasDateRange && !hasValidDateRange) {
+      showNotice("error", "Para varios dias, la fecha final debe ser posterior a la fecha inicial.");
+      return;
+    }
+
     if (!canSave) {
       showNotice("error", "Selecciona empleado, motivo, fecha y agrega una descripcion.");
       return;
@@ -925,7 +957,8 @@ export default function ExceptionManager({
       ...resolutionEffect,
       resolution,
       authorizedBy: "",
-      startTime: needsTimeRange ? form.startTime : "",
+      endDateKey: canUseDateRange ? form.endDateKey : "",
+      startTime: needsDepartureTime || needsTimeRange ? form.startTime : "",
       endTime: needsTimeRange ? form.endTime : "",
       plannedDayType: needsTemporarySchedule && form.plannedDayType === "off_day" ? "off_day" : "workday",
       plannedStartTime: needsTemporarySchedule && form.plannedDayType !== "off_day" ? form.plannedStartTime : "",
@@ -933,7 +966,7 @@ export default function ExceptionManager({
       plannedLunchStartTime: needsTemporarySchedule && form.plannedDayType !== "off_day" ? form.plannedLunchStartTime : "",
       plannedLunchEndTime: needsTemporarySchedule && form.plannedDayType !== "off_day" ? form.plannedLunchEndTime : "",
       plannedLunchDurationMinutes: needsTemporarySchedule && form.plannedDayType !== "off_day" ? form.plannedLunchDurationMinutes : 0,
-      applicableWeekdays: needsTemporarySchedule ? form.applicableWeekdays : undefined,
+      applicableWeekdays: needsTemporarySchedule ? DEFAULT_APPLICABLE_WEEKDAYS : undefined,
       manualPunchTime: createsManualPunch ? form.manualPunchTime : "",
       destination: "",
       countsAsWorkedTime:
@@ -967,22 +1000,6 @@ export default function ExceptionManager({
     });
   }
 
-  function toggleApplicableWeekday(day) {
-    setForm((current) => {
-      const currentDays = Array.isArray(current.applicableWeekdays) && current.applicableWeekdays.length
-        ? current.applicableWeekdays
-        : DEFAULT_APPLICABLE_WEEKDAYS;
-      const nextDays = currentDays.includes(day)
-        ? currentDays.filter((entry) => entry !== day)
-        : [...currentDays, day];
-
-      return {
-        ...current,
-        applicableWeekdays: nextDays.sort((left, right) => left - right),
-      };
-    });
-  }
-
   function confirmDeleteException() {
     if (!exceptionToDelete) {
       return;
@@ -1005,8 +1022,8 @@ export default function ExceptionManager({
           throw new Error(payload.error || "No se pudo procesar la justificacion.");
         }
 
-        setExceptionToDelete(null);
         await loadExceptions();
+        setExceptionToDelete(null);
         showNotice("success", payload.message || "Justificacion procesada correctamente.");
       } catch (error) {
         showNotice("error", error.message);
@@ -1032,8 +1049,8 @@ export default function ExceptionManager({
           }
         }
 
-        setIsBulkDeleteOpen(false);
         await loadExceptions();
+        setIsBulkDeleteOpen(false);
         showNotice("success", "Excepciones pendientes eliminadas correctamente.");
       } catch (error) {
         showNotice("error", error.message);
@@ -1094,7 +1111,12 @@ export default function ExceptionManager({
                 <dt>Registrado por</dt>
                 <dd>{reviewException.registeredBy || "Sin registro"}</dd>
               </div>
-              {reviewException.startTime || reviewException.endTime ? (
+              {inferFlowType(reviewException) === "hourly_permission" && reviewException.startTime ? (
+                <div>
+                  <dt>Hora de salida</dt>
+                  <dd>{formatTimeLabel(reviewException.startTime)}</dd>
+                </div>
+              ) : reviewException.startTime || reviewException.endTime ? (
                 <div>
                   <dt>Rango</dt>
                   <dd>{[reviewException.startTime, reviewException.endTime].filter(Boolean).map(formatTimeLabel).join(" - ")}</dd>
@@ -1529,17 +1551,20 @@ export default function ExceptionManager({
           <div className={styles.twoColumnGrid}>
             <label className={styles.field}>
               <span>Fecha</span>
-              <input type="date" value={form.dateKey} onChange={(event) => updateForm("dateKey", event.target.value)} />
+              <input type="date" value={form.dateKey} onChange={(event) => updateStartDate(event.target.value)} />
             </label>
-            <label className={styles.field} data-muted={!hasDateRange || !canUseDateRange}>
-              <span>Fecha fin</span>
-              <input
-                type="date"
-                value={form.endDateKey}
-                onChange={(event) => updateForm("endDateKey", event.target.value)}
-                disabled={!hasDateRange || !canUseDateRange}
-              />
-            </label>
+            {canUseDateRange && hasDateRange ? (
+              <label className={styles.field}>
+                <span>Fecha fin</span>
+                <input
+                  type="date"
+                  value={form.endDateKey}
+                  onChange={(event) => updateForm("endDateKey", event.target.value)}
+                  min={getNextDateKey(form.dateKey) || undefined}
+                  aria-invalid={!hasValidDateRange}
+                />
+              </label>
+            ) : null}
           </div>
 
           {canUseDateRange ? (
@@ -1564,14 +1589,19 @@ export default function ExceptionManager({
             </label>
           ) : null}
 
-          {needsTimeRange ? (
+          {needsDepartureTime ? (
+            <label className={styles.field}>
+              <span>Hora de salida</span>
+              <TimeInput24 separator="H" value={form.startTime} onChange={(event) => updateForm("startTime", event.target.value)} />
+            </label>
+          ) : needsTimeRange ? (
             <div className={styles.twoColumnGrid}>
               <label className={styles.field}>
-                <span>{selectedFlow.value === "overtime_authorization" ? "Inicio autorizado" : "Inicio del permiso"}</span>
+                <span>Inicio autorizado</span>
                 <TimeInput24 separator="H" value={form.startTime} onChange={(event) => updateForm("startTime", event.target.value)} />
               </label>
               <label className={styles.field}>
-                <span>{selectedFlow.value === "overtime_authorization" ? "Fin autorizado" : "Fin del permiso"}</span>
+                <span>Fin autorizado</span>
                 <TimeInput24 separator="H" value={form.endTime} onChange={(event) => updateForm("endTime", event.target.value)} />
               </label>
             </div>
@@ -1581,6 +1611,7 @@ export default function ExceptionManager({
             <div className={styles.presetPanel}>
               <span>Planificación temporal</span>
               <AutocompleteSelect
+                className={styles.planningSelect}
                 label="Tipo de día"
                 options={DAY_TYPE_OPTIONS}
                 value={form.plannedDayType || "workday"}
@@ -1592,6 +1623,7 @@ export default function ExceptionManager({
               {form.plannedDayType !== "off_day" ? (
                 <>
                   <AutocompleteSelect
+                    className={styles.planningSelect}
                     label="Plantilla de horario"
                     options={scheduleTemplateOptions}
                     value={form.plannedTemplateId}
@@ -1626,23 +1658,6 @@ export default function ExceptionManager({
                   ) : null}
                 </>
               ) : null}
-              <div className={styles.weekdayPicker}>
-                {WEEKDAY_OPTIONS.map((day) => {
-                  const isSelected = Array.isArray(form.applicableWeekdays) && form.applicableWeekdays.includes(day.value);
-
-                  return (
-                    <button
-                      key={day.value}
-                      type="button"
-                      className={isSelected ? styles.weekdayButtonActive : styles.weekdayButton}
-                      onClick={() => toggleApplicableWeekday(day.value)}
-                      aria-pressed={isSelected}
-                    >
-                      {day.label}
-                    </button>
-                  );
-                })}
-              </div>
             </div>
           ) : null}
 

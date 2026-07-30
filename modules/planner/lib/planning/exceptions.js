@@ -74,7 +74,7 @@ const SCOPE_VALUES = new Set(EXCEPTION_SCOPES.map((scope) => scope.value));
 const EFFECT_VALUES = new Set(RESOLUTION_EFFECTS.map((effect) => effect.value));
 const ATTENDANCE_MODE_VALUES = new Set(ATTENDANCE_MODES.map((mode) => mode.value));
 const PAY_MODE_VALUES = new Set(PAY_MODES.map((mode) => mode.value));
-const DEFAULT_APPLICABLE_WEEKDAYS = [1, 2, 3, 4, 5];
+const DEFAULT_APPLICABLE_WEEKDAYS = [0, 1, 2, 3, 4, 5, 6];
 
 function getLabel(options, value) {
   if (["complete_scheduled_time", "justified_record", "paid_leave", "reschedule", "replacement", "other"].includes(value)) {
@@ -377,7 +377,27 @@ export function normalizeExceptionPayload(body, employee) {
     throw new Error("Para varios dias debes indicar una fecha de fin.");
   }
 
-  if (["partial_day", "early_leave", "late_arrival", "outside_work", "exit_return"].includes(scope) && (!startTime || !endTime)) {
+  if (scope === "date_range" && endDateData.date.getTime() === date.getTime()) {
+    throw new Error("Para varios dias, la fecha de fin debe ser posterior a la fecha inicial.");
+  }
+
+  const isDeparturePermission = type === "permission" && scope === "partial_day";
+  const isOvertimeAuthorization = type === "overtime_authorization";
+
+  if (isDeparturePermission && !startTime) {
+    throw new Error("Para el permiso de salida debes indicar la hora de salida.");
+  }
+
+  if (isOvertimeAuthorization && (!startTime || !endTime)) {
+    throw new Error("Para autorizar tiempo adicional debes indicar la hora de inicio y la hora de fin.");
+  }
+
+  if (
+    ["partial_day", "early_leave", "late_arrival", "outside_work", "exit_return"].includes(scope)
+    && !isDeparturePermission
+    && !isOvertimeAuthorization
+    && (!startTime || !endTime)
+  ) {
     throw new Error("Para justificar horas debes indicar hora de inicio y hora de fin.");
   }
 
