@@ -46,6 +46,21 @@ const attendanceDayDecisionSchema = new Schema(
       min: 0,
       default: 0,
     },
+    manualSupplementaryMinutes: {
+      type: Number,
+      min: 0,
+      default: 0,
+    },
+    manualExtraordinaryMinutes: {
+      type: Number,
+      min: 0,
+      default: 0,
+    },
+    manualAdditionalReason: {
+      type: String,
+      trim: true,
+      default: "",
+    },
     detectedSupplementaryMinutes: {
       type: Number,
       min: 0,

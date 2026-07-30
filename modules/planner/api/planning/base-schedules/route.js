@@ -21,6 +21,7 @@ export async function GET() {
     !hasAccessPermission(user, "planner.settings.view")
     && !hasAccessPermission(user, "planner.schedules.weekly.view")
     && !hasAccessPermission(user, "planner.attendance.view")
+    && !hasAccessPermission(user, "planner.exceptions.view")
   ) {
     return NextResponse.json({ error: "No tienes permiso para ver la configuracion de planificacion." }, { status: 403 });
   }

@@ -191,7 +191,12 @@ export async function GET(request) {
         item.dateKey || format(item.date, "yyyy-MM-dd"),
         {
           additionalResolved: item.additionalResolved === true,
-          authorizedSupplementaryMinutes: item.authorizedSupplementaryMinutes || 0,
+          authorizedSupplementaryMinutes:
+            (Number(item.authorizedSupplementaryMinutes) || 0)
+            + (Number(item.manualSupplementaryMinutes) || 0),
+          authorizedExtraordinaryMinutes:
+            (Number(item.authorizedExtraordinaryMinutes) || 0)
+            + (Number(item.manualExtraordinaryMinutes) || 0),
         },
       ]),
     );

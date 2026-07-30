@@ -54,6 +54,12 @@ function attendanceDecisionSummary(decision = {}) {
 
   if (supplementary) parts.push(`HS aprobadas: ${minutesLabel(supplementary)}`);
   if (extraordinary) parts.push(`HE aprobadas: ${minutesLabel(extraordinary)}`);
+  if ((Number(decision.manualSupplementaryMinutes) || 0) > 0) {
+    parts.push(`HS manuales: ${minutesLabel(decision.manualSupplementaryMinutes)}`);
+  }
+  if ((Number(decision.manualExtraordinaryMinutes) || 0) > 0) {
+    parts.push(`HE manuales: ${minutesLabel(decision.manualExtraordinaryMinutes)}`);
+  }
   if ((Number(decision.detectedLateMinutes) || 0) > 0) {
     parts.push(`Atraso resultante: ${minutesLabel(decision.adjustedLateMinutes)}`);
   }
@@ -124,7 +130,7 @@ function attendanceHistoryItem({
     sourceId: id,
     title: DECISION_LABELS[snapshot?.decision] || "Decisión del día",
     summary: attendanceDecisionSummary(snapshot),
-    note: snapshot?.note || "",
+    note: snapshot?.manualAdditionalReason || snapshot?.note || "",
     actor: actor || snapshot?.decidedBy || "SISTEMA",
     happenedAt,
     status,

@@ -44,7 +44,10 @@ export function parseDateKey(value, fieldLabel = "fecha") {
 
 export function normalizeVacationPayload(body, employee) {
   const { date: startDate, dateKey: startDateKey } = parseDateKey(body?.startDateKey, "fecha de inicio");
-  const { date: endDate, dateKey: endDateKey } = parseDateKey(body?.endDateKey, "fecha de fin");
+  const requestedEndDateKey = body?.isDateRange === false
+    ? startDateKey
+    : body?.endDateKey;
+  const { date: endDate, dateKey: endDateKey } = parseDateKey(requestedEndDateKey, "fecha de fin");
 
   if (endDate.getTime() < startDate.getTime()) {
     throw new Error("La fecha de fin no puede ser anterior a la fecha de inicio.");

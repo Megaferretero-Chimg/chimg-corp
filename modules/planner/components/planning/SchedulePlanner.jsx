@@ -875,7 +875,7 @@ const PLANNED_ADJUSTMENT_TYPES = [
     payMode: "regular_only",
     resolution: "paid_leave",
     requiresTimeRange: false,
-    requiresSchedule: true,
+    requiresSchedule: false,
   },
   {
     value: "outside_work",
@@ -2526,9 +2526,8 @@ export default function SchedulePlanner({ initialFilters = {}, basePath = "/sche
     const { employee, dateKey, day } = adjustmentTarget;
     const requiresSchedule = selectedType.requiresSchedule;
     const usesTimeRange = selectedType.requiresTimeRange;
-    const supportsCustomSchedule =
-      selectedType.value === "outside_work"
-      || selectedType.value === "permission_full_day";
+    const usesExistingPlannedSchedule = selectedType.value === "permission_full_day";
+    const supportsCustomSchedule = selectedType.value === "outside_work";
     const requiresTemplateSelection =
       supportsCustomSchedule
       && !adjustmentForm.useCustomSchedule;
@@ -2555,6 +2554,11 @@ export default function SchedulePlanner({ initialFilters = {}, basePath = "/sche
       return;
     }
 
+    if (usesExistingPlannedSchedule && !hasPlannedScheduleFields(day)) {
+      showNotice("error", "El permiso de jornada completa requiere un horario planificado en este día.");
+      return;
+    }
+
     if (usesTimeRange && (!adjustmentForm.startTime || !adjustmentForm.endTime)) {
       showNotice("error", "Indica desde y hasta para el permiso por horas.");
       return;
@@ -2570,7 +2574,7 @@ export default function SchedulePlanner({ initialFilters = {}, basePath = "/sche
         body: JSON.stringify({
           planningSource: "schedule_planner",
           requestKey: adjustmentTarget.requestKey,
-          autoResolve: selectedType.value !== "permission_partial",
+          autoResolve: !["permission_partial", "permission_full_day"].includes(selectedType.value),
           employeeId: employee.id,
           dateKey,
           type: selectedType.type,
@@ -3032,10 +3036,19 @@ export default function SchedulePlanner({ initialFilters = {}, basePath = "/sche
   const selectedAdjustmentType = PLANNED_ADJUSTMENT_TYPES.find((option) => option.value === adjustmentForm.kind) || PLANNED_ADJUSTMENT_TYPES[0];
   const isPermissionAdjustment = selectedAdjustmentType.type === "permission";
   const isExternalWorkAdjustment = selectedAdjustmentType.value === "outside_work";
-  const supportsCustomSchedule =
-    isExternalWorkAdjustment
-    || selectedAdjustmentType.value === "permission_full_day";
+  const supportsCustomSchedule = isExternalWorkAdjustment;
   const adjustmentCategoryValue = isPermissionAdjustment ? "permission" : selectedAdjustmentType.value;
+  const selectedOverlayRaw = selectedOverlay?.raw || {};
+  const isSelectedPermission = selectedOverlay?.kind === "exception" && selectedOverlayRaw.type === "permission";
+  const isSelectedPartialPermission = isSelectedPermission && selectedOverlayRaw.scope === "partial_day";
+  const isSelectedFullDayPermission = isSelectedPermission && selectedOverlayRaw.scope === "full_day";
+  const selectedPermissionRange = isSelectedPartialPermission
+    ? formatHourRange(selectedOverlayRaw.startTime, selectedOverlayRaw.endTime)
+    : "";
+  const selectedOverlayHasPlannedSchedule = Boolean(
+    selectedOverlayRaw.plannedStartTime
+    || selectedOverlayRaw.plannedEndTime,
+  );
   const showsCustomScheduleFields =
     selectedAdjustmentType.requiresSchedule
     && (!supportsCustomSchedule || adjustmentForm.useCustomSchedule);
@@ -3124,23 +3137,35 @@ export default function SchedulePlanner({ initialFilters = {}, basePath = "/sche
                   <dd>{selectedOverlay.resolutionLabel}</dd>
                 </div>
               ) : null}
-              {selectedOverlay.kind === "exception" ? (
+              {isSelectedPartialPermission && selectedPermissionRange ? (
+                <div>
+                  <dt>Rango del permiso</dt>
+                  <dd>{selectedPermissionRange}</dd>
+                </div>
+              ) : null}
+              {isSelectedFullDayPermission ? (
+                <div>
+                  <dt>Horario afectado</dt>
+                  <dd>{formatShiftLabel(selectedOverlay.indicatedDay)}</dd>
+                </div>
+              ) : null}
+              {selectedOverlay.kind === "exception" && !isSelectedPermission ? (
                 <div>
                   <dt>Horario indicado</dt>
                   <dd>{formatShiftLabel(selectedOverlay.indicatedDay)}</dd>
                 </div>
               ) : null}
-              {selectedOverlay.raw?.plannedStartTime || selectedOverlay.raw?.plannedEndTime ? (
+              {selectedOverlayHasPlannedSchedule && !isSelectedPermission ? (
                 <div>
                   <dt>Horario planificado</dt>
                   <dd>
                     {buildReadableShiftSchedule({
                       dayType: "workday",
-                      startTime: selectedOverlay.raw.plannedStartTime || "",
-                      lunchStartTime: selectedOverlay.raw.plannedLunchStartTime || "",
-                      lunchEndTime: selectedOverlay.raw.plannedLunchEndTime || "",
-                      endTime: selectedOverlay.raw.plannedEndTime || "",
-                      lunchDurationMinutes: Number(selectedOverlay.raw.plannedLunchDurationMinutes) || 0,
+                      startTime: selectedOverlayRaw.plannedStartTime || "",
+                      lunchStartTime: selectedOverlayRaw.plannedLunchStartTime || "",
+                      lunchEndTime: selectedOverlayRaw.plannedLunchEndTime || "",
+                      endTime: selectedOverlayRaw.plannedEndTime || "",
+                      lunchDurationMinutes: Number(selectedOverlayRaw.plannedLunchDurationMinutes) || 0,
                     })}
                   </dd>
                 </div>

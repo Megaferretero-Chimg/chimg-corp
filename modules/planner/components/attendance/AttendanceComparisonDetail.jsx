@@ -1708,6 +1708,8 @@ export default function AttendanceComparisonDetail({ employeeId, initialFilters 
   const [exceptionDraft, setExceptionDraft] = useState(null);
   const [isSavingException, setIsSavingException] = useState(false);
   const [pendingAdditionalApproval, setPendingAdditionalApproval] = useState(null);
+  const [pendingManualAdditionalApproval, setPendingManualAdditionalApproval] = useState(null);
+  const [isSavingManualAdditional, setIsSavingManualAdditional] = useState(false);
   const [decisionHistory, setDecisionHistory] = useState([]);
   const [isLoadingDecisionHistory, setIsLoadingDecisionHistory] = useState(false);
   const [pendingHistoryDelete, setPendingHistoryDelete] = useState(null);
@@ -1817,6 +1819,14 @@ export default function AttendanceComparisonDetail({ employeeId, initialFilters 
       selectedHasLateStage ||
       selectedCanUsePlannedDay
     )
+  );
+  const selectedCanAuthorizeManualAdditional = Boolean(
+    selectedDay
+    && !selectedHasOperationalStage
+    && !selectedHasLateStage
+    && !selectedHasAdditionalStage
+    && selectedDay.dayType !== "vacation"
+    && !["employment_pending", "employment_ended"].includes(selectedDay.source),
   );
   const selectedPlannedDayDecision = selectedHasIncompletePunches ? "justify_incomplete_punches" : "justify_no_punches";
 
@@ -2356,6 +2366,7 @@ export default function AttendanceComparisonDetail({ employeeId, initialFilters 
   function closeDayDecision() {
     setExceptionDraft(null);
     setPendingAdditionalApproval(null);
+    setPendingManualAdditionalApproval(null);
     setPendingHistoryDelete(null);
 
     if (selectedDay) {
@@ -2467,6 +2478,81 @@ export default function AttendanceComparisonDetail({ employeeId, initialFilters 
 
     if (wasSaved) {
       setPendingAdditionalApproval(null);
+    }
+  }
+
+  function openManualAdditionalApproval(day) {
+    const isExtraordinary = isExtraordinaryDay(day);
+    const currentMinutes = isExtraordinary
+      ? Number(day?.authorization?.manualExtraordinaryMinutes) || 0
+      : Number(day?.authorization?.manualSupplementaryMinutes) || 0;
+
+    setPendingManualAdditionalApproval({
+      dateKey: day.dateKey,
+      minutes: minutesToHourInput(currentMinutes),
+      reason: day?.authorization?.manualAdditionalReason || "",
+      isEdit: currentMinutes > 0,
+    });
+  }
+
+  function updateManualAdditionalApproval(field, value) {
+    setPendingManualAdditionalApproval((current) => current ? { ...current, [field]: value } : current);
+  }
+
+  async function saveManualAdditionalApproval() {
+    if (!selectedDay || !pendingManualAdditionalApproval) return;
+
+    const manualMinutes = hourInputToMinutes(pendingManualAdditionalApproval.minutes);
+    const reason = String(pendingManualAdditionalApproval.reason || "").trim();
+    const isExtraordinary = isExtraordinaryDay(selectedDay);
+    const baselinePayload = authorizationPayloadForDay(
+      employeeId,
+      selectedDay,
+      "custom",
+      actionDrafts[selectedDay.dateKey] || {},
+    );
+
+    try {
+      setIsSavingManualAdditional(true);
+      setError("");
+      clearNotice();
+
+      const response = await fetch("/api/planner/attendance/day-decisions", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          ...baselinePayload,
+          action: "manual_additional",
+          manualSupplementaryMinutes: isExtraordinary ? 0 : manualMinutes,
+          manualExtraordinaryMinutes: isExtraordinary ? manualMinutes : 0,
+          manualAdditionalReason: reason,
+        }),
+      });
+      const payload = await response.json();
+
+      if (!response.ok) {
+        throw new Error(payload.error || "No se pudo aprobar el tiempo adicional.");
+      }
+
+      const dayKey = selectedDay.dateKey;
+      const wasEdit = pendingManualAdditionalApproval.isEdit;
+
+      setPendingManualAdditionalApproval(null);
+      setSelectedDayKey(dayKey);
+      await loadReport(month, { background: true });
+      await loadDecisionHistory(dayKey);
+      showNotice(
+        "success",
+        wasEdit
+          ? "Tiempo adicional manual actualizado correctamente."
+          : "Tiempo adicional manual aprobado correctamente.",
+      );
+    } catch (requestError) {
+      setError(requestError.message);
+    } finally {
+      setIsSavingManualAdditional(false);
     }
   }
 
@@ -3154,9 +3240,22 @@ export default function AttendanceComparisonDetail({ employeeId, initialFilters 
                   ))}
                 </div>
 
-                {selectedHasQuickActions ? (
+                {selectedHasQuickActions || selectedCanAuthorizeManualAdditional ? (
                   <div className="catalog-actions-block catalog-actions-separated">
                     <div className={styles.quickActionGrid}>
+                      {selectedCanAuthorizeManualAdditional ? (
+                        <button
+                          type="button"
+                          className="catalog-button-ghost"
+                          onClick={() => openManualAdditionalApproval(selectedDay)}
+                          disabled={isSavingManualAdditional}
+                        >
+                          {(Number(selectedDay.authorization?.manualSupplementaryMinutes) || 0) > 0
+                            || (Number(selectedDay.authorization?.manualExtraordinaryMinutes) || 0) > 0
+                            ? "Modificar adicional manual"
+                            : "Aprobar tiempo adicional"}
+                        </button>
+                      ) : null}
                       {selectedHasOnlyAdditionalTime ? (
                         <button
                           type="button"
@@ -3399,6 +3498,56 @@ export default function AttendanceComparisonDetail({ employeeId, initialFilters 
                     value={pendingAdditionalApproval.note}
                     onChange={(event) => updateAdditionalApproval("note", event.target.value)}
                     placeholder="Ej. Tiempo adicional autorizado por cierre de caja."
+                  />
+                </label>
+              </div>
+            ) : null}
+          </ConfirmDialog>
+
+          <ConfirmDialog
+            isOpen={Boolean(pendingManualAdditionalApproval)}
+            title={pendingManualAdditionalApproval?.isEdit
+              ? "Modificar tiempo adicional"
+              : "Aprobar tiempo adicional"}
+            message={selectedDay ? `${selectedDay.dayLabel} ${selectedDay.dateLabel}` : ""}
+            confirmLabel={pendingManualAdditionalApproval?.isEdit ? "Guardar cambios" : "Aprobar tiempo"}
+            cancelLabel="Cancelar"
+            tone="default"
+            isPending={isSavingManualAdditional}
+            confirmDisabled={
+              !pendingManualAdditionalApproval
+              || hourInputToMinutes(pendingManualAdditionalApproval.minutes) <= 0
+              || hourInputToMinutes(pendingManualAdditionalApproval.minutes) > 1440
+              || !String(pendingManualAdditionalApproval.reason || "").trim()
+            }
+            onCancel={() => {
+              if (!isSavingManualAdditional) setPendingManualAdditionalApproval(null);
+            }}
+            onConfirm={saveManualAdditionalApproval}
+          >
+            {pendingManualAdditionalApproval ? (
+              <div className={styles.inlineExceptionForm}>
+                <label className={styles.bulkNoteField}>
+                  <span>Tiempo adicional (minutos)</span>
+                  <input
+                    type="number"
+                    min="1"
+                    max="1440"
+                    value={pendingManualAdditionalApproval.minutes}
+                    onChange={(event) => updateManualAdditionalApproval("minutes", event.target.value)}
+                    placeholder="Ej. 60"
+                  />
+                  {hourInputToMinutes(pendingManualAdditionalApproval.minutes) > 0 ? (
+                    <small>Equivale a {formatMinutes(hourInputToMinutes(pendingManualAdditionalApproval.minutes))}.</small>
+                  ) : null}
+                </label>
+                <label className={styles.bulkNoteField}>
+                  <span>Motivo</span>
+                  <textarea
+                    rows={3}
+                    value={pendingManualAdditionalApproval.reason}
+                    onChange={(event) => updateManualAdditionalApproval("reason", event.target.value)}
+                    placeholder="Ej. Regresó fuera del horario para atender una situación especial."
                   />
                 </label>
               </div>

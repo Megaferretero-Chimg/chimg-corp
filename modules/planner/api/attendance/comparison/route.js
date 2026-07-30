@@ -2373,6 +2373,53 @@ function applyDayDecision(day, decision) {
   };
 }
 
+function applyManualAdditionalAuthorization(day, decision) {
+  const manualSupplementaryMinutes = Math.max(
+    0,
+    Number(decision?.manualSupplementaryMinutes) || 0,
+  );
+  const manualExtraordinaryMinutes = Math.max(
+    0,
+    Number(decision?.manualExtraordinaryMinutes) || 0,
+  );
+  const manualAdditionalMinutes = manualSupplementaryMinutes + manualExtraordinaryMinutes;
+
+  if (!manualAdditionalMinutes) return day;
+
+  const supplementaryMinutes =
+    Math.max(0, Number(day.supplementaryMinutes) || 0) + manualSupplementaryMinutes;
+  const extraordinaryMinutes =
+    Math.max(0, Number(day.extraordinaryMinutes) || 0) + manualExtraordinaryMinutes;
+  const workedMinutes = Math.max(0, Number(day.workedMinutes) || 0) + manualAdditionalMinutes;
+  const nextTags = cleanPayrollTags(day.tags || [])
+    .filter((tag) => tag !== "Tiempo adicional");
+
+  return {
+    ...day,
+    tags: [...new Set([...nextTags, "Adicional manual aprobado"])],
+    hasIssue: nextTags.some(isAttendanceIssueTag),
+    workedMinutes,
+    workedLabel: minutesLabel(workedMinutes),
+    supplementaryMinutes,
+    supplementaryLabel: supplementaryMinutes ? minutesLabel(supplementaryMinutes) : "--",
+    extraordinaryMinutes,
+    extraordinaryLabel: extraordinaryMinutes ? minutesLabel(extraordinaryMinutes) : "--",
+    authorization: {
+      ...(day.authorization || {}),
+      statusLabel: "Tiempo adicional aprobado",
+      authorizedSupplementaryMinutes: supplementaryMinutes,
+      authorizedExtraordinaryMinutes: extraordinaryMinutes,
+      manualSupplementaryMinutes,
+      manualExtraordinaryMinutes,
+      manualAdditionalReason: decision.manualAdditionalReason || "",
+      additionalResolved: true,
+      decidedBy: decision.decidedBy || day.authorization?.decidedBy || "",
+      source: "attendance_decision",
+      isSaved: true,
+    },
+  };
+}
+
 function applyMonthlyHourTarget(days) {
   return days.map((day) => {
     const nextDay = {
@@ -3278,9 +3325,13 @@ export async function GET(request) {
               },
             }
           : dayWithDecisions;
+        const dayWithManualAdditional = applyManualAdditionalAuthorization(
+          dayWithResolutionState,
+          savedDayDecision,
+        );
         const comparedDay = suppressSecondaryAttendanceIssues(
           suppressPendingAttendanceLoadNoise(
-            dayWithResolutionState,
+            dayWithManualAdditional,
             attendanceReviewCutoffDateKey,
           ),
         );

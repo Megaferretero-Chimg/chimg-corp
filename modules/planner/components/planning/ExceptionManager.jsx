@@ -108,6 +108,11 @@ const FLOW_OPTIONS = EXCEPTION_FLOWS.map((flow) => ({
   label: flow.label,
   searchText: FLOW_GROUPS.find((group) => group.value === flow.category)?.label || "",
 }));
+const DAY_TYPE_OPTIONS = [
+  { value: "workday", label: "Horario laboral" },
+  { value: "off_day", label: "Descanso" },
+];
+const CUSTOM_SCHEDULE_TEMPLATE = "custom";
 const FLOW_VALUES = new Set(EXCEPTION_FLOWS.map((flow) => flow.value));
 const WEEKDAY_OPTIONS = [
   { value: 1, label: "Lun" },
@@ -133,6 +138,7 @@ const EMPTY_FORM = {
   plannedStartTime: "",
   plannedEndTime: "",
   plannedDayType: "workday",
+  plannedTemplateId: "",
   isExtraDay: false,
   plannedLunchStartTime: "",
   plannedLunchEndTime: "",
@@ -194,6 +200,7 @@ function buildExceptionForm(exception) {
     plannedStartTime: exception.plannedStartTime || "",
     plannedEndTime: exception.plannedEndTime || "",
     plannedDayType: exception.plannedDayType === "off_day" ? "off_day" : "workday",
+    plannedTemplateId: exception.plannedDayType === "off_day" ? "" : CUSTOM_SCHEDULE_TEMPLATE,
     isExtraDay: Boolean(exception.isExtraDay),
     plannedLunchStartTime: exception.plannedLunchStartTime || "",
     plannedLunchEndTime: exception.plannedLunchEndTime || "",
@@ -226,6 +233,24 @@ function normalizeSearch(value) {
 
 function formatTimeLabel(value) {
   return String(value || "").replace(":", "H");
+}
+
+function scheduleTemplateRow(template) {
+  return template?.weeklyRows?.[0] || null;
+}
+
+function scheduleTemplateLabel(template) {
+  const row = scheduleTemplateRow(template);
+
+  if (!row || row.dayType !== "workday") {
+    return "Descanso";
+  }
+
+  const scheduleTimes = row.hasLunch && row.lunchStartTime && row.lunchEndTime
+    ? [row.startTime, "A", row.lunchStartTime, row.lunchEndTime, "A", row.endTime]
+    : [row.startTime, "A", row.endTime];
+
+  return scheduleTimes.map(formatTimeLabel).join(" ");
 }
 
 function deriveResolutionEffect(form) {
@@ -318,6 +343,7 @@ export default function ExceptionManager({
 }) {
   const [monthDate, setMonthDate] = useState(() => new Date());
   const [employees, setEmployees] = useState([]);
+  const [templates, setTemplates] = useState([]);
   const [exceptions, setExceptions] = useState([]);
   const [canApproveExceptions, setCanApproveExceptions] = useState(false);
   const [canCreateExceptions, setCanCreateExceptions] = useState(false);
@@ -363,6 +389,19 @@ export default function ExceptionManager({
   const selectedEmployee = useMemo(
     () => activeEmployees.find((employee) => employee.id === form.employeeId),
     [activeEmployees, form.employeeId],
+  );
+  const scheduleTemplateOptions = useMemo(
+    () => [
+      ...templates
+        .filter((template) => template.isActive !== false && scheduleTemplateRow(template)?.dayType === "workday")
+        .map((template) => ({
+          value: template.id,
+          label: scheduleTemplateLabel(template),
+          searchText: [template.name, template.roleName].filter(Boolean).join(" "),
+        })),
+      { value: CUSTOM_SCHEDULE_TEMPLATE, label: "Personalizado" },
+    ],
+    [templates],
   );
   const scopedExceptions = useMemo(
     () => (onlyPending ? exceptions.filter((exception) => exception.resolution === "pending") : exceptions),
@@ -444,7 +483,10 @@ export default function ExceptionManager({
     && (!createsManualPunch || form.manualPunchTime)
     && (!needsTimeRange || (form.startTime && form.endTime))
     && (!needsTemporarySchedule || (
-      (form.plannedDayType === "off_day" || (form.plannedStartTime && form.plannedEndTime))
+      (
+        form.plannedDayType === "off_day"
+        || (form.plannedTemplateId && form.plannedStartTime && form.plannedEndTime)
+      )
       && Array.isArray(form.applicableWeekdays)
       && form.applicableWeekdays.length
     )),
@@ -499,13 +541,15 @@ export default function ExceptionManager({
       setIsLoading(true);
 
       try {
-        const [employeesResponse, exceptionsResponse] = await Promise.all([
+        const [employeesResponse, exceptionsResponse, templatesResponse] = await Promise.all([
           fetch("/api/company/employees?scope=planning"),
           fetch(`/api/planner/planning/exceptions?month=${monthKey}`),
+          fetch("/api/planner/planning/base-schedules"),
         ]);
-        const [employeesPayload, exceptionsPayload] = await Promise.all([
+        const [employeesPayload, exceptionsPayload, templatesPayload] = await Promise.all([
           employeesResponse.json(),
           exceptionsResponse.json(),
+          templatesResponse.json(),
         ]);
 
         if (!employeesResponse.ok) {
@@ -516,8 +560,13 @@ export default function ExceptionManager({
           throw new Error(exceptionsPayload.error || "No se pudieron cargar las excepciones.");
         }
 
+        if (!templatesResponse.ok) {
+          throw new Error(templatesPayload.error || "No se pudieron cargar las plantillas de horario.");
+        }
+
         if (!isCancelled) {
           setEmployees(employeesPayload.employees || []);
+          setTemplates(templatesPayload.templates || []);
           setExceptions(exceptionsPayload.exceptions || []);
           setCanApproveExceptions(Boolean(exceptionsPayload.options?.canApproveExceptions));
           setCanCreateExceptions(Boolean(exceptionsPayload.options?.canCreateExceptions));
@@ -652,6 +701,7 @@ export default function ExceptionManager({
       plannedStartTime: flow.effect === "planning_change" ? current.plannedStartTime : "",
       plannedEndTime: flow.effect === "planning_change" ? current.plannedEndTime : "",
       plannedDayType: flow.effect === "planning_change" ? current.plannedDayType || "workday" : "workday",
+      plannedTemplateId: flow.effect === "planning_change" ? current.plannedTemplateId : "",
       plannedLunchStartTime: flow.effect === "planning_change" ? current.plannedLunchStartTime : "",
       plannedLunchEndTime: flow.effect === "planning_change" ? current.plannedLunchEndTime : "",
       plannedLunchDurationMinutes: flow.effect === "planning_change" ? current.plannedLunchDurationMinutes : 0,
@@ -663,6 +713,50 @@ export default function ExceptionManager({
       countsAsWorkedTime: flow.value === "hourly_permission",
       allowSupplementaryTime: flow.value === "overtime_authorization",
       isExtraDay: false,
+    }));
+  }
+
+  function updatePlannedDayType(value) {
+    const nextDayType = value || "workday";
+
+    setForm((current) => ({
+      ...current,
+      plannedDayType: nextDayType,
+      plannedTemplateId: nextDayType === "off_day" ? "" : current.plannedTemplateId,
+      plannedStartTime: nextDayType === "off_day" ? "" : current.plannedStartTime,
+      plannedEndTime: nextDayType === "off_day" ? "" : current.plannedEndTime,
+      plannedLunchStartTime: nextDayType === "off_day" ? "" : current.plannedLunchStartTime,
+      plannedLunchEndTime: nextDayType === "off_day" ? "" : current.plannedLunchEndTime,
+      plannedLunchDurationMinutes: nextDayType === "off_day" ? 0 : current.plannedLunchDurationMinutes,
+    }));
+  }
+
+  function updatePlannedTemplate(templateId) {
+    if (templateId === CUSTOM_SCHEDULE_TEMPLATE) {
+      setForm((current) => ({
+        ...current,
+        plannedTemplateId: CUSTOM_SCHEDULE_TEMPLATE,
+      }));
+      return;
+    }
+
+    const template = templates.find((candidate) => candidate.id === templateId);
+    const row = scheduleTemplateRow(template);
+
+    if (!row) {
+      setForm((current) => ({ ...current, plannedTemplateId: "" }));
+      return;
+    }
+
+    setForm((current) => ({
+      ...current,
+      plannedTemplateId: templateId,
+      plannedDayType: "workday",
+      plannedStartTime: row.startTime || "",
+      plannedEndTime: row.endTime || "",
+      plannedLunchStartTime: row.hasLunch ? row.lunchStartTime || "" : "",
+      plannedLunchEndTime: row.hasLunch ? row.lunchEndTime || "" : "",
+      plannedLunchDurationMinutes: row.hasLunch ? Number(row.lunchDurationMinutes) || 0 : 0,
     }));
   }
 
@@ -1486,35 +1580,50 @@ export default function ExceptionManager({
           {needsTemporarySchedule ? (
             <div className={styles.presetPanel}>
               <span>Planificación temporal</span>
-              <label className={styles.field}>
-                <span>Tipo de día</span>
-                <select value={form.plannedDayType || "workday"} onChange={(event) => updateForm("plannedDayType", event.target.value)}>
-                  <option value="workday">Horario laboral</option>
-                  <option value="off_day">Descanso</option>
-                </select>
-              </label>
+              <AutocompleteSelect
+                label="Tipo de día"
+                options={DAY_TYPE_OPTIONS}
+                value={form.plannedDayType || "workday"}
+                placeholder="Seleccionar tipo de día"
+                searchPlaceholder="Buscar tipo de día"
+                emptyText="Sin tipos de día"
+                onChange={updatePlannedDayType}
+              />
               {form.plannedDayType !== "off_day" ? (
                 <>
-                  <div className={styles.twoColumnGrid}>
-                    <label className={styles.field}>
-                      <span>Entrada</span>
-                      <TimeInput24 separator="H" value={form.plannedStartTime} onChange={(event) => updateForm("plannedStartTime", event.target.value)} />
-                    </label>
-                    <label className={styles.field}>
-                      <span>Salida</span>
-                      <TimeInput24 separator="H" value={form.plannedEndTime} onChange={(event) => updateForm("plannedEndTime", event.target.value)} />
-                    </label>
-                  </div>
-                  <div className={styles.twoColumnGrid}>
-                    <label className={styles.field}>
-                      <span>Inicio almuerzo</span>
-                      <TimeInput24 separator="H" value={form.plannedLunchStartTime} onChange={(event) => updateForm("plannedLunchStartTime", event.target.value)} />
-                    </label>
-                    <label className={styles.field}>
-                      <span>Fin almuerzo</span>
-                      <TimeInput24 separator="H" value={form.plannedLunchEndTime} onChange={(event) => updateForm("plannedLunchEndTime", event.target.value)} />
-                    </label>
-                  </div>
+                  <AutocompleteSelect
+                    label="Plantilla de horario"
+                    options={scheduleTemplateOptions}
+                    value={form.plannedTemplateId}
+                    placeholder="Seleccionar plantilla"
+                    searchPlaceholder="Buscar plantilla"
+                    emptyText="Sin plantillas"
+                    onChange={updatePlannedTemplate}
+                  />
+                  {form.plannedTemplateId === CUSTOM_SCHEDULE_TEMPLATE ? (
+                    <>
+                      <div className={styles.twoColumnGrid}>
+                        <label className={styles.field}>
+                          <span>Entrada</span>
+                          <TimeInput24 separator="H" value={form.plannedStartTime} onChange={(event) => updateForm("plannedStartTime", event.target.value)} />
+                        </label>
+                        <label className={styles.field}>
+                          <span>Salida</span>
+                          <TimeInput24 separator="H" value={form.plannedEndTime} onChange={(event) => updateForm("plannedEndTime", event.target.value)} />
+                        </label>
+                      </div>
+                      <div className={styles.twoColumnGrid}>
+                        <label className={styles.field}>
+                          <span>Inicio almuerzo</span>
+                          <TimeInput24 separator="H" value={form.plannedLunchStartTime} onChange={(event) => updateForm("plannedLunchStartTime", event.target.value)} />
+                        </label>
+                        <label className={styles.field}>
+                          <span>Fin almuerzo</span>
+                          <TimeInput24 separator="H" value={form.plannedLunchEndTime} onChange={(event) => updateForm("plannedLunchEndTime", event.target.value)} />
+                        </label>
+                      </div>
+                    </>
+                  ) : null}
                 </>
               ) : null}
               <div className={styles.weekdayPicker}>

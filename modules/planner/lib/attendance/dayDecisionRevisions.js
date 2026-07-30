@@ -6,6 +6,9 @@ const SNAPSHOT_FIELDS = [
   "decision",
   "authorizedSupplementaryMinutes",
   "authorizedExtraordinaryMinutes",
+  "manualSupplementaryMinutes",
+  "manualExtraordinaryMinutes",
+  "manualAdditionalReason",
   "detectedSupplementaryMinutes",
   "detectedExtraordinaryMinutes",
   "detectedLateMinutes",
@@ -19,7 +22,7 @@ const SNAPSHOT_FIELDS = [
 ];
 
 const BOOLEAN_SNAPSHOT_FIELDS = new Set(["additionalResolved", "lateResolved"]);
-const STRING_SNAPSHOT_FIELDS = new Set(["decision", "note", "decidedBy"]);
+const STRING_SNAPSHOT_FIELDS = new Set(["decision", "manualAdditionalReason", "note", "decidedBy"]);
 
 export function attendanceDecisionSnapshot(decision = {}) {
   return Object.fromEntries(SNAPSHOT_FIELDS.map((field) => {

@@ -440,6 +440,33 @@
   gap: 0.8rem;
 }
 
+.dateGridSingle {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.rangeToggle {
+  min-height: 3.35rem;
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  border: 1px solid rgba(16, 33, 62, 0.1);
+  border-radius: 8px;
+  background: #f8fbff;
+  color: #1c315d;
+  padding: 0.8rem 0.9rem;
+  font-size: var(--font-size-base);
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.rangeToggle input {
+  width: 1.15rem;
+  height: 1.15rem;
+  margin: 0;
+  accent-color: var(--primary);
+  cursor: pointer;
+}
+
 .employeeSnapshot,
 .formSummary {
   border: 1px solid rgba(16, 33, 62, 0.08);
@@ -470,6 +497,10 @@
   gap: 0.75rem;
   color: #425b80;
   flex-wrap: wrap;
+}
+
+.formSummary small {
+  color: #be123c;
 }
 
 @media (max-width: 820px) {

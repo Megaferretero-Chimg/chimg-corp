@@ -24,6 +24,7 @@ import styles from "@/modules/planner/styles/components/planning/VacationPlanner
 const EMPTY_FORM = {
   id: "",
   employeeId: "",
+  isDateRange: false,
   startDateKey: "",
   endDateKey: "",
   notes: "",
@@ -39,6 +40,14 @@ function calculateDays(startDateKey, endDateKey) {
   const total = differenceInCalendarDays(endDate, startDate) + 1;
 
   return Number.isFinite(total) && total > 0 ? total : 0;
+}
+
+function vacationDateLabel(vacation) {
+  if (!vacation) return "";
+
+  return vacation.startDateKey === vacation.endDateKey
+    ? `el ${vacation.startDateKey}`
+    : `del ${vacation.startDateKey} al ${vacation.endDateKey}`;
 }
 
 function normalizeSearch(value) {
@@ -106,7 +115,12 @@ export default function VacationPlanner() {
     [vacations],
   );
   const requestedDays = calculateDays(form.startDateKey, form.endDateKey);
-  const canSave = Boolean(form.employeeId && form.startDateKey && form.endDateKey && requestedDays > 0);
+  const hasValidVacationDates = Boolean(
+    form.startDateKey
+    && form.endDateKey
+    && (form.isDateRange ? requestedDays > 1 : requestedDays === 1),
+  );
+  const canSave = Boolean(form.employeeId && hasValidVacationDates);
 
   const clearNoticeTimers = useCallback(() => {
     if (noticeExitTimeoutRef.current) {
@@ -201,6 +215,30 @@ export default function VacationPlanner() {
     setForm((current) => ({ ...current, [field]: value }));
   }
 
+  function updateStartDate(value) {
+    setForm((current) => {
+      const endDateKey = !value
+        ? ""
+        : current.isDateRange && current.endDateKey >= value
+          ? current.endDateKey
+          : value;
+
+      return {
+        ...current,
+        startDateKey: value,
+        endDateKey,
+      };
+    });
+  }
+
+  function toggleDateRange(isDateRange) {
+    setForm((current) => ({
+      ...current,
+      isDateRange,
+      endDateKey: isDateRange ? current.endDateKey || current.startDateKey : current.startDateKey,
+    }));
+  }
+
   function selectEmployee(employee) {
     updateForm("employeeId", employee?.id || "");
     setEmployeeQuery(employee?.fullName || "");
@@ -231,6 +269,7 @@ export default function VacationPlanner() {
     setForm({
       id: vacation.id,
       employeeId: vacation.employeeId,
+      isDateRange: vacation.startDateKey !== vacation.endDateKey,
       startDateKey: vacation.startDateKey,
       endDateKey: vacation.endDateKey,
       notes: vacation.notes || "",
@@ -249,19 +288,34 @@ export default function VacationPlanner() {
     event.preventDefault();
 
     if (!canSave) {
-      showNotice("error", "Selecciona empleado y un rango de fechas valido.");
+      if (!form.employeeId) {
+        showNotice("error", "Debes seleccionar un empleado.");
+      } else if (!form.startDateKey) {
+        showNotice("error", "Debes seleccionar la fecha de vacaciones.");
+      } else if (form.isDateRange && (!form.endDateKey || form.endDateKey <= form.startDateKey)) {
+        showNotice("error", "Para varios días, la fecha final debe ser posterior a la fecha inicial.");
+      } else {
+        showNotice("error", "Las fechas de vacaciones no son válidas.");
+      }
       return;
     }
 
     const endpoint = form.id ? `/api/planner/planning/vacations/${form.id}` : "/api/planner/planning/vacations";
     const method = form.id ? "PATCH" : "POST";
+    const requestPayload = {
+      employeeId: form.employeeId,
+      isDateRange: form.isDateRange,
+      startDateKey: form.startDateKey,
+      endDateKey: form.isDateRange ? form.endDateKey : form.startDateKey,
+      notes: form.notes,
+    };
 
     startTransition(async () => {
       try {
         const response = await fetch(endpoint, {
           method,
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(form),
+          body: JSON.stringify(requestPayload),
         });
         const payload = await response.json();
 
@@ -346,7 +400,7 @@ export default function VacationPlanner() {
         isOpen={Boolean(vacationDecision)}
         title={vacationDecision?.action === "approve" ? "Aprobar solicitud" : "Rechazar solicitud"}
         message={vacationDecision
-          ? `${vacationDecision.action === "approve" ? "Se aprobaran" : "Se rechazaran"} las vacaciones de ${vacationDecision.vacation.employeeName} del ${vacationDecision.vacation.startDateKey} al ${vacationDecision.vacation.endDateKey}.`
+          ? `${vacationDecision.action === "approve" ? "Se aprobaran" : "Se rechazaran"} las vacaciones de ${vacationDecision.vacation.employeeName} ${vacationDateLabel(vacationDecision.vacation)}.`
           : ""}
         confirmLabel={isPending
           ? "Procesando..."
@@ -475,7 +529,9 @@ export default function VacationPlanner() {
                     </td>
                     <td>
                       <strong>{vacation.startDateKey}</strong>
-                      <span>hasta {vacation.endDateKey}</span>
+                      {vacation.startDateKey !== vacation.endDateKey
+                        ? <span>hasta {vacation.endDateKey}</span>
+                        : <span>un solo día</span>}
                     </td>
                     <td>{vacation.totalCalendarDays}</td>
                     <td>
@@ -574,15 +630,37 @@ export default function VacationPlanner() {
               </div>
             ) : null}
 
-            <div className={styles.dateGrid}>
+            <label className={styles.rangeToggle}>
+              <input
+                type="checkbox"
+                checked={form.isDateRange}
+                onChange={(event) => toggleDateRange(event.target.checked)}
+              />
+              <span>Aplica por varios días</span>
+            </label>
+
+            <div className={`${styles.dateGrid} ${!form.isDateRange ? styles.dateGridSingle : ""}`}>
               <label className={styles.field}>
-                <span>Inicio</span>
-                <input type="date" value={form.startDateKey} onChange={(event) => updateForm("startDateKey", event.target.value)} />
+                <span>{form.isDateRange ? "Inicio" : "Fecha"}</span>
+                <input
+                  type="date"
+                  value={form.startDateKey}
+                  onChange={(event) => updateStartDate(event.target.value)}
+                  required
+                />
               </label>
-              <label className={styles.field}>
-                <span>Fin</span>
-                <input type="date" value={form.endDateKey} onChange={(event) => updateForm("endDateKey", event.target.value)} />
-              </label>
+              {form.isDateRange ? (
+                <label className={styles.field}>
+                  <span>Fin</span>
+                  <input
+                    type="date"
+                    min={form.startDateKey || undefined}
+                    value={form.endDateKey}
+                    onChange={(event) => updateForm("endDateKey", event.target.value)}
+                    required
+                  />
+                </label>
+              ) : null}
             </div>
 
             <label className={styles.field}>
@@ -596,7 +674,12 @@ export default function VacationPlanner() {
             </label>
 
             <div className={styles.formSummary}>
-              <span>{requestedDays || 0} dias calendario</span>
+              <span>
+                {requestedDays || 0} {requestedDays === 1 ? "día calendario" : "días calendario"}
+              </span>
+              {form.isDateRange && form.startDateKey && form.endDateKey <= form.startDateKey ? (
+                <small>La fecha final debe ser posterior a la fecha inicial.</small>
+              ) : null}
             </div>
           </fieldset>
 

@@ -143,6 +143,10 @@ function resolveExtraordinaryHours(day, employee) {
     return 0;
   }
 
+  if (day.savedAttendanceAdditionalResolved) {
+    return Math.max(0, Number(day.savedAttendanceExtraordinaryMinutes) || 0) / 60;
+  }
+
   if (day.schedule?.dayType !== "weekend_overtime") {
     return 0;
   }
@@ -319,6 +323,7 @@ export default function calculatePayrollEstimate({
         savedSupplementaryMinutes: saved?.candidateMinutes || 0,
         savedAttendanceAdditionalResolved: attendanceDecision?.additionalResolved === true,
         savedAttendanceSupplementaryMinutes: attendanceDecision?.authorizedSupplementaryMinutes || 0,
+        savedAttendanceExtraordinaryMinutes: attendanceDecision?.authorizedExtraordinaryMinutes || 0,
         savedLateConfirmation: savedLate?.confirmed || false,
         savedLateMinutes: savedLate?.lateMinutes || 0,
         savedIncompleteDayDecision: incompleteDayByDate.get(day.dateKey)?.decision || "",

@@ -77,6 +77,9 @@ function normalizePayload(body) {
   const detectedEarlyLeaveMinutes = minutes(body?.detectedEarlyLeaveMinutes);
   let authorizedSupplementaryMinutes = minutes(body?.authorizedSupplementaryMinutes);
   let authorizedExtraordinaryMinutes = minutes(body?.authorizedExtraordinaryMinutes);
+  const manualSupplementaryMinutes = minutes(body?.manualSupplementaryMinutes);
+  const manualExtraordinaryMinutes = minutes(body?.manualExtraordinaryMinutes);
+  const manualAdditionalReason = String(body?.manualAdditionalReason || "").trim().slice(0, 240);
   let adjustedLateMinutes = body?.adjustedLateMinutes === undefined || body?.adjustedLateMinutes === null
     ? detectedLateMinutes
     : minutes(body?.adjustedLateMinutes);
@@ -135,6 +138,9 @@ function normalizePayload(body) {
     decision,
     authorizedSupplementaryMinutes,
     authorizedExtraordinaryMinutes,
+    manualSupplementaryMinutes,
+    manualExtraordinaryMinutes,
+    manualAdditionalReason,
     detectedSupplementaryMinutes,
     detectedExtraordinaryMinutes,
     detectedLateMinutes,
@@ -155,7 +161,9 @@ export async function POST(request) {
   }
 
   try {
-    const payload = normalizePayload(await request.json());
+    const body = await request.json();
+    const payload = normalizePayload(body);
+    const isManualAdditionalAuthorization = body?.action === "manual_additional";
 
     await connectToDatabase();
 
@@ -171,8 +179,66 @@ export async function POST(request) {
       dateKey: payload.dateKey,
     }).lean();
     const actor = user.employeeName || user.username || user.id;
-    const additionalResolved = Boolean(previousDecision?.additionalResolved || payload.additionalResolved);
-    const lateResolved = Boolean(previousDecision?.lateResolved || payload.lateResolved);
+    const requestedManualSupplementaryMinutes = isManualAdditionalAuthorization
+      ? minutes(body?.manualSupplementaryMinutes)
+      : null;
+    const requestedManualExtraordinaryMinutes = isManualAdditionalAuthorization
+      ? minutes(body?.manualExtraordinaryMinutes)
+      : null;
+    const requestedManualReason = isManualAdditionalAuthorization
+      ? String(body?.manualAdditionalReason || "").trim().slice(0, 240)
+      : "";
+
+    if (isManualAdditionalAuthorization) {
+      const requestedManualMinutes = requestedManualSupplementaryMinutes + requestedManualExtraordinaryMinutes;
+
+      if (requestedManualMinutes <= 0 || requestedManualMinutes > 1440) {
+        throw new Error("Indica un tiempo adicional válido, entre 1 minuto y 24 horas.");
+      }
+
+      if (requestedManualSupplementaryMinutes > 0 && requestedManualExtraordinaryMinutes > 0) {
+        throw new Error("El tiempo manual debe ser suplementario o extraordinario, no ambos.");
+      }
+
+      if (!requestedManualReason) {
+        throw new Error("Debes indicar el motivo del tiempo adicional.");
+      }
+    }
+
+    const decisionPayload = isManualAdditionalAuthorization && previousDecision
+      ? {
+          ...payload,
+          decision: previousDecision.decision || "custom",
+          authorizedSupplementaryMinutes: minutes(previousDecision.authorizedSupplementaryMinutes),
+          authorizedExtraordinaryMinutes: minutes(previousDecision.authorizedExtraordinaryMinutes),
+          detectedSupplementaryMinutes: minutes(previousDecision.detectedSupplementaryMinutes),
+          detectedExtraordinaryMinutes: minutes(previousDecision.detectedExtraordinaryMinutes),
+          detectedLateMinutes: minutes(previousDecision.detectedLateMinutes),
+          adjustedLateMinutes: minutes(previousDecision.adjustedLateMinutes),
+          detectedEarlyLeaveMinutes: minutes(previousDecision.detectedEarlyLeaveMinutes),
+          adjustedEarlyLeaveMinutes: minutes(previousDecision.adjustedEarlyLeaveMinutes),
+          additionalResolved: previousDecision.additionalResolved === true,
+          lateResolved: previousDecision.lateResolved === true,
+          note: previousDecision.note || "",
+        }
+      : payload;
+    const additionalResolved = Boolean(previousDecision?.additionalResolved || decisionPayload.additionalResolved);
+    const lateResolved = Boolean(previousDecision?.lateResolved || decisionPayload.lateResolved);
+    const manualSupplementaryMinutes = isManualAdditionalAuthorization
+      ? requestedManualSupplementaryMinutes
+      : body?.manualSupplementaryMinutes === undefined
+        ? minutes(previousDecision?.manualSupplementaryMinutes)
+        : payload.manualSupplementaryMinutes;
+    const manualExtraordinaryMinutes = isManualAdditionalAuthorization
+      ? requestedManualExtraordinaryMinutes
+      : body?.manualExtraordinaryMinutes === undefined
+        ? minutes(previousDecision?.manualExtraordinaryMinutes)
+        : payload.manualExtraordinaryMinutes;
+    const manualAdditionalReason = isManualAdditionalAuthorization
+      ? requestedManualReason
+      : body?.manualAdditionalReason === undefined
+        ? String(previousDecision?.manualAdditionalReason || "")
+        : payload.manualAdditionalReason;
 
     await AttendanceDayDecision.updateOne(
       {
@@ -182,18 +248,21 @@ export async function POST(request) {
       {
         $set: {
           date,
-          decision: payload.decision,
-          authorizedSupplementaryMinutes: payload.authorizedSupplementaryMinutes,
-          authorizedExtraordinaryMinutes: payload.authorizedExtraordinaryMinutes,
-          detectedSupplementaryMinutes: payload.detectedSupplementaryMinutes,
-          detectedExtraordinaryMinutes: payload.detectedExtraordinaryMinutes,
-          detectedLateMinutes: payload.detectedLateMinutes,
-          adjustedLateMinutes: payload.adjustedLateMinutes,
-          detectedEarlyLeaveMinutes: payload.detectedEarlyLeaveMinutes,
-          adjustedEarlyLeaveMinutes: payload.adjustedEarlyLeaveMinutes,
-          additionalResolved,
+          decision: decisionPayload.decision,
+          authorizedSupplementaryMinutes: decisionPayload.authorizedSupplementaryMinutes,
+          authorizedExtraordinaryMinutes: decisionPayload.authorizedExtraordinaryMinutes,
+          manualSupplementaryMinutes,
+          manualExtraordinaryMinutes,
+          manualAdditionalReason,
+          detectedSupplementaryMinutes: decisionPayload.detectedSupplementaryMinutes,
+          detectedExtraordinaryMinutes: decisionPayload.detectedExtraordinaryMinutes,
+          detectedLateMinutes: decisionPayload.detectedLateMinutes,
+          adjustedLateMinutes: decisionPayload.adjustedLateMinutes,
+          detectedEarlyLeaveMinutes: decisionPayload.detectedEarlyLeaveMinutes,
+          adjustedEarlyLeaveMinutes: decisionPayload.adjustedEarlyLeaveMinutes,
+          additionalResolved: isManualAdditionalAuthorization || additionalResolved,
           lateResolved,
-          note: payload.note,
+          note: decisionPayload.note,
           decidedBy: actor,
         },
         $setOnInsert: {
@@ -223,6 +292,9 @@ export async function POST(request) {
           decision: previousDecision.decision,
           authorizedSupplementaryMinutes: previousDecision.authorizedSupplementaryMinutes,
           authorizedExtraordinaryMinutes: previousDecision.authorizedExtraordinaryMinutes,
+          manualSupplementaryMinutes: previousDecision.manualSupplementaryMinutes || 0,
+          manualExtraordinaryMinutes: previousDecision.manualExtraordinaryMinutes || 0,
+          manualAdditionalReason: previousDecision.manualAdditionalReason || "",
           detectedSupplementaryMinutes: previousDecision.detectedSupplementaryMinutes,
           detectedExtraordinaryMinutes: previousDecision.detectedExtraordinaryMinutes,
           detectedLateMinutes: previousDecision.detectedLateMinutes || 0,
@@ -236,18 +308,21 @@ export async function POST(request) {
           updatedAt: previousDecision.updatedAt || null,
         } : null,
         after: {
-          decision: payload.decision,
-          authorizedSupplementaryMinutes: payload.authorizedSupplementaryMinutes,
-          authorizedExtraordinaryMinutes: payload.authorizedExtraordinaryMinutes,
-          detectedSupplementaryMinutes: payload.detectedSupplementaryMinutes,
-          detectedExtraordinaryMinutes: payload.detectedExtraordinaryMinutes,
-          detectedLateMinutes: payload.detectedLateMinutes,
-          adjustedLateMinutes: payload.adjustedLateMinutes,
-          detectedEarlyLeaveMinutes: payload.detectedEarlyLeaveMinutes,
-          adjustedEarlyLeaveMinutes: payload.adjustedEarlyLeaveMinutes,
-          additionalResolved,
+          decision: decisionPayload.decision,
+          authorizedSupplementaryMinutes: decisionPayload.authorizedSupplementaryMinutes,
+          authorizedExtraordinaryMinutes: decisionPayload.authorizedExtraordinaryMinutes,
+          manualSupplementaryMinutes,
+          manualExtraordinaryMinutes,
+          manualAdditionalReason,
+          detectedSupplementaryMinutes: decisionPayload.detectedSupplementaryMinutes,
+          detectedExtraordinaryMinutes: decisionPayload.detectedExtraordinaryMinutes,
+          detectedLateMinutes: decisionPayload.detectedLateMinutes,
+          adjustedLateMinutes: decisionPayload.adjustedLateMinutes,
+          detectedEarlyLeaveMinutes: decisionPayload.detectedEarlyLeaveMinutes,
+          adjustedEarlyLeaveMinutes: decisionPayload.adjustedEarlyLeaveMinutes,
+          additionalResolved: isManualAdditionalAuthorization || additionalResolved,
           lateResolved,
-          note: payload.note,
+          note: decisionPayload.note,
           decidedBy: actor,
         },
       },
