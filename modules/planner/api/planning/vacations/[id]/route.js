@@ -9,7 +9,9 @@ import {
   resolvePlannerEmployeeScope,
 } from "@/modules/planner/lib/planning/accessScope";
 import {
+  isVacationRequestOwner,
   serializeVacationRecord,
+  vacationRequesterKeys,
 } from "@/modules/planner/lib/planning/vacations";
 import { VacationRequest } from "@/modules/planner/models";
 
@@ -165,13 +167,6 @@ export async function DELETE(_request, context) {
     return NextResponse.json({ error: "Sesion invalida o expirada." }, { status: 401 });
   }
 
-  if (!hasAccessPermission(user, "planner.timeOff.manage")) {
-    return NextResponse.json(
-      { error: "No tienes permiso para eliminar solicitudes de vacaciones." },
-      { status: 403 },
-    );
-  }
-
   const params = await context.params;
   const vacationId = String(params?.id || "").trim();
 
@@ -190,10 +185,39 @@ export async function DELETE(_request, context) {
     return NextResponse.json({ error: "Vacacion no encontrada." }, { status: 404 });
   }
 
+  const canManageVacation = hasAccessPermission(user, "planner.timeOff.manage");
+  const canDeleteOwnPending = (
+    hasAccessPermission(user, "planner.timeOff.view")
+    && vacation.status === "pending"
+    && isVacationRequestOwner(vacation, user)
+  );
+
+  if (!canManageVacation && !canDeleteOwnPending) {
+    return NextResponse.json(
+      { error: "Solo puedes eliminar tus propias solicitudes mientras estén pendientes." },
+      { status: 403 },
+    );
+  }
+
   const employeeId = vacation.employee?.toString?.() || "";
 
   assertEmployeesInPlannerScope([employeeId], plannerScope);
-  await VacationRequest.findByIdAndDelete(vacationId);
+  const deletedVacation = await VacationRequest.findOneAndDelete(
+    canManageVacation
+      ? { _id: vacationId }
+      : {
+          _id: vacationId,
+          status: "pending",
+          requestedByUser: { $in: vacationRequesterKeys(user) },
+        },
+  ).lean();
+
+  if (!deletedVacation) {
+    return NextResponse.json(
+      { error: "La solicitud ya fue resuelta y no puede ser eliminada por Jefatura." },
+      { status: 409 },
+    );
+  }
 
   const { actor } = actorFromUser(user);
 
@@ -202,11 +226,11 @@ export async function DELETE(_request, context) {
     action: "vacation.request.delete",
     entityType: "vacationRequest",
     entityId: vacationId,
-    entityLabel: `${vacation.employeeName || ""} ${vacation.startDateKey} - ${vacation.endDateKey}`,
+    entityLabel: `${deletedVacation.employeeName || ""} ${deletedVacation.startDateKey} - ${deletedVacation.endDateKey}`,
     route: `/api/planner/planning/vacations/${vacationId}`,
     details: {
       employeeId,
-      before: serializeVacationRecord(vacation),
+      before: serializeVacationRecord(deletedVacation),
       after: null,
     },
   });

@@ -547,7 +547,7 @@ export default function VacationPlanner() {
                             <X size={15} />
                           </button>
                         ) : null}
-                        {capabilities.canManage ? (
+                        {vacation.canDelete ? (
                           <button type="button" onClick={() => setVacationToDelete(vacation)} aria-label="Eliminar vacaciones" title="Eliminar">
                             <Trash2 size={15} />
                           </button>

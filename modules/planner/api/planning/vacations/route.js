@@ -12,6 +12,7 @@ import {
 import {
   APPROVED_VACATION_STATUS_QUERY,
   buildMonthVacationQuery,
+  isVacationRequestOwner,
   normalizeVacationPayload,
   serializeVacationRecord,
 } from "@/modules/planner/lib/planning/vacations";
@@ -69,7 +70,17 @@ export async function GET(request) {
       .lean();
 
     return NextResponse.json({
-      vacations: vacations.map(serializeVacationRecord),
+      vacations: vacations.map((vacation) => {
+        const serializedVacation = serializeVacationRecord(vacation);
+
+        return {
+          ...serializedVacation,
+          canDelete: canManageVacationRequests || (
+            serializedVacation.status === "pending"
+            && isVacationRequestOwner(vacation, user)
+          ),
+        };
+      }),
       capabilities: {
         canRequest: canViewVacationRequests,
         canManage: canManageVacationRequests,

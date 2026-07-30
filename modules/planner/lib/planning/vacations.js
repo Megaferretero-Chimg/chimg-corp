@@ -97,6 +97,22 @@ export function buildMonthVacationQuery(monthKey) {
   };
 }
 
+export function vacationRequesterKeys(user = {}) {
+  return [...new Set([
+    String(user?.id || "").trim(),
+    String(user?.username || "").trim(),
+  ].filter(Boolean))];
+}
+
+export function isVacationRequestOwner(vacation = {}, user = {}) {
+  const requestedByUser = String(vacation?.requestedByUser || "").trim();
+
+  return Boolean(
+    requestedByUser
+    && vacationRequesterKeys(user).includes(requestedByUser),
+  );
+}
+
 export function serializeVacationRecord(vacation) {
   const status = ["pending", "approved", "rejected"].includes(vacation.status)
     ? vacation.status

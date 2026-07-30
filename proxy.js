@@ -154,7 +154,9 @@ function canAccessApi(pathname, method, permissionSet) {
     ["/api/planner/planning/holidays", method === "GET"
       ? ["planner.schedules.weekly.view", "planner.holidays.view"]
       : ["planner.holidays.manage"]],
-    ["/api/planner/planning/vacations/", ["planner.timeOff.manage"]],
+    ["/api/planner/planning/vacations/", method === "DELETE"
+      ? ["planner.timeOff.view", "planner.timeOff.manage"]
+      : ["planner.timeOff.manage"]],
     ["/api/planner/planning/vacations", method === "GET"
       ? ["planner.schedules.weekly.view", "planner.timeOff.view"]
       : ["planner.timeOff.view", "planner.timeOff.manage"]],
