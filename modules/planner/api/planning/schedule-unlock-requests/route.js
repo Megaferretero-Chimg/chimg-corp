@@ -10,6 +10,8 @@ import {
   resolvePlannerEmployeeScope,
 } from "@/modules/planner/lib/planning/accessScope";
 import {
+  buildUnlockRequestVersionQuery,
+  findActivePlanningApproval,
   getUnlockRequestWeekMonthKeys,
   serializeScheduleUnlockRequest,
 } from "@/modules/planner/lib/planning/scheduleUnlockRequests";
@@ -133,9 +135,9 @@ export async function POST(request) {
 
     const groupObjectId = new mongoose.Types.ObjectId(groupId);
     const targetMonthKeys = getUnlockRequestWeekMonthKeys(weekStartKey);
-    const [workGroup, hasActiveApproval, pendingRequest] = await Promise.all([
+    const [workGroup, approvalAssignments] = await Promise.all([
       PlanningWorkGroup.findById(groupId).lean(),
-      ScheduleAssignment.exists({
+      ScheduleAssignment.find({
         monthKey: { $in: targetMonthKeys },
         planningApprovals: {
           $elemMatch: {
@@ -144,36 +146,66 @@ export async function POST(request) {
             unlockedAt: null,
           },
         },
-      }),
-      ScheduleUnlockRequest.findOne({
-        group: groupObjectId,
-        weekStartKey,
-        status: "pending",
-      }).lean(),
+      }).select({ planningApprovals: 1 }).lean(),
     ]);
 
     if (!workGroup) {
       return NextResponse.json({ error: "Grupo de trabajo no encontrado." }, { status: 404 });
     }
 
-    if (!hasActiveApproval) {
+    const activeApproval = findActivePlanningApproval(
+      approvalAssignments,
+      groupId,
+      weekStartKey,
+    );
+
+    if (!activeApproval) {
       return NextResponse.json(
         { error: "Esta planificación ya está desbloqueada o no tiene una aprobación vigente." },
         { status: 409 },
       );
     }
 
-    if (pendingRequest) {
+    const approvalIdentity = buildUnlockRequestVersionQuery(activeApproval);
+    const existingVersionRequest = await ScheduleUnlockRequest.findOne({
+      group: groupObjectId,
+      weekStartKey,
+      ...approvalIdentity.match,
+    }).sort({ requestedAt: -1 }).lean();
+
+    if (existingVersionRequest) {
       return NextResponse.json(
         {
-          error: "Ya existe una solicitud pendiente para esta semana.",
-          request: serializeScheduleUnlockRequest(pendingRequest),
+          error: "Ya se envió una solicitud para esta versión aprobada. Podrás enviar otra cuando se apruebe una nueva versión.",
+          request: serializeScheduleUnlockRequest(existingVersionRequest),
         },
         { status: 409 },
       );
     }
 
     const { actor, actorUser } = actorFromUser(user);
+    const stalePendingRequests = await ScheduleUnlockRequest.find({
+      group: groupObjectId,
+      weekStartKey,
+      status: "pending",
+      $nor: approvalIdentity.match.$or,
+    }).select({ _id: 1 }).lean();
+
+    if (stalePendingRequests.length) {
+      await ScheduleUnlockRequest.updateMany(
+        { _id: { $in: stalePendingRequests.map((entry) => entry._id) } },
+        {
+          $set: {
+            status: "rejected",
+            reviewedAt: new Date(),
+            reviewedBy: "SISTEMA",
+            reviewedByUser: "",
+            reviewNotes: "Solicitud cerrada automáticamente porque existe una nueva versión aprobada.",
+          },
+        },
+      );
+    }
+
     const unlockRequest = await ScheduleUnlockRequest.create({
       group: groupObjectId,
       groupName: String(workGroup.name || "").trim().toUpperCase(),
@@ -181,6 +213,9 @@ export async function POST(request) {
       branchName: String(workGroup.branchName || "").trim().toUpperCase(),
       monthKey,
       weekStartKey,
+      approvalVersionKey: approvalIdentity.approvalVersionKey,
+      approvalVersionSavedAt: approvalIdentity.approvalVersionSavedAt,
+      approvalApprovedAt: approvalIdentity.approvalApprovedAt,
       reason,
       status: "pending",
       requestedBy: actor,
@@ -200,6 +235,8 @@ export async function POST(request) {
         groupName: unlockRequest.groupName,
         monthKey,
         weekStartKey,
+        approvalVersionKey: approvalIdentity.approvalVersionKey,
+        supersededRequestIds: stalePendingRequests.map((entry) => entry._id.toString()),
         reason,
         after: serializedRequest,
       },
@@ -215,7 +252,7 @@ export async function POST(request) {
   } catch (error) {
     if (error?.code === 11000) {
       return NextResponse.json(
-        { error: "Ya existe una solicitud pendiente para esta semana." },
+        { error: "Ya se envió una solicitud para esta versión aprobada. Podrás enviar otra cuando se apruebe una nueva versión." },
         { status: 409 },
       );
     }

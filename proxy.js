@@ -132,6 +132,10 @@ function canAccessApi(pathname, method, permissionSet) {
 
   const planningRules = [
     ["/api/planner/planning/schedule-assignments/export", ["planner.schedules.export"]],
+    ["/api/planner/planning/schedule-unlock-requests/", ["planner.updates.manage"]],
+    ["/api/planner/planning/schedule-unlock-requests", method === "GET"
+      ? ["planner.schedules.weekly.view", "planner.updates.view"]
+      : ["planner.schedules.manage"]],
     ["/api/planner/planning/schedule-assignments", method === "GET"
       ? ["planner.schedules.weekly.view", "planner.schedules.view"]
       : ["planner.schedules.manage", "planner.updates.manage"]],

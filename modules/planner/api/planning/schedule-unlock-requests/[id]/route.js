@@ -10,22 +10,16 @@ import {
   resolvePlannerEmployeeScope,
 } from "@/modules/planner/lib/planning/accessScope";
 import {
+  buildPlanningApprovalVersionKey,
+  findActivePlanningApproval,
   getUnlockRequestWeekMonthKeys,
   serializeScheduleUnlockRequest,
+  unlockRequestMatchesPlanningApproval,
 } from "@/modules/planner/lib/planning/scheduleUnlockRequests";
 import {
   ScheduleAssignment,
   ScheduleUnlockRequest,
 } from "@/modules/planner/models";
-
-function buildApprovalVersionKey(approval) {
-  const savedAt = approval?.versionSavedAt
-    ? new Date(approval.versionSavedAt).toISOString()
-    : "sin-fecha";
-  const actor = approval?.versionSavedByUser || approval?.versionSavedBy || "sistema";
-
-  return `${approval?.groupId || ""}|${savedAt}|${actor}`;
-}
 
 export async function PATCH(request, context) {
   const user = await getAuthenticatedUser();
@@ -117,6 +111,24 @@ export async function PATCH(request, context) {
             throw error;
           }
 
+          const activeApproval = findActivePlanningApproval(
+            assignments,
+            groupId,
+            unlockRequest.weekStartKey,
+          );
+
+          if (
+            !activeApproval
+            || !unlockRequestMatchesPlanningApproval(unlockRequest, activeApproval)
+          ) {
+            const error = new Error(
+              "Esta solicitud corresponde a una versión anterior. Envía una nueva solicitud para la versión aprobada actual.",
+            );
+
+            error.statusCode = 409;
+            throw error;
+          }
+
           const employeeIds = [...new Set(
             assignments
               .map((assignment) => assignment.employee?.toString?.() || "")
@@ -129,7 +141,7 @@ export async function PATCH(request, context) {
                 && approval.groupId?.toString?.() === groupId
                 && !approval.unlockedAt,
               )
-              .map(buildApprovalVersionKey),
+              .map(buildPlanningApprovalVersionKey),
           ))];
 
           await ScheduleAssignment.updateMany(

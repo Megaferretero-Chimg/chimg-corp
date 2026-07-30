@@ -17,7 +17,11 @@ import {
 } from "@/modules/planner/lib/planning/accessScope";
 import { parseMonthKey, serializeHoliday } from "@/modules/planner/lib/planning/holidays";
 import { serializeOperationalException } from "@/modules/planner/lib/planning/exceptions";
-import { serializeScheduleUnlockRequest } from "@/modules/planner/lib/planning/scheduleUnlockRequests";
+import {
+  buildUnlockRequestVersionQuery,
+  findActivePlanningApproval,
+  serializeScheduleUnlockRequest,
+} from "@/modules/planner/lib/planning/scheduleUnlockRequests";
 import {
   APPROVED_VACATION_STATUS_QUERY,
   serializeVacationRecord,
@@ -778,18 +782,21 @@ export async function GET(request) {
       !fixedEmployeeIds.has(assignment.employee?.toString?.() || ""),
     );
 
-    const pendingUnlockRequest = groupId && weekStartKey
+    const activePlanningApproval = groupId && weekStartKey
+      ? findActivePlanningApproval(assignments, groupId, weekStartKey)
+      : null;
+    const currentVersionUnlockRequest = activePlanningApproval
       ? await ScheduleUnlockRequest.findOne({
         group: groupId,
         weekStartKey,
-        status: "pending",
-      }).lean()
+        ...buildUnlockRequestVersionQuery(activePlanningApproval).match,
+      }).sort({ requestedAt: -1 }).lean()
       : null;
 
     return NextResponse.json({
       assignments: mergeAssignmentsByEmployee([...fixedAssignments, ...variableAssignments], monthKey)
         .map((assignment) => serializeScheduleAssignmentForWeek(assignment, weekStartKey, groupId)),
-      unlockRequest: serializeScheduleUnlockRequest(pendingUnlockRequest),
+      unlockRequest: serializeScheduleUnlockRequest(currentVersionUnlockRequest),
       overlays: includeOverlays ? {
         exceptions: exceptionOverlays.map(serializeOperationalException),
         vacations: vacationOverlays.map(serializeVacationRecord),

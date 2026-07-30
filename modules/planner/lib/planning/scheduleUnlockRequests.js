@@ -4,6 +4,76 @@ const STATUS_LABELS = {
   rejected: "Rechazada",
 };
 
+function normalizedDate(value) {
+  if (!value) return null;
+
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? null : date;
+}
+
+export function buildPlanningApprovalVersionKey(approval = {}) {
+  const versionDate = normalizedDate(approval.versionSavedAt)
+    || normalizedDate(approval.approvedAt);
+  const savedAt = versionDate ? versionDate.toISOString() : "sin-fecha";
+  const actor = approval.versionSavedByUser
+    || approval.versionSavedBy
+    || approval.approvedByUser
+    || approval.approvedBy
+    || "sistema";
+
+  return `${approval.groupId || ""}|${savedAt}|${actor}`;
+}
+
+export function findActivePlanningApproval(assignments = [], groupId, weekStartKey) {
+  const normalizedGroupId = String(groupId || "");
+
+  return assignments
+    .flatMap((assignment) => assignment?.planningApprovals || [])
+    .find((approval) =>
+      approval?.weekStartKey === weekStartKey
+      && String(approval?.groupId || "") === normalizedGroupId
+      && !approval?.unlockedAt,
+    ) || null;
+}
+
+export function buildUnlockRequestVersionQuery(approval = {}) {
+  const approvalVersionKey = buildPlanningApprovalVersionKey(approval);
+  const approvalApprovedAt = normalizedDate(approval.approvedAt)
+    || normalizedDate(approval.versionSavedAt);
+  const versionFilters = [{ approvalVersionKey }];
+
+  if (approvalApprovedAt) {
+    versionFilters.push({
+      approvalVersionKey: { $in: ["", null] },
+      requestedAt: { $gte: approvalApprovedAt },
+    });
+  }
+
+  return {
+    approvalVersionKey,
+    approvalVersionSavedAt: normalizedDate(approval.versionSavedAt),
+    approvalApprovedAt,
+    match: { $or: versionFilters },
+  };
+}
+
+export function unlockRequestMatchesPlanningApproval(request = {}, approval = {}) {
+  const identity = buildUnlockRequestVersionQuery(approval);
+  const requestVersionKey = String(request.approvalVersionKey || "").trim();
+
+  if (requestVersionKey) {
+    return requestVersionKey === identity.approvalVersionKey;
+  }
+
+  const requestedAt = normalizedDate(request.requestedAt || request.createdAt);
+
+  return Boolean(
+    requestedAt
+    && identity.approvalApprovedAt
+    && requestedAt.getTime() >= identity.approvalApprovedAt.getTime(),
+  );
+}
+
 export function getUnlockRequestWeekMonthKeys(weekStartKey) {
   const start = new Date(`${weekStartKey}T12:00:00`);
 
@@ -32,6 +102,9 @@ export function serializeScheduleUnlockRequest(request) {
     branchName: request.branchName || "",
     monthKey: request.monthKey || "",
     weekStartKey: request.weekStartKey || "",
+    approvalVersionKey: request.approvalVersionKey || "",
+    approvalVersionSavedAt: request.approvalVersionSavedAt || null,
+    approvalApprovedAt: request.approvalApprovedAt || null,
     reason: request.reason || "",
     status,
     statusLabel: STATUS_LABELS[status],

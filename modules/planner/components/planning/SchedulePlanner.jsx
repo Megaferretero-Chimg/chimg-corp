@@ -1868,6 +1868,13 @@ export default function SchedulePlanner({ initialFilters = {}, basePath = "/sche
     && unlockRequest?.weekStartKey === selectedWeek?.weekStartKey
       ? unlockRequest
       : null;
+  const currentUnlockRequestIsRejected = currentUnlockRequest?.status === "rejected";
+  const currentUnlockRequestLabel = currentUnlockRequestIsRejected
+    ? "Solicitud rechazada"
+    : "Solicitud pendiente";
+  const currentUnlockRequestTitle = currentUnlockRequestIsRejected
+    ? "Ya se envió una solicitud para esta versión aprobada"
+    : "La solicitud está pendiente de revisión";
 
   const coverageRolesForEmployee = useCallback((employee) => {
     const assignments = Array.isArray(employee?.roleAssignments) ? employee.roleAssignments : [];
@@ -3543,10 +3550,14 @@ export default function SchedulePlanner({ initialFilters = {}, basePath = "/sche
               className={styles.unlockPlanningButton}
               onClick={() => setIsUnlockConfirmOpen(true)}
               disabled={isPending || Boolean(currentUnlockRequest)}
-              title={currentUnlockRequest ? "La solicitud está pendiente de revisión" : "Solicitar desbloqueo"}
+              title={currentUnlockRequest ? currentUnlockRequestTitle : "Solicitar desbloqueo"}
             >
-              {currentUnlockRequest ? <RefreshCw size={15} aria-hidden="true" /> : <LockOpen size={15} aria-hidden="true" />}
-              {currentUnlockRequest ? "Solicitud pendiente" : "Solicitar desbloqueo"}
+              {currentUnlockRequest
+                ? currentUnlockRequestIsRejected
+                  ? <AlertTriangle size={15} aria-hidden="true" />
+                  : <RefreshCw size={15} aria-hidden="true" />
+                : <LockOpen size={15} aria-hidden="true" />}
+              {currentUnlockRequest ? currentUnlockRequestLabel : "Solicitar desbloqueo"}
             </button>
           ) : null}
         </div>

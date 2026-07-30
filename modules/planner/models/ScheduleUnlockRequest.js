@@ -35,6 +35,19 @@ const scheduleUnlockRequestSchema = new Schema(
       trim: true,
       required: true,
     },
+    approvalVersionKey: {
+      type: String,
+      trim: true,
+      default: "",
+    },
+    approvalVersionSavedAt: {
+      type: Date,
+      default: null,
+    },
+    approvalApprovedAt: {
+      type: Date,
+      default: null,
+    },
     reason: {
       type: String,
       trim: true,
@@ -91,11 +104,11 @@ const scheduleUnlockRequestSchema = new Schema(
 scheduleUnlockRequestSchema.index({ status: 1, requestedAt: -1 });
 scheduleUnlockRequestSchema.index({ group: 1, weekStartKey: 1, requestedAt: -1 });
 scheduleUnlockRequestSchema.index(
-  { group: 1, weekStartKey: 1, status: 1 },
+  { group: 1, weekStartKey: 1, approvalVersionKey: 1 },
   {
     unique: true,
-    name: "pending_schedule_unlock_request_unique",
-    partialFilterExpression: { status: "pending" },
+    name: "schedule_unlock_request_approval_version_unique",
+    partialFilterExpression: { approvalVersionKey: { $type: "string" } },
   },
 );
 
