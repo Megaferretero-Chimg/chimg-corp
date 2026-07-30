@@ -714,6 +714,57 @@
   font-weight: 400;
 }
 
+.manualPunchEditor {
+  display: grid;
+  gap: 0.55rem;
+}
+
+.manualPunchEditor > span {
+  color: #334b70;
+  font-size: 0.76rem;
+  font-weight: 700;
+}
+
+.manualPunchRow {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 2.5rem;
+  gap: 0.5rem;
+  align-items: center;
+}
+
+.manualPunchRemove,
+.manualPunchAdd {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid rgba(16, 33, 62, 0.12);
+  border-radius: 8px;
+  background: white;
+  color: #40516e;
+  cursor: pointer;
+  font: inherit;
+}
+
+.manualPunchRemove {
+  width: 2.5rem;
+  height: 2.5rem;
+  color: #b42318;
+}
+
+.manualPunchRemove:disabled {
+  cursor: not-allowed;
+  opacity: 0.35;
+}
+
+.manualPunchAdd {
+  justify-self: start;
+  gap: 0.4rem;
+  padding: 0.58rem 0.75rem;
+  color: var(--primary);
+  font-size: var(--font-size-sm);
+  font-weight: 600;
+}
+
 .presetPanel > span {
   color: #40516e;
   font-size: var(--font-size-sm);

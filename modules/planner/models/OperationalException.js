@@ -148,10 +148,19 @@ const operationalExceptionSchema = new Schema(
       ref: "AttendancePunch",
       default: null,
     },
+    manualPunches: {
+      type: [Schema.Types.ObjectId],
+      ref: "AttendancePunch",
+      default: undefined,
+    },
     manualPunchTime: {
       type: String,
       trim: true,
       default: "",
+    },
+    manualPunchTimes: {
+      type: [String],
+      default: undefined,
     },
     destination: {
       type: String,

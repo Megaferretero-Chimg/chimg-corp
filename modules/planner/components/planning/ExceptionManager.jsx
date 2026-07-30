@@ -89,13 +89,13 @@ const EXCEPTION_FLOWS = [
     category: "execution",
     value: "missed_punch",
     label: "Justificar marcación omitida",
-    description: "Reconoce el horario autorizado cuando la persona trabajó pero no pudo marcar.",
+    description: "Registra una o varias picadas omitidas para completar la asistencia real del día.",
     type: "missing_punch",
     scope: "missing_punch",
     resolution: "approved_work_time",
-    effect: "external_work",
-    attendanceMode: "use_authorized_schedule",
-    payMode: "regular_only",
+    effect: "manual_punch",
+    attendanceMode: "add_manual_punch",
+    payMode: "no_pay_change",
   },
 ];
 const EXCEPTIONS_PAGE_SIZE = 10;
@@ -146,6 +146,7 @@ const EMPTY_FORM = {
   plannedLunchDurationMinutes: 0,
   applicableWeekdays: DEFAULT_APPLICABLE_WEEKDAYS,
   manualPunchTime: "",
+  manualPunchTimes: [""],
   destination: "",
   effect: "paid_absence",
   attendanceMode: "ignore_attendance",
@@ -201,13 +202,21 @@ function buildExceptionForm(exception) {
     plannedStartTime: exception.plannedStartTime || "",
     plannedEndTime: exception.plannedEndTime || "",
     plannedDayType: exception.plannedDayType === "off_day" ? "off_day" : "workday",
-    plannedTemplateId: exception.plannedDayType === "off_day" ? "" : CUSTOM_SCHEDULE_TEMPLATE,
+    plannedTemplateId:
+      exception.plannedDayType === "off_day"
+      || !exception.plannedStartTime
+      || !exception.plannedEndTime
+        ? ""
+        : CUSTOM_SCHEDULE_TEMPLATE,
     isExtraDay: Boolean(exception.isExtraDay),
     plannedLunchStartTime: exception.plannedLunchStartTime || "",
     plannedLunchEndTime: exception.plannedLunchEndTime || "",
     plannedLunchDurationMinutes: Number(exception.plannedLunchDurationMinutes) || 0,
     applicableWeekdays: DEFAULT_APPLICABLE_WEEKDAYS,
-    manualPunchTime: exception.manualPunchTime || "",
+    manualPunchTime: exception.manualPunchTime || exception.manualPunchTimes?.[0] || "",
+    manualPunchTimes: Array.isArray(exception.manualPunchTimes) && exception.manualPunchTimes.length
+      ? exception.manualPunchTimes
+      : [exception.manualPunchTime || ""],
     destination: exception.destination || "",
     effect: exception.effect || "other",
     attendanceMode: exception.attendanceMode || "use_punches",
@@ -477,8 +486,11 @@ export default function ExceptionManager({
   const needsDepartureTime = selectedFlow.value === "hourly_permission";
   const needsTimeRange = selectedFlow.value === "overtime_authorization";
   const needsTemporarySchedule = selectedFlow.effect === "planning_change";
+  const supportsOptionalSchedule = selectedFlow.value === "external_work";
+  const usesOptionalSchedule = supportsOptionalSchedule && Boolean(form.plannedTemplateId);
   const canUseDateRange = selectedFlow.category === "planning"
     && !needsDepartureTime;
+  const manualPunchTimes = Array.isArray(form.manualPunchTimes) ? form.manualPunchTimes : [];
   const isEditingException = Boolean(form.id);
   const canSave = Boolean(
     form.employeeId
@@ -486,9 +498,13 @@ export default function ExceptionManager({
     && form.dateKey
     && hasValidDateRange
     && form.notes.trim()
-    && (!createsManualPunch || form.manualPunchTime)
+    && (!createsManualPunch || (
+      manualPunchTimes.length
+      && manualPunchTimes.every((time) => String(time || "").trim())
+    ))
     && (!needsDepartureTime || form.startTime)
     && (!needsTimeRange || (form.startTime && form.endTime))
+    && (!usesOptionalSchedule || (form.plannedStartTime && form.plannedEndTime))
     && (!needsTemporarySchedule || (
       (
         form.plannedDayType === "off_day"
@@ -703,6 +719,39 @@ export default function ExceptionManager({
     }));
   }
 
+  function updateManualPunchTime(index, value) {
+    setForm((current) => {
+      const nextTimes = [...(current.manualPunchTimes || [""])];
+      nextTimes[index] = value;
+
+      return {
+        ...current,
+        manualPunchTime: nextTimes[0] || "",
+        manualPunchTimes: nextTimes,
+      };
+    });
+  }
+
+  function addManualPunchTime() {
+    setForm((current) => ({
+      ...current,
+      manualPunchTimes: [...(current.manualPunchTimes || [""]), ""],
+    }));
+  }
+
+  function removeManualPunchTime(index) {
+    setForm((current) => {
+      const nextTimes = (current.manualPunchTimes || [""]).filter((_, entryIndex) => entryIndex !== index);
+      const normalizedTimes = nextTimes.length ? nextTimes : [""];
+
+      return {
+        ...current,
+        manualPunchTime: normalizedTimes[0] || "",
+        manualPunchTimes: normalizedTimes,
+      };
+    });
+  }
+
   function updateFlowType(value) {
     const flow = getFlowDefinition(value);
     const flowCanUseDateRange = flow.category === "planning"
@@ -719,15 +768,18 @@ export default function ExceptionManager({
       resolution: current.id && canResolveExceptions ? flow.resolution : "pending",
       startTime: "",
       endTime: "",
-      plannedStartTime: flow.effect === "planning_change" ? current.plannedStartTime : "",
-      plannedEndTime: flow.effect === "planning_change" ? current.plannedEndTime : "",
+      plannedStartTime: ["planning_change", "external_work"].includes(flow.effect) ? current.plannedStartTime : "",
+      plannedEndTime: ["planning_change", "external_work"].includes(flow.effect) ? current.plannedEndTime : "",
       plannedDayType: flow.effect === "planning_change" ? current.plannedDayType || "workday" : "workday",
-      plannedTemplateId: flow.effect === "planning_change" ? current.plannedTemplateId : "",
-      plannedLunchStartTime: flow.effect === "planning_change" ? current.plannedLunchStartTime : "",
-      plannedLunchEndTime: flow.effect === "planning_change" ? current.plannedLunchEndTime : "",
-      plannedLunchDurationMinutes: flow.effect === "planning_change" ? current.plannedLunchDurationMinutes : 0,
+      plannedTemplateId: ["planning_change", "external_work"].includes(flow.effect) ? current.plannedTemplateId : "",
+      plannedLunchStartTime: ["planning_change", "external_work"].includes(flow.effect) ? current.plannedLunchStartTime : "",
+      plannedLunchEndTime: ["planning_change", "external_work"].includes(flow.effect) ? current.plannedLunchEndTime : "",
+      plannedLunchDurationMinutes: ["planning_change", "external_work"].includes(flow.effect) ? current.plannedLunchDurationMinutes : 0,
       applicableWeekdays: DEFAULT_APPLICABLE_WEEKDAYS,
       manualPunchTime: flow.effect === "manual_punch" ? current.manualPunchTime : "",
+      manualPunchTimes: flow.effect === "manual_punch"
+        ? current.manualPunchTimes?.length ? current.manualPunchTimes : [""]
+        : [""],
       endDateKey: flowCanUseDateRange ? current.endDateKey : "",
       countsAsWorkedTime: flow.value === "hourly_permission",
       allowSupplementaryTime: flow.value === "overtime_authorization",
@@ -763,7 +815,15 @@ export default function ExceptionManager({
     const row = scheduleTemplateRow(template);
 
     if (!row) {
-      setForm((current) => ({ ...current, plannedTemplateId: "" }));
+      setForm((current) => ({
+        ...current,
+        plannedTemplateId: "",
+        plannedStartTime: "",
+        plannedEndTime: "",
+        plannedLunchStartTime: "",
+        plannedLunchEndTime: "",
+        plannedLunchDurationMinutes: 0,
+      }));
       return;
     }
 
@@ -782,8 +842,14 @@ export default function ExceptionManager({
   function describeExceptionTime(exception) {
     const range = exception.endDateKey ? `${exception.dateKey} hasta ${exception.endDateKey}` : exception.dateKey;
 
-    if (exception.effect === "manual_punch" && exception.manualPunchTime) {
-      return `${range} · picada ${formatTimeLabel(exception.manualPunchTime)}`;
+    const punchTimes = exception.manualPunchTimes?.length
+      ? exception.manualPunchTimes
+      : exception.manualPunchTime
+        ? [exception.manualPunchTime]
+        : [];
+
+    if (exception.effect === "manual_punch" && punchTimes.length) {
+      return `${range} · ${punchTimes.length === 1 ? "picada" : "picadas"} ${punchTimes.map(formatTimeLabel).join(", ")}`;
     }
 
     return range;
@@ -857,6 +923,11 @@ export default function ExceptionManager({
           ? exception.endTime
           : exception.endTime || "",
       manualPunchTime: isRejected ? exception.manualPunchTime : exception.manualPunchTime || "",
+      manualPunchTimes: Array.isArray(exception.manualPunchTimes) && exception.manualPunchTimes.length
+        ? exception.manualPunchTimes
+        : exception.manualPunchTime
+          ? [exception.manualPunchTime]
+          : [],
       plannedStartTime: isRejected ? exception.plannedStartTime : exception.plannedStartTime || "",
       plannedEndTime: isRejected ? exception.plannedEndTime : exception.plannedEndTime || "",
       plannedDayType: exception.plannedDayType === "off_day" ? "off_day" : "workday",
@@ -961,13 +1032,14 @@ export default function ExceptionManager({
       startTime: needsDepartureTime || needsTimeRange ? form.startTime : "",
       endTime: needsTimeRange ? form.endTime : "",
       plannedDayType: needsTemporarySchedule && form.plannedDayType === "off_day" ? "off_day" : "workday",
-      plannedStartTime: needsTemporarySchedule && form.plannedDayType !== "off_day" ? form.plannedStartTime : "",
-      plannedEndTime: needsTemporarySchedule && form.plannedDayType !== "off_day" ? form.plannedEndTime : "",
-      plannedLunchStartTime: needsTemporarySchedule && form.plannedDayType !== "off_day" ? form.plannedLunchStartTime : "",
-      plannedLunchEndTime: needsTemporarySchedule && form.plannedDayType !== "off_day" ? form.plannedLunchEndTime : "",
-      plannedLunchDurationMinutes: needsTemporarySchedule && form.plannedDayType !== "off_day" ? form.plannedLunchDurationMinutes : 0,
+      plannedStartTime: (needsTemporarySchedule || usesOptionalSchedule) && form.plannedDayType !== "off_day" ? form.plannedStartTime : "",
+      plannedEndTime: (needsTemporarySchedule || usesOptionalSchedule) && form.plannedDayType !== "off_day" ? form.plannedEndTime : "",
+      plannedLunchStartTime: (needsTemporarySchedule || usesOptionalSchedule) && form.plannedDayType !== "off_day" ? form.plannedLunchStartTime : "",
+      plannedLunchEndTime: (needsTemporarySchedule || usesOptionalSchedule) && form.plannedDayType !== "off_day" ? form.plannedLunchEndTime : "",
+      plannedLunchDurationMinutes: (needsTemporarySchedule || usesOptionalSchedule) && form.plannedDayType !== "off_day" ? form.plannedLunchDurationMinutes : 0,
       applicableWeekdays: needsTemporarySchedule ? DEFAULT_APPLICABLE_WEEKDAYS : undefined,
-      manualPunchTime: createsManualPunch ? form.manualPunchTime : "",
+      manualPunchTime: createsManualPunch ? manualPunchTimes[0] || "" : "",
+      manualPunchTimes: createsManualPunch ? manualPunchTimes : [],
       destination: "",
       countsAsWorkedTime:
         resolution === "approved_work_time"
@@ -1122,10 +1194,15 @@ export default function ExceptionManager({
                   <dd>{[reviewException.startTime, reviewException.endTime].filter(Boolean).map(formatTimeLabel).join(" - ")}</dd>
                 </div>
               ) : null}
-              {reviewException.manualPunchTime ? (
+              {reviewException.manualPunchTimes?.length || reviewException.manualPunchTime ? (
                 <div>
-                  <dt>Picada</dt>
-                  <dd>{formatTimeLabel(reviewException.manualPunchTime)}</dd>
+                  <dt>Picadas registradas</dt>
+                  <dd>
+                    {(reviewException.manualPunchTimes?.length
+                      ? reviewException.manualPunchTimes
+                      : [reviewException.manualPunchTime]
+                    ).map(formatTimeLabel).join(", ")}
+                  </dd>
                 </div>
               ) : null}
               {reviewException.plannedDayType === "off_day" ? (
@@ -1579,14 +1656,31 @@ export default function ExceptionManager({
           ) : null}
 
           {createsManualPunch ? (
-            <label className={styles.field}>
-              <span>Hora a registrar</span>
-              <TimeInput24
-                value={form.manualPunchTime}
-                onChange={(event) => updateForm("manualPunchTime", event.target.value)}
-                separator="H"
-              />
-            </label>
+            <div className={styles.manualPunchEditor}>
+              <span>Horas de las picadas omitidas</span>
+              {manualPunchTimes.map((time, index) => (
+                <div className={styles.manualPunchRow} key={`manual-punch-${index}`}>
+                  <TimeInput24
+                    value={time}
+                    onChange={(event) => updateManualPunchTime(index, event.target.value)}
+                    separator="H"
+                  />
+                  <button
+                    type="button"
+                    className={styles.manualPunchRemove}
+                    onClick={() => removeManualPunchTime(index)}
+                    aria-label={`Quitar picada ${index + 1}`}
+                    disabled={manualPunchTimes.length === 1}
+                  >
+                    <XCircle size={17} />
+                  </button>
+                </div>
+              ))}
+              <button type="button" className={styles.manualPunchAdd} onClick={addManualPunchTime}>
+                <Plus size={16} />
+                Agregar otra picada
+              </button>
+            </div>
           ) : null}
 
           {needsDepartureTime ? (
@@ -1656,6 +1750,47 @@ export default function ExceptionManager({
                       </div>
                     </>
                   ) : null}
+                </>
+              ) : null}
+            </div>
+          ) : null}
+
+          {supportsOptionalSchedule ? (
+            <div className={styles.presetPanel}>
+              <span>Horario para trabajo externo (opcional)</span>
+              <p>Si no seleccionas una plantilla, se conservará el horario que ya estaba planificado.</p>
+              <AutocompleteSelect
+                className={styles.planningSelect}
+                label="Plantilla de horario"
+                options={scheduleTemplateOptions}
+                value={form.plannedTemplateId}
+                placeholder="Usar horario planificado"
+                searchPlaceholder="Buscar plantilla"
+                emptyText="Sin plantillas"
+                onChange={updatePlannedTemplate}
+              />
+              {form.plannedTemplateId === CUSTOM_SCHEDULE_TEMPLATE ? (
+                <>
+                  <div className={styles.twoColumnGrid}>
+                    <label className={styles.field}>
+                      <span>Entrada</span>
+                      <TimeInput24 separator="H" value={form.plannedStartTime} onChange={(event) => updateForm("plannedStartTime", event.target.value)} />
+                    </label>
+                    <label className={styles.field}>
+                      <span>Salida</span>
+                      <TimeInput24 separator="H" value={form.plannedEndTime} onChange={(event) => updateForm("plannedEndTime", event.target.value)} />
+                    </label>
+                  </div>
+                  <div className={styles.twoColumnGrid}>
+                    <label className={styles.field}>
+                      <span>Inicio almuerzo</span>
+                      <TimeInput24 separator="H" value={form.plannedLunchStartTime} onChange={(event) => updateForm("plannedLunchStartTime", event.target.value)} />
+                    </label>
+                    <label className={styles.field}>
+                      <span>Fin almuerzo</span>
+                      <TimeInput24 separator="H" value={form.plannedLunchEndTime} onChange={(event) => updateForm("plannedLunchEndTime", event.target.value)} />
+                    </label>
+                  </div>
                 </>
               ) : null}
             </div>

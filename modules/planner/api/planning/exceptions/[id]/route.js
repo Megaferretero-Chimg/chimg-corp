@@ -79,6 +79,9 @@ export async function PATCH(request, context) {
     const exception = await OperationalException.findByIdAndUpdate(exceptionId, {
       ...payload,
       manualPunch: currentException.manualPunch || null,
+      manualPunches: currentException.manualPunches || (
+        currentException.manualPunch ? [currentException.manualPunch] : []
+      ),
     }, {
       new: true,
       runValidators: true,
@@ -206,7 +209,9 @@ export async function DELETE(_request, context) {
           resolution: isPending ? "no_action" : currentException.resolution,
           resolutionNotes: currentException.resolutionNotes || voidReason,
           manualPunch: null,
+          manualPunches: [],
           manualPunchTime: "",
+          manualPunchTimes: [],
         },
       },
       { new: true },

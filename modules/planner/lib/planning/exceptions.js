@@ -133,7 +133,12 @@ export function resolveOperationalExceptionEffect(exception = {}) {
   const scope = String(exception.scope || "full_day").trim();
   const resolution = String(exception.resolution || "pending").trim();
   const hasPlannedSchedule = Boolean(exception.plannedStartTime && exception.plannedEndTime);
-  const hasManualPunch = Boolean(exception.manualPunchTime || exception.manualPunch);
+  const hasManualPunch = Boolean(
+    exception.manualPunchTime
+    || exception.manualPunch
+    || exception.manualPunchTimes?.length
+    || exception.manualPunches?.length,
+  );
 
   if (resolution === "no_action") {
     return "alert_review";
@@ -315,7 +320,18 @@ export function normalizeExceptionPayload(body, employee) {
   let plannedLunchDurationMinutes = plannedLunchStartTime && plannedLunchEndTime
     ? minutesBetweenTimes(plannedLunchStartTime, plannedLunchEndTime)
     : 0;
-  const manualPunchTime = String(body?.manualPunchTime || "").trim();
+  const manualPunchTimes = [
+    ...new Set(
+      (
+        Array.isArray(body?.manualPunchTimes) && body.manualPunchTimes.length
+          ? body.manualPunchTimes
+          : [body?.manualPunchTime]
+      )
+        .map((time) => String(time || "").trim())
+        .filter(Boolean),
+    ),
+  ];
+  const manualPunchTime = manualPunchTimes[0] || "";
   const destination = String(body?.destination || "").trim().toUpperCase();
   const countsAsWorkedTime = Boolean(body?.countsAsWorkedTime);
   const allowSupplementaryTime = Boolean(body?.allowSupplementaryTime);
@@ -333,6 +349,7 @@ export function normalizeExceptionPayload(body, employee) {
     plannedStartTime,
     plannedEndTime,
     manualPunchTime,
+    manualPunchTimes,
     countsAsWorkedTime,
     allowSupplementaryTime,
   };
@@ -429,12 +446,20 @@ export function normalizeExceptionPayload(body, employee) {
     throw new Error("Debes indicar el horario temporal autorizado.");
   }
 
-  if ((effect === "manual_punch" || attendanceMode === "add_manual_punch") && !manualPunchTime) {
-    throw new Error("Debes indicar la hora de la picada manual.");
+  if ((effect === "manual_punch" || attendanceMode === "add_manual_punch") && !manualPunchTimes.length) {
+    throw new Error("Debes indicar al menos una hora de picada manual.");
   }
 
-  if (manualPunchTime && !isValidTime24(manualPunchTime)) {
-    throw new Error("La hora de la picada manual no es valida.");
+  if (manualPunchTimes.some((time) => !isValidTime24(time))) {
+    throw new Error("Una de las horas de picada manual no es valida.");
+  }
+
+  if (manualPunchTimes.length !== (
+    Array.isArray(body?.manualPunchTimes)
+      ? body.manualPunchTimes.map((time) => String(time || "").trim()).filter(Boolean).length
+      : manualPunchTimes.length
+  )) {
+    throw new Error("No puedes registrar dos picadas manuales en la misma hora.");
   }
 
   if (startTime && endTime && endTime <= startTime && !["outside_work", "exit_return"].includes(scope)) {
@@ -468,6 +493,7 @@ export function normalizeExceptionPayload(body, employee) {
     plannedLunchDurationMinutes,
     applicableWeekdays,
     manualPunchTime,
+    manualPunchTimes,
     destination,
     countsAsWorkedTime,
     allowSupplementaryTime,
@@ -522,7 +548,17 @@ export function serializeOperationalException(exception) {
       ? exception.applicableWeekdays
       : undefined,
     manualPunchId: exception.manualPunch?.toString?.() || String(exception.manualPunch || ""),
+    manualPunchIds: Array.isArray(exception.manualPunches)
+      ? exception.manualPunches.map((punch) => punch?.toString?.() || String(punch || "")).filter(Boolean)
+      : exception.manualPunch
+        ? [exception.manualPunch?.toString?.() || String(exception.manualPunch)]
+        : [],
     manualPunchTime: exception.manualPunchTime || "",
+    manualPunchTimes: Array.isArray(exception.manualPunchTimes) && exception.manualPunchTimes.length
+      ? exception.manualPunchTimes
+      : exception.manualPunchTime
+        ? [exception.manualPunchTime]
+        : [],
     destination: exception.destination || "",
     countsAsWorkedTime: Boolean(exception.countsAsWorkedTime),
     allowSupplementaryTime: Boolean(exception.allowSupplementaryTime),
