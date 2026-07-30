@@ -109,7 +109,7 @@ export const ACCESS_PERMISSION_CATALOG = [
           { key: "planner.schedules.hours.view", label: "Ver horas planificadas", type: "action", requiresAnyPage: ["planner.schedules.weekly.view", "planner.schedules.view"] },
           { key: "planner.schedules.financial.view", label: "Ver información monetaria", type: "action", requiresAnyPage: ["planner.schedules.weekly.view", "planner.schedules.summary.view", "planner.schedules.view"] },
           { key: "planner.timeOff.view", label: "Ver y solicitar vacaciones", type: "page", path: "/modules/planning/planning/time-off" },
-          { key: "planner.timeOff.manage", label: "Modificar y resolver vacaciones", type: "action", requiresAnyPage: ["planner.timeOff.view"] },
+          { key: "planner.timeOff.manage", label: "Resolver y eliminar vacaciones", type: "action", requiresAnyPage: ["planner.timeOff.view"] },
           { key: "planner.holidays.view", label: "Ver feriados", type: "page", path: "/modules/planning/planning/holidays" },
           { key: "planner.holidays.manage", label: "Gestionar feriados", type: "action", requiresAnyPage: ["planner.holidays.view"] },
           { key: "planner.updates.view", label: "Ver pendientes aprobacion", type: "page", path: "/modules/planning/updates" },

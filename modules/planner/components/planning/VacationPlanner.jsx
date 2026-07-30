@@ -7,7 +7,6 @@ import {
   Check,
   ChevronLeft,
   ChevronRight,
-  Edit3,
   Plane,
   Plus,
   Save,
@@ -22,7 +21,6 @@ import FloatingNotice from "@/components/ui/FloatingNotice";
 import styles from "@/modules/planner/styles/components/planning/VacationPlanner.module.scss";
 
 const EMPTY_FORM = {
-  id: "",
   employeeId: "",
   isDateRange: false,
   startDateKey: "",
@@ -171,7 +169,7 @@ export default function VacationPlanner() {
 
       try {
         const [employeesResponse, vacationsResponse] = await Promise.all([
-          fetch("/api/company/employees"),
+          fetch("/api/company/employees?scope=planning"),
           fetch(`/api/planner/planning/vacations?month=${monthKey}&includeRequests=true`),
         ]);
         const [employeesPayload, vacationsPayload] = await Promise.all([
@@ -263,21 +261,6 @@ export default function VacationPlanner() {
     setIsEditorOpen(true);
   }
 
-  function openEditEditor(vacation) {
-    const employee = activeEmployees.find((entry) => entry.id === vacation.employeeId);
-
-    setForm({
-      id: vacation.id,
-      employeeId: vacation.employeeId,
-      isDateRange: vacation.startDateKey !== vacation.endDateKey,
-      startDateKey: vacation.startDateKey,
-      endDateKey: vacation.endDateKey,
-      notes: vacation.notes || "",
-    });
-    setEmployeeQuery(employee?.fullName || vacation.employeeName || "");
-    setIsEditorOpen(true);
-  }
-
   const closeEditor = useCallback(() => {
     setForm(EMPTY_FORM);
     setEmployeeQuery("");
@@ -300,8 +283,6 @@ export default function VacationPlanner() {
       return;
     }
 
-    const endpoint = form.id ? `/api/planner/planning/vacations/${form.id}` : "/api/planner/planning/vacations";
-    const method = form.id ? "PATCH" : "POST";
     const requestPayload = {
       employeeId: form.employeeId,
       isDateRange: form.isDateRange,
@@ -312,8 +293,8 @@ export default function VacationPlanner() {
 
     startTransition(async () => {
       try {
-        const response = await fetch(endpoint, {
-          method,
+        const response = await fetch("/api/planner/planning/vacations", {
+          method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify(requestPayload),
         });
@@ -544,7 +525,7 @@ export default function VacationPlanner() {
                     </td>
                     <td>
                       <div className={styles.rowActions}>
-                        {capabilities.canManage && vacation.status !== "approved" ? (
+                        {capabilities.canManage && vacation.status === "pending" ? (
                           <button
                             type="button"
                             className={styles.approveAction}
@@ -555,7 +536,7 @@ export default function VacationPlanner() {
                             <Check size={15} />
                           </button>
                         ) : null}
-                        {capabilities.canManage && vacation.status !== "rejected" ? (
+                        {capabilities.canManage && vacation.status === "pending" ? (
                           <button
                             type="button"
                             className={styles.rejectAction}
@@ -567,14 +548,9 @@ export default function VacationPlanner() {
                           </button>
                         ) : null}
                         {capabilities.canManage ? (
-                          <>
-                            <button type="button" onClick={() => openEditEditor(vacation)} aria-label="Editar vacaciones" title="Editar">
-                              <Edit3 size={15} />
-                            </button>
-                            <button type="button" onClick={() => setVacationToDelete(vacation)} aria-label="Eliminar vacaciones" title="Eliminar">
-                              <Trash2 size={15} />
-                            </button>
-                          </>
+                          <button type="button" onClick={() => setVacationToDelete(vacation)} aria-label="Eliminar vacaciones" title="Eliminar">
+                            <Trash2 size={15} />
+                          </button>
                         ) : null}
                       </div>
                     </td>
@@ -604,10 +580,8 @@ export default function VacationPlanner() {
 
       <CatalogDrawer
         isOpen={isEditorOpen}
-        eyebrow={form.id ? "Editar solicitud" : "Nueva solicitud"}
-        title={form.id
-          ? "Editar solicitud de vacaciones"
-          : capabilities.canManage ? "Registrar vacaciones" : "Solicitar vacaciones"}
+        eyebrow="Nueva solicitud"
+        title={capabilities.canManage ? "Registrar vacaciones" : "Solicitar vacaciones"}
         onClose={closeEditor}
       >
         <form className={styles.editorForm} onSubmit={saveVacation}>
@@ -691,7 +665,7 @@ export default function VacationPlanner() {
               <Save size={16} />
               {isPending
                 ? "Guardando..."
-                : form.id ? "Guardar cambios" : capabilities.canManage ? "Registrar vacaciones" : "Enviar solicitud"}
+                : capabilities.canManage ? "Registrar vacaciones" : "Enviar solicitud"}
             </button>
           </div>
         </form>

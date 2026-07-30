@@ -75,6 +75,7 @@ function canAccessApi(pathname, method, permissionSet) {
       "company.employees.view",
       "planner.schedules.weekly.view",
       "planner.schedules.view",
+      "planner.timeOff.view",
       "planner.attendance.view",
       "planner.operations.view",
     ]);
@@ -156,7 +157,7 @@ function canAccessApi(pathname, method, permissionSet) {
     ["/api/planner/planning/vacations/", ["planner.timeOff.manage"]],
     ["/api/planner/planning/vacations", method === "GET"
       ? ["planner.schedules.weekly.view", "planner.timeOff.view"]
-      : ["planner.timeOff.manage"]],
+      : ["planner.timeOff.view", "planner.timeOff.manage"]],
     ["/api/planner/planning/exceptions/", method === "PATCH"
       ? ["planner.exceptions.approve"]
       : ["planner.exceptions.deleteOwn", "planner.exceptions.approve", "planner.attendance.review"]],

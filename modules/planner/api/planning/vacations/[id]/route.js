@@ -9,44 +9,15 @@ import {
   resolvePlannerEmployeeScope,
 } from "@/modules/planner/lib/planning/accessScope";
 import {
-  normalizeVacationPayload,
   serializeVacationRecord,
 } from "@/modules/planner/lib/planning/vacations";
-import { Employee } from "@/modules/company/models";
 import { VacationRequest } from "@/modules/planner/models";
-
-async function findOverlappingVacation({ employeeId, startDateKey, endDateKey, excludeId = "" }) {
-  const query = {
-    employee: employeeId,
-    status: { $ne: "rejected" },
-    startDateKey: { $lte: endDateKey },
-    endDateKey: { $gte: startDateKey },
-  };
-
-  if (excludeId) {
-    query._id = { $ne: excludeId };
-  }
-
-  return VacationRequest.findOne(query)
-    .select({ startDateKey: 1, endDateKey: 1 })
-    .lean();
-}
 
 function actorFromUser(user) {
   return {
     actor: String(user?.employeeName || user?.username || user?.id || "SISTEMA").trim(),
     actorUser: String(user?.id || user?.username || "").trim(),
   };
-}
-
-function overlapResponse(vacation) {
-  return NextResponse.json(
-    {
-      error: `El empleado ya tiene vacaciones registradas del `
-        + `${vacation.startDateKey} al ${vacation.endDateKey}.`,
-    },
-    { status: 409 },
-  );
 }
 
 export async function PATCH(request, context) {
@@ -89,28 +60,33 @@ export async function PATCH(request, context) {
 
     const action = String(body?.action || "").trim().toLowerCase();
     const { actor, actorUser } = actorFromUser(user);
+    const currentStatus = ["pending", "approved", "rejected"].includes(currentVacation.status)
+      ? currentVacation.status
+      : "approved";
     let updatePayload;
     let auditAction;
     let message;
 
+    if (!["approve", "reject"].includes(action)) {
+      return NextResponse.json(
+        { error: "Las solicitudes de vacaciones no se pueden editar." },
+        { status: 400 },
+      );
+    }
+
+    if (currentStatus !== "pending") {
+      return NextResponse.json(
+        {
+          error: currentStatus === "approved"
+            ? "Las vacaciones aprobadas solo se pueden eliminar."
+            : "Las solicitudes rechazadas solo se pueden eliminar.",
+        },
+        { status: 409 },
+      );
+    }
+
     if (action === "approve") {
-      const employee = await Employee.findById(currentEmployeeId).lean();
-      const normalizedPayload = normalizeVacationPayload({
-        startDateKey: currentVacation.startDateKey,
-        endDateKey: currentVacation.endDateKey,
-        notes: currentVacation.notes,
-      }, employee);
-      const overlappingVacation = await findOverlappingVacation({
-        employeeId: currentEmployeeId,
-        startDateKey: normalizedPayload.startDateKey,
-        endDateKey: normalizedPayload.endDateKey,
-        excludeId: vacationId,
-      });
-
-      if (overlappingVacation) return overlapResponse(overlappingVacation);
-
       updatePayload = {
-        ...normalizedPayload,
         status: "approved",
         reviewedAt: new Date(),
         reviewedBy: actor,
@@ -130,47 +106,23 @@ export async function PATCH(request, context) {
       };
       auditAction = "vacation.request.reject";
       message = "Solicitud de vacaciones rechazada.";
-    } else {
-      const employeeId = String(body?.employeeId || "").trim();
-
-      if (!employeeId) {
-        throw new Error("Debes seleccionar un empleado.");
-      }
-
-      assertEmployeesInPlannerScope([employeeId], plannerScope);
-
-      const employee = await Employee.findById(employeeId).lean();
-      const normalizedPayload = normalizeVacationPayload(body, employee);
-      const currentStatus = ["pending", "approved", "rejected"].includes(currentVacation.status)
-        ? currentVacation.status
-        : "approved";
-
-      if (currentStatus !== "rejected") {
-        const overlappingVacation = await findOverlappingVacation({
-          employeeId,
-          startDateKey: normalizedPayload.startDateKey,
-          endDateKey: normalizedPayload.endDateKey,
-          excludeId: vacationId,
-        });
-
-        if (overlappingVacation) return overlapResponse(overlappingVacation);
-      }
-
-      updatePayload = {
-        ...normalizedPayload,
-        status: currentStatus,
-        ...(currentStatus === "rejected" ? { coveredDateKeys: [] } : {}),
-      };
-      auditAction = "vacation.request.update";
-      message = currentStatus === "approved"
-        ? "Vacaciones actualizadas correctamente."
-        : "Solicitud de vacaciones actualizada correctamente.";
     }
 
-    const vacation = await VacationRequest.findByIdAndUpdate(vacationId, updatePayload, {
+    const vacation = await VacationRequest.findOneAndUpdate({
+      _id: vacationId,
+      status: "pending",
+    }, updatePayload, {
       new: true,
       runValidators: true,
     });
+
+    if (!vacation) {
+      return NextResponse.json(
+        { error: "La solicitud ya fue resuelta y solo se puede eliminar." },
+        { status: 409 },
+      );
+    }
+
     const serializedVacation = serializeVacationRecord(vacation);
 
     await createAuditLog({

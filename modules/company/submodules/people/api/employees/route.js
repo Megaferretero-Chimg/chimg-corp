@@ -92,6 +92,7 @@ export async function GET(request) {
     plannerScope
     && !hasAccessPermission(user, "planner.schedules.weekly.view")
     && !hasAccessPermission(user, "planner.schedules.view")
+    && !hasAccessPermission(user, "planner.timeOff.view")
   ) {
     return NextResponse.json({ error: "No tienes permiso para consultar empleados de planificación." }, { status: 403 });
   }
