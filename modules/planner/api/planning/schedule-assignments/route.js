@@ -967,7 +967,8 @@ export async function POST(request) {
 
       applyPlannerScopeToEmployeeQuery(employeeQuery, plannerScope);
 
-      const [employees, holidays, vacations, currentAssignments, workGroup] = await Promise.all([
+      const groupObjectId = new mongoose.Types.ObjectId(groupId);
+      const [employees, holidays, vacations, currentAssignments, approvedAssignmentsForWeek, workGroup] = await Promise.all([
         Employee.find(employeeQuery).lean(),
         Holiday.find({ dateKey: { $in: submittedDateKeys } }).lean(),
         VacationRequest.find({
@@ -977,19 +978,36 @@ export async function POST(request) {
           endDateKey: { $gte: submittedDateKeys[0] || "" },
         }).lean(),
         ScheduleAssignment.find({ monthKey: { $in: targetMonthKeys }, employee: { $in: employeeIds } }).lean(),
+        ScheduleAssignment.find({
+          monthKey: { $in: targetMonthKeys },
+          planningApprovals: {
+            $elemMatch: {
+              weekStartKey,
+              groupId: groupObjectId,
+              unlockedAt: null,
+            },
+          },
+        }).lean(),
         PlanningWorkGroup.findById(groupId).lean(),
       ]);
       assertEmployeesBelongToGroup(employeeIds, workGroup);
 
-      const hasApprovedWeek = currentAssignments.some((assignment) =>
-        (assignment.planningApprovals || []).some((approval) =>
-          approval.weekStartKey === weekStartKey
-          && normalizeGroupId(approval.groupId) === groupId
-          && isActivePlanningApproval(approval),
-        ),
-      );
+      const approvedEmployeeIds = new Set(approvedAssignmentsForWeek
+        .filter((assignment) =>
+          (assignment.planningApprovals || []).some((approval) =>
+            approval.weekStartKey === weekStartKey
+            && normalizeGroupId(approval.groupId) === groupId
+            && isActivePlanningApproval(approval),
+          ),
+        )
+        .map((assignment) => assignment.employee?.toString?.() || "")
+        .filter(Boolean));
+      const submittedEmployeeIds = new Set(employeeIds);
+      const approvedRosterMatches = approvedEmployeeIds.size === submittedEmployeeIds.size
+        && [...submittedEmployeeIds].every((employeeId) => approvedEmployeeIds.has(employeeId));
+      const hasApprovedWeek = approvedEmployeeIds.size > 0;
 
-      if (hasApprovedWeek) {
+      if (hasApprovedWeek && approvedRosterMatches) {
         throw new Error("La planificacion aprobada esta disponible unicamente en modo de consulta.");
       }
 
@@ -1091,9 +1109,6 @@ export async function POST(request) {
                     $each: [historyEntry],
                   },
                 },
-                $pull: {
-                  planningApprovals: { weekStartKey, groupId, unlockedAt: null },
-                },
               },
               upsert: true,
             },
@@ -1103,6 +1118,29 @@ export async function POST(request) {
 
       if (operations.length) {
         await ScheduleAssignment.bulkWrite(operations);
+      }
+
+      if (hasApprovedWeek) {
+        const unlockedAt = new Date();
+
+        await ScheduleAssignment.updateMany(
+          { _id: { $in: approvedAssignmentsForWeek.map((assignment) => assignment._id) } },
+          {
+            $set: {
+              "planningApprovals.$[approval].unlockedAt": unlockedAt,
+              "planningApprovals.$[approval].unlockedBy": savedBy,
+              "planningApprovals.$[approval].unlockedByUser": savedByUser,
+              "planningApprovals.$[approval].unlockReason": "Integrantes del grupo de trabajo actualizados.",
+            },
+          },
+          {
+            arrayFilters: [{
+              "approval.weekStartKey": weekStartKey,
+              "approval.groupId": groupObjectId,
+              "approval.unlockedAt": null,
+            }],
+          },
+        );
       }
 
       const assignmentQuery = { monthKey: { $in: targetMonthKeys }, employee: { $in: employeeIds } };

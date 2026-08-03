@@ -755,11 +755,19 @@ function buildVacationDateKeysByEmployee(vacations = []) {
 
 function applyVacationDay(day, vacationDateKeys = new Set()) {
   if (!vacationDateKeys.has(day.dateKey)) return day;
-  if (day.dayType === "off_day") return day;
+  if (["employment_pending", "employment_ended"].includes(day.source)) return day;
+
+  const scheduledRegularMinutes = day.dayType === "workday"
+    ? Math.min(REGULAR_DAY_MINUTES, resolveScheduledNetMinutes(day))
+    : 0;
+  const vacationPlannedRegularMinutes = isWeekendDateKey(day.dateKey)
+    ? 0
+    : scheduledRegularMinutes || REGULAR_DAY_MINUTES;
 
   return {
     ...day,
     dayType: "vacation",
+    vacationPlannedRegularMinutes,
     tags: [...new Set([...(day.tags || []), "Vacaciones"])],
     source: "vacation",
   };
@@ -1048,7 +1056,7 @@ function buildOperationalExceptionDecisionMap(exceptions = []) {
     }
 
     const scope = exception.scope || "full_day";
-    if (scope === "partial_day" || scope === "other") return;
+    if (scope === "partial_day" || scope === "exit_return" || scope === "other") return;
 
     const startKey = exception.dateKey;
     const endKey = exception.endDateKey || startKey;
@@ -1154,11 +1162,16 @@ function buildJustifiedWorkIntervalMap(exceptions = []) {
     if (!isResolvedOperationalException(exception)) return;
 
     const effect = resolveOperationalExceptionEffect(exception);
+    const hasPermissionPunches = exception.type === "permission"
+      && exception.scope === "exit_return"
+      && Array.isArray(exception.permissionPunches)
+      && exception.permissionPunches.length === 2;
     const attendanceMode = exception.attendanceMode || "";
     const shouldUseAuthorizedExternalWork = effect === "external_work" && attendanceMode === "use_authorized_schedule";
     const shouldUseApprovedInterval = exception.resolution === "approved_work_time" && exception.countsAsWorkedTime !== false;
 
     if (!shouldUseAuthorizedExternalWork && !shouldUseApprovedInterval) return;
+    if (hasPermissionPunches) return;
     if (effect === "planning_change" || effect === "manual_punch" || effect === "alert_review") return;
 
     const employeeId = toId(exception.employee);
@@ -1207,7 +1220,9 @@ function buildDiscountedWorkIntervalMap(exceptions = []) {
 
     const employeeId = toId(exception.employee);
     const usesPlannedEndTime = isDeparturePermission(exception);
-    const minutes = justifiedIntervalMinutes(exception);
+    const minutes = exception.type === "permission" && exception.scope === "exit_return"
+      ? Math.max(0, Number(exception.discountMinutes) || justifiedIntervalMinutes(exception))
+      : justifiedIntervalMinutes(exception);
 
     if (!employeeId || !exception.dateKey || (!minutes && !usesPlannedEndTime)) return;
 
@@ -1234,6 +1249,63 @@ function buildDiscountedWorkIntervalMap(exceptions = []) {
   });
 
   return intervalsByKey;
+}
+
+function buildPunchPermissionMap(exceptions = []) {
+  const permissionsByKey = new Map();
+
+  exceptions.forEach((exception) => {
+    if (!isResolvedOperationalException(exception)) return;
+    if (exception.type !== "permission" || exception.scope !== "exit_return") return;
+
+    const permissionPunchIds = Array.isArray(exception.permissionPunches)
+      ? exception.permissionPunches.map(toId).filter(Boolean)
+      : [];
+    const employeeId = toId(exception.employee);
+
+    if (!employeeId || !exception.dateKey || permissionPunchIds.length !== 2) return;
+
+    const key = `${employeeId}|${exception.dateKey}`;
+    const current = permissionsByKey.get(key) || {
+      punchIds: new Set(),
+      permissions: [],
+    };
+
+    permissionPunchIds.forEach((id) => current.punchIds.add(id));
+    current.permissions.push({
+      id: exception._id?.toString?.() || "",
+      punchIds: permissionPunchIds,
+      punchTimes: Array.isArray(exception.permissionPunchTimes) ? exception.permissionPunchTimes : [],
+      startTime: exception.startTime || "",
+      endTime: exception.endTime || "",
+      discountMinutes: Math.max(0, Number(exception.discountMinutes) || 0),
+      hasDiscount: exception.payMode === "discount" || exception.resolution === "discount_day",
+      notes: exception.resolutionNotes || exception.notes || "",
+    });
+    permissionsByKey.set(key, current);
+  });
+
+  return permissionsByKey;
+}
+
+function applyPunchPermissions(day, permissionContext) {
+  if (!permissionContext?.permissions?.length) return day;
+
+  const hasDiscount = permissionContext.permissions.some((permission) => permission.hasDiscount);
+  const tags = (day.tags || []).filter((tag) => tag !== "Picadas de más");
+  const statusLabel = hasDiscount ? "Permiso con descuento" : "Permiso sin descuento";
+
+  return {
+    ...day,
+    tags: [...new Set([...tags, statusLabel])],
+    hasIssue: tags.some(isAttendanceIssueTag),
+    punchPermissions: permissionContext.permissions,
+    permissionPunchIds: [...permissionContext.punchIds],
+    permissionDiscountMinutes: permissionContext.permissions.reduce(
+      (total, permission) => total + Math.max(0, Number(permission.discountMinutes) || 0),
+      0,
+    ),
+  };
 }
 
 function buildExceptionPlannedScheduleMap(exceptions = []) {
@@ -1475,8 +1547,11 @@ function weeklyRegularDayLimit(weekDays = []) {
   const weekdayHolidayCount = weekDays.filter((day) =>
     day.isHoliday && !isWeekendDateKey(day.dateKey)
   ).length;
+  const weekdayVacationCount = weekDays.filter((day) =>
+    day.dayType === "vacation" && !isWeekendDateKey(day.dateKey)
+  ).length;
 
-  return Math.max(0, 5 - weekdayHolidayCount);
+  return Math.max(0, 5 - weekdayHolidayCount - weekdayVacationCount);
 }
 
 function applyWeeklyExtraDayTypes(days = []) {
@@ -2651,13 +2726,22 @@ function applyMonthlyHourTarget(days) {
   });
 }
 
-function compareDay(day, punches, employee = {}, scheduleRules = {}) {
-  const activeSortedPunches = dedupePunchesByMinute(punches.filter((punch) => punch.isIgnored !== true));
-  const ignoredSortedPunches = dedupePunchesByMinute(punches.filter((punch) => punch.isIgnored === true));
-  const allSortedPunches = [...activeSortedPunches, ...ignoredSortedPunches]
+function compareDay(day, punches, employee = {}, scheduleRules = {}, permissionContext = null) {
+  const permissionPunchIds = permissionContext?.punchIds || new Set();
+  const activeSortedPunches = dedupePunchesByMinute(punches.filter((punch) =>
+    punch.isIgnored !== true && !permissionPunchIds.has(toId(punch)),
+  ));
+  const selectedPermissionPunches = dedupePunchesByMinute(punches.filter((punch) =>
+    permissionPunchIds.has(toId(punch)),
+  ));
+  const ignoredSortedPunches = dedupePunchesByMinute(punches.filter((punch) =>
+    punch.isIgnored === true && !permissionPunchIds.has(toId(punch)),
+  ));
+  const allSortedPunches = [...activeSortedPunches, ...selectedPermissionPunches, ...ignoredSortedPunches]
     .sort((left, right) => left.punchedAt - right.punchedAt);
   const sortedPunches = activeSortedPunches.sort((left, right) => left.punchedAt - right.punchedAt);
   const punchCount = sortedPunches.length;
+  const recordedPunchCount = activeSortedPunches.length + selectedPermissionPunches.length;
   const isWorkingDay = isPlannedWorkDay(day);
   const hasAssignedSchedule = hasAssignedScheduleDay(day);
   const isExtraordinaryDay = isExtraordinaryAttendanceDay(day);
@@ -2725,7 +2809,7 @@ function compareDay(day, punches, employee = {}, scheduleRules = {}) {
   actualLunchMinutes = resolveActualLunchMinutes(sortedPunches);
 
   if (firstPunch && lastPunch && !hasInsufficientTwoPunchSpan) {
-    const countedStart = !isExtraordinaryDay && scheduleStart && firstPunch.punchedAt < scheduleStart
+    const countedStart = scheduleStart && firstPunch.punchedAt < scheduleStart
       ? scheduleStart
       : firstPunch.punchedAt;
     const grossMinutes = lastPunch.punchedAt > countedStart
@@ -2936,6 +3020,7 @@ function compareDay(day, punches, employee = {}, scheduleRules = {}) {
     scheduledWorkedMinutes: plannedMinutes.scheduledWorkedMinutes,
     plannedRegularMinutes: plannedMinutes.plannedRegularMinutes,
     plannedSupplementaryMinutes: plannedMinutes.plannedSupplementaryMinutes,
+    vacationPlannedRegularMinutes: Math.max(0, Number(day.vacationPlannedRegularMinutes) || 0),
     plannedExtraordinaryMinutes,
     plannedExtraordinaryLabel: plannedExtraordinaryMinutes ? minutesLabel(plannedExtraordinaryMinutes) : "--",
     plannedDayType: day.dayType || "off_day",
@@ -2950,9 +3035,11 @@ function compareDay(day, punches, employee = {}, scheduleRules = {}) {
     plannedSupplementaryLabel: plannedMinutes.plannedSupplementaryMinutes ? minutesLabel(plannedMinutes.plannedSupplementaryMinutes) : "--",
     expectedPunches,
     punchCount,
+    recordedPunchCount,
     punches: allSortedPunches.map((punch) => {
       const time = formatEcuadorTime(punch.punchedAt);
-      const isIgnored = punch.isIgnored === true;
+      const isPermissionPunch = permissionPunchIds.has(toId(punch));
+      const isIgnored = punch.isIgnored === true && !isPermissionPunch;
 
       return {
         id: punch._id.toString(),
@@ -2960,6 +3047,8 @@ function compareDay(day, punches, employee = {}, scheduleRules = {}) {
         originalTime: time,
         source: punch.source || "upload",
         isIgnored,
+        isPermissionPunch,
+        restoredByPermission: isPermissionPunch && punch.isIgnored === true,
         ignoredAt: punch.ignoredAt || null,
         ignoredBy: punch.ignoredBy || "",
         ignoredReason: punch.ignoredReason || "",
@@ -3003,6 +3092,7 @@ function emptyEmployeeSummary() {
     extraDays: 0,
     extraPunchDays: 0,
     vacationDays: 0,
+    vacationPlannedRegularMinutes: 0,
     unplannedWorkDays: 0,
     plannedDaysWithPunches: 0,
     plannedRegularMinutes: 0,
@@ -3297,6 +3387,7 @@ export async function GET(request) {
     const operationalDecisionsByEmployeeDate = buildOperationalExceptionDecisionMap(operationalExceptions);
     const justifiedWorkIntervalsByEmployeeDate = buildJustifiedWorkIntervalMap(operationalExceptions);
     const discountedWorkIntervalsByEmployeeDate = buildDiscountedWorkIntervalMap(operationalExceptions);
+    const punchPermissionsByEmployeeDate = buildPunchPermissionMap(operationalExceptions);
     const exceptionPlannedSchedulesByEmployeeDate = buildExceptionPlannedScheduleMap(operationalExceptions);
     const attendanceExecutionExceptionsByEmployeeDate = buildAttendanceExecutionExceptionMap(operationalExceptions);
     const authorizedExternalDatesByEmployee = buildAuthorizedExternalWorkDateMap(operationalExceptions);
@@ -3356,15 +3447,27 @@ export async function GET(request) {
       const comparableDays = applyWeeklyExtraDayTypes(
         baseDaysWithExternalFallback.map((day) => applyLunchPolicyByDay(day)),
       );
-      const comparedDays = comparableDays.map((day) =>
-        applyDiscountedWorkIntervals(
-          applyJustifiedWorkIntervals(
-            compareDay(day, punchesByEmployeeDate.get(`${employeeKey}|${day.dateKey}`) || [], employee, scheduleRules),
-            justifiedWorkIntervalsByEmployeeDate.get(`${employeeKey}|${day.dateKey}`) || [],
+      const comparedDays = comparableDays.map((day) => {
+        const employeeDateKey = `${employeeKey}|${day.dateKey}`;
+        const permissionContext = punchPermissionsByEmployeeDate.get(employeeDateKey);
+
+        return applyPunchPermissions(
+          applyDiscountedWorkIntervals(
+            applyJustifiedWorkIntervals(
+              compareDay(
+                day,
+                punchesByEmployeeDate.get(employeeDateKey) || [],
+                employee,
+                scheduleRules,
+                permissionContext,
+              ),
+              justifiedWorkIntervalsByEmployeeDate.get(employeeDateKey) || [],
+            ),
+            discountedWorkIntervalsByEmployeeDate.get(employeeDateKey) || [],
           ),
-          discountedWorkIntervalsByEmployeeDate.get(`${employeeKey}|${day.dateKey}`) || [],
-        ),
-      );
+          permissionContext,
+        );
+      });
       const attendanceClassifiedDays = applyWeeklyExtraByAttendance(comparedDays);
       const visibleDays = attendanceClassifiedDays.filter((day) => monthKeyFromDateKey(day.dateKey) === monthKey);
       const classifiedDays = applyMonthlyHourTarget(visibleDays);
@@ -3420,6 +3523,10 @@ export async function GET(request) {
       const summary = days.reduce((totals, day) => {
         if (day.dayType === "vacation") {
           totals.vacationDays += 1;
+          totals.vacationPlannedRegularMinutes += Math.max(
+            0,
+            Number(day.vacationPlannedRegularMinutes) || 0,
+          );
         }
 
         if (isPlannedPaidDay(day)) {
@@ -3467,9 +3574,16 @@ export async function GET(request) {
         totals.discountedWorkMinutes += day.discountedWorkMinutes || 0;
         return totals;
       }, emptyEmployeeSummary());
+      const effectiveBaseLaborDays = Math.max(
+        0,
+        baseLaborDays - (summary.vacationPlannedRegularMinutes / REGULAR_DAY_MINUTES),
+      );
+      const regularTargetMinutes = Math.max(
+        0,
+        (baseLaborDays * REGULAR_DAY_MINUTES) - summary.vacationPlannedRegularMinutes,
+      );
+      summary.plannedRegularMinutes = Math.min(summary.plannedRegularMinutes, regularTargetMinutes);
       summary.regularWorkedMinutes = Math.min(summary.regularWorkedMinutes, summary.plannedRegularMinutes);
-      const effectiveBaseLaborDays = Math.max(0, baseLaborDays - summary.vacationDays);
-      const regularTargetMinutes = effectiveBaseLaborDays * REGULAR_DAY_MINUTES;
       const salary = Number(employee.salary) || 0;
       const hourlyDivisor = MONTHLY_HOURLY_DIVISOR;
       const hourlyRate = calculatePayrollHourlyRate(salary, hourlyDivisor);
@@ -3616,6 +3730,7 @@ export async function GET(request) {
         totals.earlyLeaveMinutes += row.summary.earlyLeaveMinutes;
         totals.extraDays += row.summary.extraDays;
         totals.vacationDays += row.summary.vacationDays || 0;
+        totals.vacationPlannedRegularMinutes += row.summary.vacationPlannedRegularMinutes || 0;
         totals.baseLaborDays += row.summary.baseLaborDays || 0;
         totals.effectiveBaseLaborDays += row.summary.effectiveBaseLaborDays || 0;
         totals.regularTargetMinutes += row.summary.regularTargetMinutes || 0;
@@ -3653,6 +3768,7 @@ export async function GET(request) {
         earlyLeaveMinutes: 0,
         extraDays: 0,
         vacationDays: 0,
+        vacationPlannedRegularMinutes: 0,
         baseLaborDays: 0,
         effectiveBaseLaborDays: 0,
         regularTargetMinutes: 0,

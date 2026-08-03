@@ -1,7 +1,7 @@
 import { createAuditLog, resolveAuditActor } from "@/lib/audit";
 import { buildPunchMinuteRange } from "@/modules/planner/lib/attendance/punchIdentity";
 import { parsePunchDateTime } from "@/modules/planner/lib/attendance/punches";
-import { formatEcuadorDateTime } from "@/lib/datetime/ecuador";
+import { formatEcuadorDateKey, formatEcuadorDateTime, formatEcuadorTime } from "@/lib/datetime/ecuador";
 import { AttendancePunch } from "@/modules/planner/models";
 import { OperationalException } from "@/modules/planner/models";
 
@@ -27,6 +27,73 @@ function resolveManualPunchIds(exception) {
   const legacyPunchId = exception.manualPunch?.toString?.() || String(exception.manualPunch || "");
 
   return legacyPunchId ? [legacyPunchId] : [];
+}
+
+export async function resolvePermissionPunchSelection(body = {}, employeeId, excludedExceptionId = "") {
+  const type = String(body?.type || "").trim();
+  const scope = String(body?.scope || "").trim();
+
+  if (type !== "permission" || scope !== "exit_return") {
+    return body;
+  }
+
+  const permissionPunchIds = [...new Set(
+    (Array.isArray(body?.permissionPunchIds) ? body.permissionPunchIds : [])
+      .map((id) => String(id || "").trim())
+      .filter(Boolean),
+  )];
+
+  if (permissionPunchIds.length !== 2) {
+    throw new Error("Selecciona exactamente dos picadas para registrar la salida y el retorno del permiso.");
+  }
+
+  const punches = await AttendancePunch.find({
+    _id: { $in: permissionPunchIds },
+    employee: employeeId,
+  }).sort({ punchedAt: 1 }).lean();
+
+  if (punches.length !== 2) {
+    throw new Error("Una de las picadas seleccionadas no pertenece al empleado.");
+  }
+
+  const existingPermission = await OperationalException.findOne({
+    employee: employeeId,
+    status: { $ne: "void" },
+    permissionPunches: { $in: permissionPunchIds },
+    ...(excludedExceptionId ? { _id: { $ne: excludedExceptionId } } : {}),
+  }).lean();
+
+  if (existingPermission) {
+    throw new Error("Una de las picadas seleccionadas ya pertenece a otro permiso activo.");
+  }
+
+  const dateKey = String(body?.dateKey || "").trim();
+
+  if (punches.some((punch) => formatEcuadorDateKey(punch.punchedAt) !== dateKey)) {
+    throw new Error("Las picadas seleccionadas deben pertenecer al dia del permiso.");
+  }
+
+  const permissionPunchTimes = punches.map((punch) => formatEcuadorTime(punch.punchedAt));
+  const startTime = permissionPunchTimes[0];
+  const endTime = permissionPunchTimes[1];
+  const [startHours, startMinutes] = startTime.split(":").map(Number);
+  const [endHours, endMinutes] = endTime.split(":").map(Number);
+  const intervalMinutes = Math.max(0, ((endHours * 60) + endMinutes) - ((startHours * 60) + startMinutes));
+
+  if (!intervalMinutes) {
+    throw new Error("La picada de retorno debe ser posterior a la picada de salida.");
+  }
+
+  return {
+    ...body,
+    permissionPunchIds: punches.map((punch) => punch._id.toString()),
+    permissionPunchTimes,
+    startTime,
+    endTime,
+    discountMinutes: body?.payMode === "discount"
+      ? Math.max(1, Math.round(Number(body?.discountMinutes) || intervalMinutes))
+      : 0,
+  };
 }
 
 function buildManualPunchDateTimes(exception) {

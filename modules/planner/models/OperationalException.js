@@ -162,6 +162,20 @@ const operationalExceptionSchema = new Schema(
       type: [String],
       default: undefined,
     },
+    permissionPunches: {
+      type: [Schema.Types.ObjectId],
+      ref: "AttendancePunch",
+      default: undefined,
+    },
+    permissionPunchTimes: {
+      type: [String],
+      default: undefined,
+    },
+    discountMinutes: {
+      type: Number,
+      min: 0,
+      default: 0,
+    },
     destination: {
       type: String,
       trim: true,

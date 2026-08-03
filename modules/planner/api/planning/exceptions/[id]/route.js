@@ -16,7 +16,11 @@ import {
   normalizeExceptionPayload,
   serializeOperationalException,
 } from "@/modules/planner/lib/planning/exceptions";
-import { deleteExceptionManualPunch, syncExceptionManualPunch } from "@/modules/planner/lib/planning/exceptionPunches";
+import {
+  deleteExceptionManualPunch,
+  resolvePermissionPunchSelection,
+  syncExceptionManualPunch,
+} from "@/modules/planner/lib/planning/exceptionPunches";
 import {
   findLaterAttendanceDecisionForException,
   findLaterExceptionForException,
@@ -71,8 +75,23 @@ export async function PATCH(request, context) {
 
     const employee = await Employee.findById(employeeId).lean();
     const registeredBy = currentException.registeredBy || user?.employeeName || user?.username || user?.id || "SISTEMA";
+    const bodyWithPermissionPunches = {
+      ...body,
+      permissionPunchIds: Array.isArray(body?.permissionPunchIds)
+        ? body.permissionPunchIds
+        : (currentException.permissionPunches || []).map(String),
+      permissionPunchTimes: Array.isArray(body?.permissionPunchTimes)
+        ? body.permissionPunchTimes
+        : currentException.permissionPunchTimes || [],
+      discountMinutes: body?.discountMinutes ?? currentException.discountMinutes ?? 0,
+    };
+    const normalizedBodyWithPermissionPunches = await resolvePermissionPunchSelection(
+      applyExceptionApprovalActor({ ...bodyWithPermissionPunches, registeredBy }, user),
+      employee._id,
+      exceptionId,
+    );
     const payload = normalizeExceptionPayload(
-      applyExceptionApprovalActor({ ...body, registeredBy }, user),
+      normalizedBodyWithPermissionPunches,
       employee,
     );
 

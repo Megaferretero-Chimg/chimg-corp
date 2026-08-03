@@ -97,6 +97,11 @@ const INLINE_EXCEPTION_OPTIONS = [
     label: "Permiso",
     description: "Justifica ausencia o salida por horas.",
   },
+  {
+    value: "permission_punches",
+    label: "Permiso con picadas",
+    description: "Vincula una picada de salida y otra de retorno para que no se consideren marcaciones en exceso.",
+  },
 ];
 
 function fullScheduleLabel(day) {
@@ -412,6 +417,7 @@ function punchLabel(index, punchCount) {
 
 function punchDisplayLabel(punch, index, punchCount) {
   if (punch?.isIgnored) return "PIC";
+  if (punch?.isPermissionPunch) return "PERM";
   return punch?.adjustedFrom ? `${punchLabel(index, punchCount)} AJ` : punchLabel(index, punchCount);
 }
 
@@ -421,8 +427,9 @@ function activePunchesForDisplay(day) {
 
 function punchDisplayLabelForDay(day, punch) {
   if (punch?.isIgnored) return "PIC";
+  if (punch?.isPermissionPunch) return "PERM";
 
-  const activePunches = activePunchesForDisplay(day);
+  const activePunches = activePunchesForDisplay(day).filter((candidate) => !candidate.isPermissionPunch);
   const activeIndex = activePunches.findIndex((candidate) => candidate.id === punch?.id);
 
   return punchDisplayLabel(punch, Math.max(0, activeIndex), activePunches.length);
@@ -442,8 +449,9 @@ function expectedPunchesFromScheduleDraft(draft) {
 
 function createsExtraPunchLayer(day, draft) {
   const expectedPunches = expectedPunchesFromScheduleDraft(draft);
+  const structuralPunches = activePunchesForDisplay(day).filter((punch) => !punch.isPermissionPunch);
 
-  return expectedPunches > 0 && activePunchesForDisplay(day).length > expectedPunches;
+  return expectedPunches > 0 && structuralPunches.length > expectedPunches;
 }
 
 function dayHasPlannedLunch(day) {
@@ -483,7 +491,9 @@ function hasPendingEntryLate(day) {
   const entryLateMinutes = Number(day?.entryLateMinutes ?? day?.lateMinutes) || 0;
   const graceMinutes = Number(day?.graceMinutes) || 0;
 
-  return !hasSavedDayDecision(day) && (!isExtraordinaryDay(day) || isScheduledExtraDay(day)) && entryLateMinutes > graceMinutes;
+  return day?.authorization?.lateResolved !== true &&
+    (!isExtraordinaryDay(day) || isScheduledExtraDay(day)) &&
+    entryLateMinutes > graceMinutes;
 }
 
 function hasPendingLunchOverage(day) {
@@ -493,7 +503,9 @@ function hasPendingLunchOverage(day) {
   const actualLunchMinutes = Number(day?.actualLunchMinutes) || 0;
   const graceMinutes = Number(day?.graceMinutes) || 0;
 
-  return !hasSavedDayDecision(day) && plannedLunchMinutes > 0 && actualLunchMinutes - plannedLunchMinutes > graceMinutes;
+  return day?.authorization?.lateResolved !== true &&
+    plannedLunchMinutes > 0 &&
+    actualLunchMinutes - plannedLunchMinutes > graceMinutes;
 }
 
 function punchChipClass(day, index, punch) {
@@ -846,19 +858,6 @@ function hasLateDayAlert(day) {
   if (isIgnorableRestDay(day)) return false;
   if (hasOperationalError(day)) return false;
   if (day?.authorization?.lateResolved === true) return false;
-  if (hasSavedDayDecision(day)) {
-    const note = String(day?.authorization?.note || "");
-    const isAdditionalOnlyDecision = note.startsWith("Tiempo adicional");
-    const preservedLateMinutes = Math.max(0, Number(day?.authorization?.adjustedLateMinutes) || 0);
-    const preservedEarlyLeaveMinutes = Math.max(0, Number(day?.authorization?.adjustedEarlyLeaveMinutes) || 0);
-
-    if (!isAdditionalOnlyDecision) return false;
-
-    return (
-      detectedLateIssueMinutes(day) > preservedLateMinutes ||
-      detectedEarlyLeaveIssueMinutes(day) > preservedEarlyLeaveMinutes
-    );
-  }
 
   return displayLateMinutes(day) > 0 || detectedEarlyLeaveIssueMinutes(day) > 0;
 }
@@ -1157,11 +1156,6 @@ function inlineExceptionOptionsForDay(day) {
 
 function hasUnapprovedExtraTime(day) {
   if (day?.authorization?.additionalResolved === true) return false;
-
-  const savedDecision = day?.authorization?.decision || "";
-  const onlyResolvedAttendanceIssue = ["reviewed", "resolve_late", "justify_late"].includes(savedDecision);
-
-  if (hasSavedDayDecision(day) && !onlyResolvedAttendanceIssue) return false;
 
   const hasPlannedTime = (
     (Number(day?.plannedRegularMinutes) || 0) > 0 ||
@@ -1543,6 +1537,9 @@ function buildInlineExceptionDraft(row, day, nextType = "", templates = []) {
     manualPunchTimes: Array.from({ length: missingPunchCount }, () => ""),
     allowSupplementaryTime: type === "outside_work",
     permissionPayTreatment: "without_discount",
+    permissionPunchIds: [],
+    permissionPunchTimes: [],
+    discountMinutes: 0,
     notes: exceptionNoteForDay(day),
   };
 }
@@ -1630,6 +1627,26 @@ function inlineExceptionPayload(employeeId, draft) {
       endTime: draft.endTime,
       countsAsWorkedTime: true,
       allowSupplementaryTime: Boolean(draft.allowSupplementaryTime),
+    };
+  }
+
+  if (draft.type === "permission_punches") {
+    const permissionHasDiscount = draft.permissionPayTreatment === "with_discount";
+
+    return {
+      ...common,
+      type: "permission",
+      resolution: permissionHasDiscount ? "discount_day" : "approved_work_time",
+      scope: "exit_return",
+      effect: permissionHasDiscount ? "unpaid_absence" : "paid_partial_leave",
+      attendanceMode: "use_punches",
+      payMode: permissionHasDiscount ? "discount" : "regular_only",
+      startTime: draft.startTime,
+      endTime: draft.endTime,
+      permissionPunchIds: draft.permissionPunchIds,
+      permissionPunchTimes: draft.permissionPunchTimes,
+      discountMinutes: permissionHasDiscount ? Math.max(1, Number(draft.discountMinutes) || 0) : 0,
+      countsAsWorkedTime: !permissionHasDiscount,
     };
   }
 
@@ -2063,6 +2080,63 @@ export default function AttendanceComparisonDetail({ employeeId, initialFilters 
     setExceptionDraft((current) => current ? { ...current, [field]: value } : current);
   }
 
+  function togglePermissionPunch(punch) {
+    setExceptionDraft((current) => {
+      if (!current || current.type !== "permission_punches") return current;
+
+      const currentIds = current.permissionPunchIds || [];
+      const isSelected = currentIds.includes(punch.id);
+      const nextIds = isSelected
+        ? currentIds.filter((id) => id !== punch.id)
+        : currentIds.length < 2
+          ? [...currentIds, punch.id]
+          : currentIds;
+      const punchesById = new Map((selectedDay?.punches || []).map((item) => [item.id, item]));
+      const selectedPunches = nextIds
+        .map((id) => punchesById.get(id))
+        .filter(Boolean)
+        .sort((left, right) => String(left.time || "").localeCompare(String(right.time || "")));
+      const permissionPunchIds = selectedPunches.map((item) => item.id);
+      const permissionPunchTimes = selectedPunches.map((item) => item.time);
+      const startTime = permissionPunchTimes[0] || "";
+      const endTime = permissionPunchTimes[1] || "";
+      const startMinutes = scheduleTimeToMinutes(startTime);
+      const endMinutes = scheduleTimeToMinutes(endTime);
+      const intervalMinutes = startMinutes !== null && endMinutes !== null && endMinutes > startMinutes
+        ? endMinutes - startMinutes
+        : 0;
+
+      return {
+        ...current,
+        permissionPunchIds,
+        permissionPunchTimes,
+        startTime,
+        endTime,
+        discountMinutes: current.permissionPayTreatment === "with_discount" ? intervalMinutes : 0,
+      };
+    });
+  }
+
+  function updatePermissionPayTreatment(value) {
+    setExceptionDraft((current) => {
+      if (!current) return current;
+
+      const startMinutes = scheduleTimeToMinutes(current.startTime);
+      const endMinutes = scheduleTimeToMinutes(current.endTime);
+      const intervalMinutes = startMinutes !== null && endMinutes !== null && endMinutes > startMinutes
+        ? endMinutes - startMinutes
+        : 0;
+
+      return {
+        ...current,
+        permissionPayTreatment: value,
+        discountMinutes: value === "with_discount"
+          ? Math.max(1, Number(current.discountMinutes) || intervalMinutes)
+          : 0,
+      };
+    });
+  }
+
   function updateManualPunchTime(index, value) {
     setExceptionDraft((current) => {
       if (!current) return current;
@@ -2147,6 +2221,15 @@ export default function AttendanceComparisonDetail({ employeeId, initialFilters 
         uniqueManualTimes.size === manualPunchTimes.length &&
         manualPunchTimes.every((time) => !existingPunchTimes.has(time))
       );
+    }
+
+    if (draft.type === "permission_punches") {
+      return draft.permissionPunchIds?.length === 2
+        && Boolean(draft.startTime && draft.endTime)
+        && (
+          draft.permissionPayTreatment !== "with_discount"
+          || Number(draft.discountMinutes) > 0
+        );
     }
 
     if (["outside_work", "permission"].includes(draft.type)) {
@@ -3214,10 +3297,12 @@ export default function AttendanceComparisonDetail({ employeeId, initialFilters 
                     <button
                       key={punch.id}
                       type="button"
-                      className={`${styles.punchChipButton} ${punch.adjustedFrom ? styles.punchChipAdjusted : ""} ${punch.source === "manual" ? styles.punchChipManual : ""} ${punch.isIgnored ? styles.punchChipIgnored : ""}`}
+                      className={`${styles.punchChipButton} ${punch.adjustedFrom ? styles.punchChipAdjusted : ""} ${punch.source === "manual" ? styles.punchChipManual : ""} ${punch.isIgnored ? styles.punchChipIgnored : ""} ${punch.isPermissionPunch ? styles.punchChipPermission : ""}`}
                       onClick={() => openDeletePunch(selectedDay, punch)}
-                      disabled={selectedIsReviewed || punch.isIgnored || isSavingPunch || savingDay === selectedDay.dateKey}
-                      title={punch.isIgnored
+                      disabled={selectedIsReviewed || punch.isIgnored || punch.isPermissionPunch || isSavingPunch || savingDay === selectedDay.dateKey}
+                      title={punch.isPermissionPunch
+                        ? "Picada vinculada a un permiso de salida y retorno."
+                        : punch.isIgnored
                         ? `Picada anulada: ${punch.ignoredReason || "sin motivo"}`
                         : punch.source === "manual"
                           ? "Picada manual. Selecciona para anularla."
@@ -3232,6 +3317,9 @@ export default function AttendanceComparisonDetail({ employeeId, initialFilters 
                       <span className={styles.punchChipTime}>{punch.time}</span>
                       {punch.adjustedFrom ? (
                         <span className={styles.punchChipMeta}>Real {punch.adjustedFrom}</span>
+                      ) : null}
+                      {punch.isPermissionPunch ? (
+                        <span className={styles.punchChipMeta}>Permiso</span>
                       ) : null}
                       <span className={styles.punchDeleteOverlay} aria-hidden="true">
                         <Ban size={14} />
@@ -3865,15 +3953,67 @@ export default function AttendanceComparisonDetail({ employeeId, initialFilters 
                   </>
                 ) : null}
 
-                {exceptionDraft.type === "permission" ? (
+                {exceptionDraft.type === "permission_punches" ? (
+                  <fieldset className={styles.permissionPunchSelector}>
+                    <legend>Selecciona salida y retorno</legend>
+                    <p>Las picadas seleccionadas seguirán visibles, pero dejarán de contarse como excedentes.</p>
+                    <div>
+                      {(selectedDay?.punches || []).map((punch) => {
+                        const isSelected = exceptionDraft.permissionPunchIds?.includes(punch.id);
+                        const selectionIsFull = (exceptionDraft.permissionPunchIds || []).length >= 2;
+
+                        return (
+                          <button
+                            key={punch.id}
+                            type="button"
+                            className={isSelected ? styles.permissionPunchSelected : ""}
+                            disabled={!isSelected && selectionIsFull}
+                            onClick={() => togglePermissionPunch(punch)}
+                          >
+                            <span>{punch.time}</span>
+                            <small>{punch.isIgnored ? "Anulada" : "Picada registrada"}</small>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </fieldset>
+                ) : null}
+
+                {["permission", "permission_punches"].includes(exceptionDraft.type) ? (
                   <SelectInput
                     label="Tratamiento del permiso"
                     value={exceptionDraft.permissionPayTreatment}
-                    onChange={(event) => updateExceptionDraft("permissionPayTreatment", event.target.value)}
+                    onChange={(event) => updatePermissionPayTreatment(event.target.value)}
                   >
                     <option value="without_discount">Sin descuento de horas</option>
                     <option value="with_discount">Con descuento de horas</option>
                   </SelectInput>
+                ) : null}
+
+                {exceptionDraft.type === "permission_punches" && exceptionDraft.permissionPunchIds?.length === 2 ? (
+                  <div className={styles.permissionPunchSummary}>
+                    <div>
+                      <span>Salida seleccionada</span>
+                      <strong>{exceptionDraft.startTime}</strong>
+                    </div>
+                    <div>
+                      <span>Retorno seleccionado</span>
+                      <strong>{exceptionDraft.endTime}</strong>
+                    </div>
+                    {exceptionDraft.permissionPayTreatment === "with_discount" ? (
+                      <label>
+                        <span>Minutos a descontar</span>
+                        <input
+                          type="number"
+                          min="1"
+                          max="1440"
+                          step="1"
+                          value={exceptionDraft.discountMinutes || ""}
+                          onChange={(event) => updateExceptionDraft("discountMinutes", event.target.value)}
+                        />
+                      </label>
+                    ) : null}
+                  </div>
                 ) : null}
 
                 {["outside_work", "permission"].includes(exceptionDraft.type) ? (

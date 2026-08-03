@@ -17,7 +17,8 @@ import {
   getNextMonthKey,
   getPreviousMonthKey,
 } from "@/modules/planner/lib/planning/scheduleAssignments";
-import { PlanningWorkGroup, ScheduleAssignment } from "@/modules/planner/models";
+import { APPROVED_VACATION_STATUS_QUERY } from "@/modules/planner/lib/planning/vacations";
+import { PlanningWorkGroup, ScheduleAssignment, VacationRequest } from "@/modules/planner/models";
 
 const DAY_LABELS = ["Domingo", "Lunes", "Martes", "Miercoles", "Jueves", "Viernes", "Sabado"];
 
@@ -37,31 +38,6 @@ function getWeekDateKeys(weekStartKey) {
 
     return dateKeyFromDate(date);
   });
-}
-
-function cleanSheetName(value) {
-  const name = String(value || "Hoja")
-    .replace(/[:\\/?*[\]]/g, " ")
-    .replace(/\s+/g, " ")
-    .trim();
-
-  return name.slice(0, 31) || "Hoja";
-}
-
-function uniqueSheetName(workbook, baseName) {
-  const existing = new Set(workbook.SheetNames);
-  const cleanBase = cleanSheetName(baseName);
-
-  if (!existing.has(cleanBase)) return cleanBase;
-
-  for (let index = 2; index < 100; index += 1) {
-    const suffix = ` ${index}`;
-    const candidate = cleanSheetName(`${cleanBase.slice(0, 31 - suffix.length)}${suffix}`);
-
-    if (!existing.has(candidate)) return candidate;
-  }
-
-  return cleanSheetName(`${cleanBase.slice(0, 27)} ${Date.now().toString().slice(-3)}`);
 }
 
 function formatClockTime(value) {
@@ -192,39 +168,7 @@ function mergeApprovedAssignmentsByEmployee(assignments, employees, requestedMon
   });
 }
 
-function buildAreaGroups(assignments, areaCodeFilter) {
-  const groups = new Map();
-
-  assignments.forEach((assignment) => {
-    const areaCode = String(assignment.areaCode || "").trim();
-    const areaName = String(assignment.areaName || areaCode || "SIN AREA").trim();
-
-    if (areaCodeFilter && areaCode !== areaCodeFilter) return;
-
-    const key = areaCode || areaName;
-
-    if (!groups.has(key)) {
-      groups.set(key, {
-        areaCode,
-        areaName,
-        assignments: [],
-      });
-    }
-
-    groups.get(key).assignments.push(assignment);
-  });
-
-  return [...groups.values()]
-    .map((group) => ({
-      ...group,
-      assignments: group.assignments
-        .slice()
-        .sort((left, right) => String(left.employeeName || "").localeCompare(String(right.employeeName || ""), "es")),
-    }))
-    .sort((left, right) => String(left.areaName || "").localeCompare(String(right.areaName || ""), "es"));
-}
-
-function buildRowsForWeekArea({ weekStartKey, weekDateKeys, areaGroup }) {
+function buildRowsForWeek({ weekStartKey, weekDateKeys, assignments, vacationDateKeysByEmployee }) {
   const headerRow = [
     "Empleado",
     ...weekDateKeys.map((dateKey) => `${DAY_LABELS[getDayOfWeek(dateKey)]} ${dateKey.slice(8, 10)}`),
@@ -234,16 +178,24 @@ function buildRowsForWeekArea({ weekStartKey, weekDateKeys, areaGroup }) {
   const activeTotals = new Map(weekDateKeys.map((dateKey) => [dateKey, 0]));
   let totalWorkedDays = 0;
 
-  areaGroup.assignments.forEach((assignment) => {
+  assignments.forEach((assignment) => {
+    const employeeId = normalizeId(assignment.employee);
+    const vacationDateKeys = vacationDateKeysByEmployee.get(employeeId) || new Set();
     const daysByDate = new Map((assignment.generatedDays || []).map((day) => [day.dateKey, day]));
     const weekDays = weekDateKeys.map((dateKey) => daysByDate.get(dateKey) || null);
     const isApprovedWeek = (assignment.approvedWeekStartKeys || []).includes(weekStartKey);
-    const workedDays = weekDays.filter((day) =>
-      day && ["workday", "weekend_overtime"].includes(day.dayType),
+    const workedDays = weekDays.filter((day, index) =>
+      !vacationDateKeys.has(weekDateKeys[index])
+      && day
+      && ["workday", "weekend_overtime"].includes(day.dayType),
     ).length;
 
     weekDays.forEach((day, index) => {
-      if (day && ["workday", "weekend_overtime"].includes(day.dayType)) {
+      if (
+        !vacationDateKeys.has(weekDateKeys[index])
+        && day
+        && ["workday", "weekend_overtime"].includes(day.dayType)
+      ) {
         activeTotals.set(weekDateKeys[index], (activeTotals.get(weekDateKeys[index]) || 0) + 1);
       }
     });
@@ -251,7 +203,12 @@ function buildRowsForWeekArea({ weekStartKey, weekDateKeys, areaGroup }) {
 
     rows.push([
       assignment.employeeName || "",
-      ...weekDays.map((day) => isApprovedWeek ? formatDaySchedule(day) : "Descanso"),
+      ...weekDays.map((day, index) => {
+        if (!isApprovedWeek) return "Descanso";
+        if (vacationDateKeys.has(weekDateKeys[index])) return "Vacaciones";
+
+        return formatDaySchedule(day);
+      }),
       workedDays,
     ]);
   });
@@ -270,15 +227,15 @@ function applyWorksheetLayout(worksheet, weekDateKeys) {
   const lastColumnIndex = 1 + weekDateKeys.length;
 
   worksheet["!cols"] = [
-    { wch: 34 },
-    ...weekDateKeys.map(() => ({ wch: 18 })),
+    { wch: 42 },
+    ...weekDateKeys.map(() => ({ wch: 30 })),
     { wch: 16 },
   ];
   worksheet["!autofilter"] = { ref: `A1:${XLSX.utils.encode_col(lastColumnIndex)}1` };
   worksheet["!freeze"] = { xSplit: 1, ySplit: 1 };
 }
 
-async function buildScheduleWorkbook({ monthKey, branchCode, areaCode, roleCode, groupId, employeeIds = [], plannerScope }) {
+async function buildScheduleWorkbook({ monthKey, weekStartKey, branchCode, areaCode, roleCode, groupId, employeeIds = [], plannerScope }) {
   const monthKeys = [getPreviousMonthKey(monthKey), monthKey, getNextMonthKey(monthKey)];
   const query = { monthKey: { $in: monthKeys } };
   let workGroupMembersById = new Map();
@@ -348,11 +305,26 @@ async function buildScheduleWorkbook({ monthKey, branchCode, areaCode, roleCode,
     };
   });
   const weekOptions = getMonthWeekOptions(monthKey);
-  const mergedAssignments = mergeApprovedAssignmentsByEmployee(assignments, exportEmployees, monthKey, weekOptions, groupId);
-  const areaGroups = buildAreaGroups(mergedAssignments, areaCode);
+  const selectedWeek = weekStartKey
+    ? weekOptions.find((week) => week.weekStartKey === weekStartKey)
+    : weekOptions[0];
+
+  if (!selectedWeek) {
+    throw new Error("La semana seleccionada no pertenece al mes de planificación.");
+  }
+
+  const mergedAssignments = mergeApprovedAssignmentsByEmployee(
+    assignments,
+    exportEmployees,
+    monthKey,
+    [selectedWeek],
+    groupId,
+  )
+    .filter((assignment) => !areaCode || String(assignment.areaCode || "").trim() === areaCode)
+    .sort((left, right) => String(left.employeeName || "").localeCompare(String(right.employeeName || ""), "es"));
   const workbook = XLSX.utils.book_new();
 
-  if (!areaGroups.length) {
+  if (!mergedAssignments.length) {
     const emptySheet = XLSX.utils.aoa_to_sheet([
       ["Programacion semanal de horarios"],
       ["Mes", monthKey],
@@ -364,25 +336,39 @@ async function buildScheduleWorkbook({ monthKey, branchCode, areaCode, roleCode,
     XLSX.utils.book_append_sheet(workbook, emptySheet, "Sin datos");
   }
 
-  weekOptions.forEach((week) => {
-    const weekDateKeys = getWeekDateKeys(week.weekStartKey);
+  if (mergedAssignments.length) {
+    const weekDateKeys = getWeekDateKeys(selectedWeek.weekStartKey);
+    const mergedEmployeeIds = mergedAssignments.map((assignment) => assignment.employee).filter(Boolean);
+    const vacations = await VacationRequest.find({
+      employee: { $in: mergedEmployeeIds },
+      status: APPROVED_VACATION_STATUS_QUERY,
+      startDateKey: { $lte: weekDateKeys.at(-1) },
+      endDateKey: { $gte: weekDateKeys[0] },
+    }).select({ employee: 1, startDateKey: 1, endDateKey: 1 }).lean();
+    const vacationDateKeysByEmployee = new Map();
 
-    areaGroups.forEach((areaGroup) => {
-      const rows = buildRowsForWeekArea({
-        weekStartKey: week.weekStartKey,
-        weekDateKeys,
-        areaGroup,
+    vacations.forEach((vacation) => {
+      const employeeId = normalizeId(vacation.employee);
+      const dateKeys = vacationDateKeysByEmployee.get(employeeId) || new Set();
+
+      weekDateKeys.forEach((dateKey) => {
+        if (dateKey >= vacation.startDateKey && dateKey <= vacation.endDateKey) {
+          dateKeys.add(dateKey);
+        }
       });
-      const worksheet = XLSX.utils.aoa_to_sheet(rows);
-
-      applyWorksheetLayout(worksheet, weekDateKeys);
-      XLSX.utils.book_append_sheet(
-        workbook,
-        worksheet,
-        uniqueSheetName(workbook, `${week.label} ${areaGroup.areaName || areaGroup.areaCode}`),
-      );
+      vacationDateKeysByEmployee.set(employeeId, dateKeys);
     });
-  });
+    const rows = buildRowsForWeek({
+      weekStartKey: selectedWeek.weekStartKey,
+      weekDateKeys,
+      assignments: mergedAssignments,
+      vacationDateKeysByEmployee,
+    });
+    const worksheet = XLSX.utils.aoa_to_sheet(rows);
+
+    applyWorksheetLayout(worksheet, weekDateKeys);
+    XLSX.utils.book_append_sheet(workbook, worksheet, "Horario semanal");
+  }
 
   return XLSX.write(workbook, { type: "buffer", bookType: "xlsx" });
 }
@@ -402,6 +388,7 @@ export async function GET(request) {
 
     const { searchParams } = new URL(request.url);
     const { monthKey } = parseMonthKey(searchParams.get("month"));
+    const weekStartKey = String(searchParams.get("weekStartKey") || "").trim();
     const branchCode = String(searchParams.get("branchCode") || "").trim().toUpperCase();
     const areaCode = String(searchParams.get("areaCode") || "").trim();
     const roleCode = String(searchParams.get("roleCode") || "").trim();
@@ -415,12 +402,21 @@ export async function GET(request) {
       assertWorkGroupInPlannerScope(groupId, plannerScope);
     }
 
-    const excel = await buildScheduleWorkbook({ monthKey, branchCode, areaCode, roleCode, groupId, employeeIds, plannerScope });
+    const excel = await buildScheduleWorkbook({
+      monthKey,
+      weekStartKey,
+      branchCode,
+      areaCode,
+      roleCode,
+      groupId,
+      employeeIds,
+      plannerScope,
+    });
 
     return new Response(excel, {
       headers: {
         "Content-Type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        "Content-Disposition": `attachment; filename="horarios-semanales-${monthKey}.xlsx"`,
+        "Content-Disposition": `attachment; filename="horario-semanal-${weekStartKey || monthKey}.xlsx"`,
         "Cache-Control": "no-store",
       },
     });

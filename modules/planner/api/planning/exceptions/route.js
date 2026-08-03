@@ -24,7 +24,10 @@ import {
   normalizeExceptionPayload,
   serializeOperationalException,
 } from "@/modules/planner/lib/planning/exceptions";
-import { syncExceptionManualPunch } from "@/modules/planner/lib/planning/exceptionPunches";
+import {
+  resolvePermissionPunchSelection,
+  syncExceptionManualPunch,
+} from "@/modules/planner/lib/planning/exceptionPunches";
 import { Employee } from "@/modules/company/models";
 import { OperationalException } from "@/modules/planner/models";
 
@@ -161,8 +164,12 @@ export async function POST(request) {
     const normalizedBody = shouldAutoResolve
       ? applyExceptionApprovalActor(sourceBody, user)
       : forcePendingExceptionPayload(sourceBody);
+    const normalizedBodyWithPermissionPunches = await resolvePermissionPunchSelection(
+      normalizedBody,
+      employee._id,
+    );
     const payload = {
-      ...normalizeExceptionPayload({ ...normalizedBody, registeredBy }, employee),
+      ...normalizeExceptionPayload({ ...normalizedBodyWithPermissionPunches, registeredBy }, employee),
       createdByUser: String(user?.id || user?.username || "").trim(),
       requestKey,
     };

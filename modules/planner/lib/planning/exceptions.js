@@ -332,6 +332,21 @@ export function normalizeExceptionPayload(body, employee) {
     ),
   ];
   const manualPunchTime = manualPunchTimes[0] || "";
+  const permissionPunchIds = [
+    ...new Set(
+      (Array.isArray(body?.permissionPunchIds) ? body.permissionPunchIds : [])
+        .map((id) => String(id || "").trim())
+        .filter(Boolean),
+    ),
+  ];
+  const permissionPunchTimes = [
+    ...new Set(
+      (Array.isArray(body?.permissionPunchTimes) ? body.permissionPunchTimes : [])
+        .map((time) => String(time || "").trim())
+        .filter(Boolean),
+    ),
+  ];
+  const discountMinutes = Math.max(0, Math.round(Number(body?.discountMinutes) || 0));
   const destination = String(body?.destination || "").trim().toUpperCase();
   const countsAsWorkedTime = Boolean(body?.countsAsWorkedTime);
   const allowSupplementaryTime = Boolean(body?.allowSupplementaryTime);
@@ -399,10 +414,27 @@ export function normalizeExceptionPayload(body, employee) {
   }
 
   const isDeparturePermission = type === "permission" && scope === "partial_day";
+  const isPunchPermission = type === "permission" && scope === "exit_return";
   const isOvertimeAuthorization = type === "overtime_authorization";
 
   if (isDeparturePermission && !startTime) {
     throw new Error("Para el permiso de salida debes indicar la hora de salida.");
+  }
+
+  if (isPunchPermission && permissionPunchIds.length !== 2) {
+    throw new Error("Para el permiso con picadas debes seleccionar exactamente una salida y un retorno.");
+  }
+
+  if (isPunchPermission && (!startTime || !endTime || endTime <= startTime)) {
+    throw new Error("Las picadas del permiso deben corresponder a una salida y un retorno validos.");
+  }
+
+  if (isPunchPermission && payMode === "discount" && discountMinutes <= 0) {
+    throw new Error("Debes indicar los minutos que se descontaran por el permiso.");
+  }
+
+  if (isPunchPermission && discountMinutes > 1440) {
+    throw new Error("El descuento del permiso no puede superar 24 horas.");
   }
 
   if (isOvertimeAuthorization && (!startTime || !endTime)) {
@@ -494,6 +526,9 @@ export function normalizeExceptionPayload(body, employee) {
     applicableWeekdays,
     manualPunchTime,
     manualPunchTimes,
+    permissionPunches: permissionPunchIds,
+    permissionPunchTimes,
+    discountMinutes: payMode === "discount" ? discountMinutes : 0,
     destination,
     countsAsWorkedTime,
     allowSupplementaryTime,
@@ -559,6 +594,13 @@ export function serializeOperationalException(exception) {
       : exception.manualPunchTime
         ? [exception.manualPunchTime]
         : [],
+    permissionPunchIds: Array.isArray(exception.permissionPunches)
+      ? exception.permissionPunches.map((punch) => punch?.toString?.() || String(punch || "")).filter(Boolean)
+      : [],
+    permissionPunchTimes: Array.isArray(exception.permissionPunchTimes)
+      ? exception.permissionPunchTimes
+      : [],
+    discountMinutes: Math.max(0, Number(exception.discountMinutes) || 0),
     destination: exception.destination || "",
     countsAsWorkedTime: Boolean(exception.countsAsWorkedTime),
     allowSupplementaryTime: Boolean(exception.allowSupplementaryTime),

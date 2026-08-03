@@ -1661,9 +1661,11 @@ export default function ExceptionManager({
               {manualPunchTimes.map((time, index) => (
                 <div className={styles.manualPunchRow} key={`manual-punch-${index}`}>
                   <TimeInput24
+                    className={styles.manualPunchInput}
                     value={time}
                     onChange={(event) => updateManualPunchTime(index, event.target.value)}
                     separator="H"
+                    aria-label={`Hora de la picada omitida ${index + 1}`}
                   />
                   <button
                     type="button"

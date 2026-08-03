@@ -446,7 +446,11 @@ function buildWeeklyApprovalState(assignments, employeeCount, weekStartKey) {
   const approvedVersion = historyEntries.find((entry) => entry.isApproved) || null;
 
   return {
-    isApproved: Boolean(approvedVersion) || (Boolean(employeeCount) && approvedAssignments.length === employeeCount && !historyEntries.length),
+    isApproved: (
+      Boolean(approvedVersion)
+      && approvedVersion.employeeCount === employeeCount
+      && approvedVersion.approvedCount >= employeeCount
+    ) || (Boolean(employeeCount) && approvedAssignments.length === employeeCount && !historyEntries.length),
     approvedCount: approvedAssignments.length,
     totalCount: employeeCount,
     historyEntries,
@@ -489,15 +493,6 @@ function formatPlannerDay(dateKey, monthKey) {
   const [, month, day] = dateKey.split("-");
 
   return `${day}/${month}`;
-}
-
-function usesVariableSchedule(employee) {
-  return Boolean(
-    employee?.branchCode &&
-    employee?.areaCode &&
-    employee?.roleCode &&
-    employee?.roleScheduleMode !== "fixed",
-  );
 }
 
 function normalizeText(value) {
@@ -1258,7 +1253,12 @@ function applyWeeklyExtraDays(days, regularWorkdayLimit = 5, dailyBaseMinutes = 
 }
 
 function isWorkShift(shiftKey) {
-  return shiftKey && shiftKey !== "off";
+  return Boolean(
+    shiftKey
+    && shiftKey !== OFF_SHIFT_OPTION.key
+    && shiftKey !== RESERVED_SHIFT_KEYS.vacation
+    && shiftKey !== RESERVED_SHIFT_KEYS.permission,
+  );
 }
 
 function shouldShowDayNote(shiftKey, note) {
@@ -1512,7 +1512,8 @@ function ShiftPicker({ value, options, onChange, disabled = false }) {
   );
 }
 
-function formatVersionScheduleDay(day) {
+function formatVersionScheduleDay(day, overlay = null) {
+  if (overlay?.kind === "vacation") return "Vacaciones";
   if (!day || day.dayType === "off_day") return "Descanso";
   if (day.dayType === "holiday") return "Feriado";
   if (day.dayType === "vacation") return "Vacaciones";
@@ -1573,7 +1574,7 @@ function VersionSchedulePreview({ version, employees, weekDateKeys, monthKey, ov
                     return (
                       <td key={dateKey} className={dateKey.startsWith(`${monthKey}-`) ? "" : styles.adjacentMonthCell}>
                         <div className={styles.versionScheduleCell}>
-                          <strong title={formatVersionScheduleDay(day)}>{formatVersionScheduleDay(day)}</strong>
+                          <strong title={formatVersionScheduleDay(day, overlay)}>{formatVersionScheduleDay(day, overlay)}</strong>
                           {exception ? (
                             <span className={styles.versionExceptionIndicator}>
                               <button
@@ -1828,18 +1829,11 @@ export default function SchedulePlanner({ initialFilters = {}, basePath = "/sche
     () =>
       employees.filter((employee) => {
         if (!hasPlanningScope) return false;
-        if (!usesVariableSchedule(employee)) return false;
         if (!isEmployeeActiveForPlanningWeek(employee, weekDateKeys)) return false;
         return selectedWorkGroupEmployeeIds.has(employee.id);
       }),
     [employees, hasPlanningScope, selectedWorkGroupEmployeeIds, weekDateKeys],
   );
-  const hasDraftChanges = useMemo(() => filteredEmployees.some((employee) =>
-    weekDateKeys.some((dateKey) =>
-      (draftDays[employee.id]?.[dateKey] || OFF_SHIFT_OPTION.key)
-      !== (savedDraftDays[employee.id]?.[dateKey] || OFF_SHIFT_OPTION.key),
-    )),
-  [draftDays, filteredEmployees, savedDraftDays, weekDateKeys]);
   const selectedWorkGroupEmployeeIdsParam = useMemo(() => {
     if (!selectedWorkGroup) return "";
 
@@ -1862,6 +1856,20 @@ export default function SchedulePlanner({ initialFilters = {}, basePath = "/sche
     || null,
   [viewedVersionKey, weeklyApprovalState]);
   const approvedHistoryVersion = weeklyApprovalState.approvedVersion || null;
+  const hasRosterChanges = useMemo(() => {
+    if (!approvedHistoryVersion) return false;
+
+    const approvedEmployeeIds = new Set(Object.keys(approvedHistoryVersion.employeeDays || {}));
+
+    return approvedEmployeeIds.size !== filteredEmployees.length
+      || filteredEmployees.some((employee) => !approvedEmployeeIds.has(employee.id));
+  }, [approvedHistoryVersion, filteredEmployees]);
+  const hasDraftChanges = useMemo(() => hasRosterChanges || filteredEmployees.some((employee) =>
+    weekDateKeys.some((dateKey) =>
+      (draftDays[employee.id]?.[dateKey] || OFF_SHIFT_OPTION.key)
+      !== (savedDraftDays[employee.id]?.[dateKey] || OFF_SHIFT_OPTION.key),
+    )),
+  [draftDays, filteredEmployees, hasRosterChanges, savedDraftDays, weekDateKeys]);
   const isScheduleReadOnly = weeklyApprovalState.isApproved;
   const currentUnlockRequest =
     unlockRequest?.groupId === groupId
@@ -1966,10 +1974,12 @@ export default function SchedulePlanner({ initialFilters = {}, basePath = "/sche
 
     return Object.fromEntries(filteredEmployees.map((employee) => [
       employee.id,
-      Object.fromEntries(
-        (approvedHistoryVersion.employeeDays?.[employee.id] || [])
-          .map((day) => [day.dateKey, dayToShiftKey(day, shiftOptions)]),
-      ),
+      approvedHistoryVersion.employeeDays?.[employee.id]
+        ? Object.fromEntries(
+          approvedHistoryVersion.employeeDays[employee.id]
+            .map((day) => [day.dateKey, dayToShiftKey(day, shiftOptions)]),
+        )
+        : draftDays[employee.id] || {},
     ]));
   }, [approvedHistoryVersion, draftDays, filteredEmployees, shiftOptions]);
 
@@ -2989,6 +2999,7 @@ export default function SchedulePlanner({ initialFilters = {}, basePath = "/sche
 
       if (exportBranchCode) params.set("branchCode", exportBranchCode);
       if (groupId) params.set("groupId", groupId);
+      if (selectedWeek?.weekStartKey) params.set("weekStartKey", selectedWeek.weekStartKey);
       params.set("employeeIds", filteredEmployees.map((employee) => employee.id).join(","));
 
       const response = await fetch(`/api/planner/planning/schedule-assignments/export?${params.toString()}`);
@@ -3006,7 +3017,7 @@ export default function SchedulePlanner({ initialFilters = {}, basePath = "/sche
         : "grupo";
 
       link.href = url;
-      link.download = `horarios-semanales-${monthKey}${scopeSuffix ? `-${scopeSuffix}` : ""}.xlsx`;
+      link.download = `horario-semanal-${selectedWeek?.weekStartKey || monthKey}${scopeSuffix ? `-${scopeSuffix}` : ""}.xlsx`;
       document.body.appendChild(link);
       link.click();
       link.remove();
