@@ -6,20 +6,20 @@ import { AlertTriangle } from "lucide-react";
 
 import EmployeeAutocomplete from "@/components/ui/EmployeeAutocomplete";
 import SelectInput from "@/components/ui/SelectInput";
-import { formatEcuadorMonthKey } from "@/lib/datetime/ecuador";
+import { formatPayrollDefaultMonthKey } from "@/lib/datetime/ecuador";
 import { employeeDismissalLabel, isEmployeeActiveInMonth, isEmployeeDismissedInMonth } from "@/modules/company/submodules/people/lib/employees";
 import { planningModulePath } from "@/modules/planner/routes";
 import { calculatePayrollAdditionalRate } from "@/modules/planner/lib/payroll/rates";
 import styles from "@/modules/planner/styles/components/attendance/AttendanceComparisonView.module.scss";
 
-function currentMonthKey() {
-  return formatEcuadorMonthKey();
+function defaultMonthKey() {
+  return formatPayrollDefaultMonthKey();
 }
 
 function readInitialFilters() {
   if (typeof window === "undefined") {
     return {
-      month: currentMonthKey(),
+      month: defaultMonthKey(),
       branchCode: "",
       areaCode: "",
       roleCode: "",
@@ -31,7 +31,7 @@ function readInitialFilters() {
   const params = new URLSearchParams(window.location.search);
 
   return {
-    month: params.get("month") || currentMonthKey(),
+    month: params.get("month") || defaultMonthKey(),
     branchCode: params.get("branchCode") || "",
     areaCode: params.get("areaCode") || "",
     roleCode: params.get("roleCode") || "",

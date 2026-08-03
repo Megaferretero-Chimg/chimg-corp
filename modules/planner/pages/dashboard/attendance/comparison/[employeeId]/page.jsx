@@ -3,7 +3,7 @@ import { ArrowLeft } from "lucide-react";
 
 import AttendanceComparisonDetail from "@/modules/planner/components/attendance/AttendanceComparisonDetail";
 import ModuleShell from "@/components/shell/ModuleShell";
-import { formatEcuadorMonthKey } from "@/lib/datetime/ecuador";
+import { formatPayrollDefaultMonthKey } from "@/lib/datetime/ecuador";
 import { planningModulePath } from "@/modules/planner/routes";
 
 export const metadata = {
@@ -16,7 +16,7 @@ function buildReturnHref(filters) {
   const onlyLate = !onlyAdditional && Boolean(filters.onlyLate);
   const onlyIssues = !onlyAdditional && !onlyLate && Boolean(filters.onlyIssues);
 
-  params.set("month", filters.month || formatEcuadorMonthKey());
+  params.set("month", filters.month || formatPayrollDefaultMonthKey());
 
   if (filters.branchCode) params.set("branchCode", filters.branchCode);
   if (filters.areaCode) params.set("areaCode", filters.areaCode);
@@ -40,7 +40,7 @@ export default async function AttendanceComparisonDetailPage({ params, searchPar
     onlyAdditional = "",
   } = await searchParams;
   const initialFilters = {
-    month,
+    month: month || formatPayrollDefaultMonthKey(),
     branchCode,
     areaCode,
     roleCode,
