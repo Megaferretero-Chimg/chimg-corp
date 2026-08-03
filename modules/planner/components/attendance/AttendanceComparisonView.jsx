@@ -553,6 +553,18 @@ export default function AttendanceComparisonView() {
           </td>
           <td>
             <div className={styles.flatMetrics}>
+              <FlatMetric label="Aprobado" value={minutesBadge(row.summary.approvedExtraLabel)} />
+              <FlatMetric
+                label="Total real"
+                value={minutesBadge(formatMinutes(
+                  (Number(row.summary.detectedSupplementaryMinutes) || 0) +
+                  (Number(row.summary.detectedExtraordinaryMinutes) || 0),
+                ))}
+              />
+            </div>
+          </td>
+          <td>
+            <div className={styles.flatMetrics}>
               <FlatMetric label="Planificado" value={row.summary.salaryPlannedLabel} />
               <FlatMetric label="Aprobado" value={row.summary.salaryApprovedLabel || row.summary.salaryProjectedLabel} />
             </div>
@@ -584,6 +596,7 @@ export default function AttendanceComparisonView() {
                 <th>Horas laborables</th>
                 <th>Suplementarias</th>
                 <th>Extraordinarias</th>
+                <th>Horas adicionales</th>
                 <th>Sueldo</th>
               </tr>
             </thead>
