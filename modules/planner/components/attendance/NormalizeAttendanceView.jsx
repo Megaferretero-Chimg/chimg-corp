@@ -239,6 +239,13 @@ export default function NormalizeAttendanceView({ uploadId }) {
       (response?.summary?.duplicateMinutePunches || 0) > 0 ||
       (response?.summary?.irregularDays || 0) > 0,
   );
+  const matchedEmployees = response?.summary?.matchedEmployees || 0;
+  const unresolvedEmployees =
+    (response?.summary?.inactiveEmployees || 0) +
+    (response?.summary?.unmatchedEmployees || 0);
+  const publishingBlockedByBranchMismatch = Boolean(
+    unresolvedEmployees > 0 && matchedEmployees <= unresolvedEmployees,
+  );
   const isNormalizationSaved = response?.source === "saved";
   const showBlockingOverlay = isSaving || isPublishingPunches || isAssigningEmployee;
 
@@ -565,7 +572,12 @@ export default function NormalizeAttendanceView({ uploadId }) {
                   <button
                     type="button"
                     onClick={handleSaveNormalization}
-                    disabled={isSaving}
+                    disabled={isSaving || publishingBlockedByBranchMismatch}
+                    title={
+                      publishingBlockedByBranchMismatch
+                        ? "Verifica la sucursal: la mayoría de empleados no coincide."
+                        : undefined
+                    }
                     className={styles.saveButton}
                   >
                     <Save size={16} />
@@ -585,7 +597,12 @@ export default function NormalizeAttendanceView({ uploadId }) {
                       <button
                         type="button"
                         onClick={handlePublishPunches}
-                        disabled={isPublishingPunches}
+                        disabled={isPublishingPunches || publishingBlockedByBranchMismatch}
+                        title={
+                          publishingBlockedByBranchMismatch
+                            ? "Verifica la sucursal: la mayoría de empleados no coincide."
+                            : undefined
+                        }
                         className={styles.publishButton}
                       >
                         <Database size={16} />
@@ -631,6 +648,11 @@ export default function NormalizeAttendanceView({ uploadId }) {
                   </div>
                   <div>
                     <h2 className={styles.reconciliationTitle}>Conciliación</h2>
+                    {publishingBlockedByBranchMismatch ? (
+                      <p className={styles.reconciliationBlockMessage}>
+                        Publicación bloqueada: la mayoría de códigos no corresponde a la sucursal seleccionada.
+                      </p>
+                    ) : null}
                   </div>
                 </div>
                 <div className={styles.reconciliationStats}>

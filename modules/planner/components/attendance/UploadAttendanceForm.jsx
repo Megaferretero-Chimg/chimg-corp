@@ -271,6 +271,7 @@ export default function UploadAttendanceForm() {
 
   function handleNewUpload() {
     setSavedUpload(null);
+    setBranchCode("");
     resetFileInput();
   }
 

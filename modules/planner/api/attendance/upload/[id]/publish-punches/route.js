@@ -70,7 +70,7 @@ export async function POST(_request, context) {
 
     return NextResponse.json(
       { error: error.message || "No se pudieron cargar las picadas a MongoDB." },
-      { status: 500 },
+      { status: error?.code === "ATTENDANCE_BRANCH_MISMATCH" ? 409 : 500 },
     );
   }
 }

@@ -345,6 +345,15 @@
   color: #10213e;
 }
 
+.reconciliationBlockMessage {
+  margin: 0.3rem 0 0;
+  max-width: 42rem;
+  color: #9f2d20;
+  font-size: var(--font-size-sm);
+  font-weight: 650;
+  line-height: 1.4;
+}
+
 .reconciliationStats {
   display: flex;
   flex-wrap: wrap;

@@ -9,6 +9,37 @@ function isUploadPeriod(month, year) {
   return Number.isInteger(month) && month >= 1 && month <= 12 && Number.isInteger(year);
 }
 
+export function getAttendancePublishSafety(snapshot = {}) {
+  const employees = Array.isArray(snapshot?.employees) ? snapshot.employees : [];
+  const matchedEmployees = employees.filter(
+    (employee) => employee?.matchStatus === "matched" && employee?.matchedEmployeeId,
+  ).length;
+  const unresolvedEmployees = Math.max(0, employees.length - matchedEmployees);
+
+  return {
+    matchedEmployees,
+    unresolvedEmployees,
+    isBlocked:
+      employees.length > 0 &&
+      unresolvedEmployees > 0 &&
+      matchedEmployees <= unresolvedEmployees,
+  };
+}
+
+function assertAttendanceUploadIsSafeToPublish(snapshot) {
+  const safety = getAttendancePublishSafety(snapshot);
+
+  if (!safety.isBlocked) {
+    return;
+  }
+
+  const error = new Error(
+    `La publicación fue bloqueada: solo ${safety.matchedEmployees} empleados coinciden con la sucursal y ${safety.unresolvedEmployees} no coinciden. Verifica la sucursal seleccionada antes de publicar.`,
+  );
+  error.code = "ATTENDANCE_BRANCH_MISMATCH";
+  throw error;
+}
+
 function punchBelongsToUploadPeriod(punch, upload) {
   if (!isUploadPeriod(upload.month, upload.year)) {
     return true;
@@ -65,6 +96,8 @@ export async function publishAttendancePunches(upload) {
     branchCode: upload.branchCode,
     branchName: upload.branchName,
   });
+
+  assertAttendanceUploadIsSafeToPublish(normalizedSnapshot);
 
   upload.normalizedSnapshot = normalizedSnapshot;
 
