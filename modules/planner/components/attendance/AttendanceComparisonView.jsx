@@ -535,7 +535,7 @@ export default function AttendanceComparisonView() {
           </td>
           <td>
             <div className={styles.flatMetrics}>
-              <FlatMetric label="Planificado" value={minutesBadge(row.summary.regularTargetLabel || row.summary.plannedRegularLabel)} />
+              <FlatMetric label="Planificado" value={minutesBadge(row.summary.plannedRegularLabel)} />
               <FlatMetric label="Registrado" value={minutesBadge(row.summary.regularWorkedLabel)} />
             </div>
           </td>

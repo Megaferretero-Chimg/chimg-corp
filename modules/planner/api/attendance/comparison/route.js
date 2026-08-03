@@ -846,7 +846,9 @@ function applyEmploymentEndDay(day, terminationDateKey = "") {
 
 function countBaseLaborDays(referenceDays) {
   return referenceDays.filter((day) => (
-    !isWeekendDateKey(day.dateKey) && !day.isHoliday
+    !isWeekendDateKey(day.dateKey)
+    && !day.isHoliday
+    && !["employment_pending", "employment_ended"].includes(day.source)
   )).length;
 }
 
