@@ -287,12 +287,9 @@ export function buildMonthExceptionQuery(monthKey) {
   const monthStart = startOfMonth(monthDate);
   const monthEnd = endOfMonth(monthDate);
 
-  query.date = { $lte: monthEnd };
   query.$or = [
-    { endDate: { $gte: monthStart } },
-    { endDate: null },
-    { endDateKey: "" },
-    { endDate: { $exists: false } },
+    { date: { $gte: monthStart, $lte: monthEnd } },
+    { date: { $lt: monthStart }, endDate: { $gte: monthStart } },
   ];
 
   return query;

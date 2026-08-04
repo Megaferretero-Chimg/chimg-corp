@@ -475,7 +475,7 @@
 
 .table {
   width: 100%;
-  min-width: 560px;
+  min-width: 760px;
   border-collapse: collapse;
   table-layout: fixed;
 }
@@ -505,6 +505,10 @@
   width: 8.5rem;
 }
 
+.statusColumn {
+  width: 12rem;
+}
+
 .clickableRow {
   cursor: pointer;
   transition: background 0.16s ease;
@@ -512,6 +516,15 @@
 
 .clickableRow:hover {
   background: #f8fbff;
+}
+
+.pendingRow {
+  background: #fffdf5;
+  box-shadow: inset 3px 0 #e5a000;
+}
+
+.pendingRow:hover {
+  background: #fff8dc;
 }
 
 .table td strong,
@@ -526,6 +539,7 @@
 .rejectedPill {
   display: inline-flex;
   align-items: center;
+  gap: 0.35rem;
   width: fit-content;
   border-radius: 999px;
   padding: 0.42rem 0.68rem;
@@ -538,13 +552,28 @@
   color: #674300;
 }
 
+.table td .pendingPill {
+  display: inline-flex;
+  color: #674300;
+}
+
 .resolvedPill {
   background: #e8f7ef;
   color: #166534;
 }
 
+.table td .resolvedPill {
+  display: inline-flex;
+  color: #166534;
+}
+
 .rejectedPill {
   background: #fee2e2;
+  color: #991b1b;
+}
+
+.table td .rejectedPill {
+  display: inline-flex;
   color: #991b1b;
 }
 

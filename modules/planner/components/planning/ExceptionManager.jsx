@@ -1506,6 +1506,7 @@ export default function ExceptionManager({
                   <th>Empleado</th>
                   <th>Registrado por</th>
                   <th>Fecha</th>
+                  <th className={styles.statusColumn}>Estado</th>
                   <th className={styles.optionsColumn}>Opciones</th>
                 </tr>
               </thead>
@@ -1513,7 +1514,7 @@ export default function ExceptionManager({
               {paginatedExceptions.map((exception) => (
                   <tr
                     key={exception.id}
-                    className={styles.clickableRow}
+                    className={`${styles.clickableRow} ${exception.resolution === "pending" ? styles.pendingRow : ""}`}
                     onClick={() => openReviewModal(exception)}
                   >
                     <td>
@@ -1524,6 +1525,14 @@ export default function ExceptionManager({
                     </td>
                     <td>
                       <span>{describeExceptionTime(exception)}</span>
+                    </td>
+                    <td className={styles.statusColumn}>
+                      <span className={getStatusPillClass(exception)}>
+                        {exception.resolution === "pending" ? <AlertTriangle size={14} aria-hidden="true" /> : null}
+                        {exception.resolution === "pending"
+                          ? "Pendiente de revisar"
+                          : exception.resolutionLabel || "Revisada"}
+                      </span>
                     </td>
                     <td className={styles.optionsColumn}>
                       {exception.canDelete === true
