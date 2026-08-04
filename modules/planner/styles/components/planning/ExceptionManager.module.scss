@@ -201,7 +201,51 @@
 
 .compactFiltersBar {
   flex: 1 1 auto;
+  grid-template-columns: minmax(13rem, 16rem) minmax(16rem, 24rem) minmax(18rem, 1fr);
   margin-top: 0;
+}
+
+.listFilters {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(8rem, 1fr));
+  gap: 0.75rem;
+  min-width: 0;
+}
+
+.listFilters label {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: 0.45rem;
+  min-width: 0;
+}
+
+.listFilters label > span {
+  color: #718096;
+  font-size: 0.68rem;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.listFilters select {
+  min-width: 0;
+  height: 2.35rem;
+  border: 0;
+  border-bottom: 1px solid rgba(16, 33, 62, 0.14);
+  border-radius: 0;
+  background: transparent;
+  color: #10213e;
+  padding: 0.25rem 1.5rem 0.25rem 0.35rem;
+  font: inherit;
+  font-size: var(--font-size-sm);
+  font-weight: 650;
+}
+
+.listFilters select:focus {
+  border-color: var(--primary);
+  outline: none;
+  box-shadow: 0 1px 0 rgba(37, 99, 235, 0.2);
 }
 
 .compactFilterActions {
@@ -1006,6 +1050,10 @@
 
   .compactFilterActions {
     justify-content: stretch;
+  }
+
+  .listFilters {
+    grid-template-columns: 1fr;
   }
 
   .compactFilterActions button {

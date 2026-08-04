@@ -359,6 +359,8 @@ export default function ExceptionManager({
   const [employeeQuery, setEmployeeQuery] = useState("");
   const [exceptionSearch, setExceptionSearch] = useState("");
   const [exceptionEmployeeId, setExceptionEmployeeId] = useState("");
+  const [resolutionFilter, setResolutionFilter] = useState(() => onlyPending ? "pending" : "all");
+  const [sortDirection, setSortDirection] = useState("newest");
   const [isEditorOpen, setIsEditorOpen] = useState(false);
   const [reviewException, setReviewException] = useState(null);
   const [reviewNotes, setReviewNotes] = useState("");
@@ -412,9 +414,14 @@ export default function ExceptionManager({
     [templates],
   );
   const scopedExceptions = useMemo(
-    () => (onlyPending ? exceptions.filter((exception) => exception.resolution === "pending") : exceptions),
-    [exceptions, onlyPending],
+    () => (
+      onlyPending || resolutionFilter === "pending"
+        ? exceptions.filter((exception) => exception.resolution === "pending")
+        : exceptions
+    ),
+    [exceptions, onlyPending, resolutionFilter],
   );
+  const availablePendingCount = exceptions.filter((exception) => exception.resolution === "pending").length;
   const noDiscountCount = scopedExceptions.filter((exception) =>
     exception.resolution === "approved_work_time"
     && getFlowDefinition(inferFlowType(exception)).reviewMode === "deduction",
@@ -448,8 +455,18 @@ export default function ExceptionManager({
   const orderedExceptions = useMemo(
     () =>
       [...filteredExceptions].sort((left, right) => {
-        const rightDate = new Date(right.dateKey || right.date || right.createdAt || 0).getTime();
-        const leftDate = new Date(left.dateKey || left.date || left.createdAt || 0).getTime();
+        const rightCreatedAt = new Date(right.createdAt || right.updatedAt || right.dateKey || right.date || 0).getTime();
+        const leftCreatedAt = new Date(left.createdAt || left.updatedAt || left.dateKey || left.date || 0).getTime();
+        const createdAtDelta = sortDirection === "oldest"
+          ? leftCreatedAt - rightCreatedAt
+          : rightCreatedAt - leftCreatedAt;
+
+        if (createdAtDelta !== 0) {
+          return createdAtDelta;
+        }
+
+        const rightDate = new Date(right.dateKey || right.date || 0).getTime();
+        const leftDate = new Date(left.dateKey || left.date || 0).getTime();
 
         if (rightDate !== leftDate) {
           return rightDate - leftDate;
@@ -457,7 +474,7 @@ export default function ExceptionManager({
 
         return String(left.employeeName || "").localeCompare(String(right.employeeName || ""), "es");
       }),
-    [filteredExceptions],
+    [filteredExceptions, sortDirection],
   );
   const deletablePendingExceptions = useMemo(
     () => orderedExceptions.filter((exception) =>
@@ -1431,6 +1448,38 @@ export default function ExceptionManager({
                   />
                 </div>
               )}
+              {!onlyPending ? (
+                <div className={styles.listFilters}>
+                  <label>
+                    <span>Estado</span>
+                    <select
+                      value={resolutionFilter}
+                      onChange={(event) => {
+                        setResolutionFilter(event.target.value);
+                        setCurrentPage(1);
+                      }}
+                      disabled={isLoading}
+                    >
+                      <option value="all">Todos</option>
+                      <option value="pending">Pendientes ({availablePendingCount})</option>
+                    </select>
+                  </label>
+                  <label>
+                    <span>Orden</span>
+                    <select
+                      value={sortDirection}
+                      onChange={(event) => {
+                        setSortDirection(event.target.value);
+                        setCurrentPage(1);
+                      }}
+                      disabled={isLoading}
+                    >
+                      <option value="newest">Más recientes</option>
+                      <option value="oldest">Más antiguos</option>
+                    </select>
+                  </label>
+                </div>
+              ) : null}
             </div>
             <div className={styles.compactFilterActions}>
               {showCreateButton && canCreateExceptions ? (
