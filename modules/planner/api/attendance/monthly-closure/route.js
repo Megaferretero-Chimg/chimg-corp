@@ -442,6 +442,13 @@ function formatPayrollMinutes(minutes) {
   return `${hours}.${String(rest).padStart(2, "0")}`;
 }
 
+function formatSignedPayrollMinutes(minutes) {
+  const value = Math.round(Number(minutes) || 0);
+  const sign = value < 0 ? "-" : "";
+
+  return `${sign}${formatPayrollMinutes(Math.abs(value))}`;
+}
+
 function decimalHours(minutes) {
   return Math.round(((Number(minutes) || 0) / 60) * 100) / 100;
 }
@@ -672,12 +679,12 @@ async function buildPayrollComparisonExcel(rows, monthKey) {
       return [
         formatEmployeeDni(row.employeeDni),
         row.employeeName || "",
-        decimalHours(row.supplementaryMinutes),
-        decimalHours(row.detectedSupplementaryMinutes),
-        decimalHours((Number(row.detectedSupplementaryMinutes) || 0) - (Number(row.supplementaryMinutes) || 0)),
-        decimalHours(row.extraordinaryMinutes),
-        decimalHours(row.detectedExtraordinaryMinutes),
-        decimalHours((Number(row.detectedExtraordinaryMinutes) || 0) - (Number(row.extraordinaryMinutes) || 0)),
+        formatPayrollMinutes(row.supplementaryMinutes),
+        formatPayrollMinutes(row.detectedSupplementaryMinutes),
+        formatSignedPayrollMinutes((Number(row.detectedSupplementaryMinutes) || 0) - (Number(row.supplementaryMinutes) || 0)),
+        formatPayrollMinutes(row.extraordinaryMinutes),
+        formatPayrollMinutes(row.detectedExtraordinaryMinutes),
+        formatSignedPayrollMinutes((Number(row.detectedExtraordinaryMinutes) || 0) - (Number(row.extraordinaryMinutes) || 0)),
         roundMoney(row.salaryTotal),
         roundMoney(detectedSalaryTotal(row)),
       ];
@@ -686,12 +693,12 @@ async function buildPayrollComparisonExcel(rows, monthKey) {
     [
       "Cedula",
       "Nombre",
-      "HS aprobadas",
-      "HS detectadas",
-      "HS diferencia",
-      "HE aprobadas",
-      "HE detectadas",
-      "HE diferencia",
+      "HS aprobadas (H.MM)",
+      "HS detectadas (H.MM)",
+      "HS diferencia (H.MM)",
+      "HE aprobadas (H.MM)",
+      "HE detectadas (H.MM)",
+      "HE diferencia (H.MM)",
       "Sueldo aprobado",
       "Sueldo detectado",
     ],
@@ -723,7 +730,10 @@ async function buildPayrollComparisonExcel(rows, monthKey) {
 
     ["C", "D", "E", "F", "G", "H"].forEach((column) => {
       const cell = worksheet[`${column}${rowNumber}`];
-      if (cell) cell.z = "0.00";
+      if (cell) {
+        cell.t = "s";
+        cell.z = "@";
+      }
     });
     ["I", "J"].forEach((column) => {
       const cell = worksheet[`${column}${rowNumber}`];
