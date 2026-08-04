@@ -3556,15 +3556,11 @@ export async function GET(request) {
         totals.discountedWorkMinutes += day.discountedWorkMinutes || 0;
         return totals;
       }, emptyEmployeeSummary());
-      const effectiveBaseLaborDays = Math.max(
-        0,
-        baseLaborDays - (summary.vacationPlannedRegularMinutes / REGULAR_DAY_MINUTES),
-      );
-      const regularTargetMinutes = Math.max(
-        0,
-        (baseLaborDays * REGULAR_DAY_MINUTES) - summary.vacationPlannedRegularMinutes,
-      );
-      summary.plannedRegularMinutes = Math.min(summary.plannedRegularMinutes, regularTargetMinutes);
+      // La meta laborable debe salir de la planificación efectiva que se muestra
+      // en el detalle. Usar todos los días laborables del calendario imponía 184h
+      // incluso cuando el horario aprobado del empleado sumaba, por ejemplo, 160h.
+      const regularTargetMinutes = Math.max(0, Number(summary.plannedRegularMinutes) || 0);
+      const effectiveBaseLaborDays = regularTargetMinutes / REGULAR_DAY_MINUTES;
       summary.regularWorkedMinutes = Math.min(summary.regularWorkedMinutes, summary.plannedRegularMinutes);
       const salary = Number(employee.salary) || 0;
       const hourlyDivisor = MONTHLY_HOURLY_DIVISOR;
