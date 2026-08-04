@@ -524,9 +524,6 @@ function resolveActualLunchMinutes(sortedPunches) {
 }
 
 function applyLunchPolicyByDay(day) {
-  const dayOfWeek = new Date(`${day?.dateKey}T12:00:00.000Z`).getUTCDay();
-  const isWeekend = dayOfWeek === 0 || dayOfWeek === 6;
-
   if (!day?.startTime || !day?.endTime) {
     return day;
   }
@@ -538,24 +535,7 @@ function applyLunchPolicyByDay(day) {
     };
   }
 
-  if (!isWeekend) {
-    return day;
-  }
-
-  const scheduleStart = combineDateAndTime(day.dateKey, day.startTime);
-  const scheduleEnd = combineDateAndTime(day.dateKey, day.endTime);
-
-  if (!scheduleStart || !scheduleEnd || scheduleEnd <= scheduleStart) {
-    return day;
-  }
-
-  const grossMinutes = Math.max(0, Math.round((scheduleEnd - scheduleStart) / 60000));
-  const isFullWeekendShift = grossMinutes >= REGULAR_DAY_MINUTES;
-
-  return {
-    ...day,
-    lunchDurationMinutes: isFullWeekendShift ? (Number(day.lunchDurationMinutes) || 60) : 0,
-  };
+  return day;
 }
 
 function resolveHolidayLunchDiscountMinutes(day = {}) {
