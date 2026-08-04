@@ -1465,6 +1465,7 @@ export async function POST(request) {
         { $pull: { planningApprovals: { weekStartKey, groupId, unlockedAt: null } } },
       );
       const weekDateKeys = getWeekDateKeySet(weekStartKey);
+      const approvalRecordedEmployeeIds = new Set();
       const approvalOperations = assignmentsForApproval.flatMap((assignment) => {
         const matchingHistory = (assignment.scheduleHistory || []).find((entry) =>
           buildHistoryVersionKey(entry) === buildHistoryVersionKey({
@@ -1486,6 +1487,12 @@ export async function POST(request) {
         (matchingHistory.generatedDays || [])
           .filter((day) => weekDateKeys.has(day.dateKey))
           .forEach((day) => operationalDaysByDate.set(day.dateKey, day));
+        const assignmentEmployeeId = assignment.employee?.toString?.() || "";
+        const shouldRecordApproval = !approvalRecordedEmployeeIds.has(assignmentEmployeeId);
+
+        if (shouldRecordApproval) {
+          approvalRecordedEmployeeIds.add(assignmentEmployeeId);
+        }
 
         return [{
           updateOne: {
@@ -1495,19 +1502,21 @@ export async function POST(request) {
                 generatedDays: [...operationalDaysByDate.values()]
                   .sort((left, right) => String(left.dateKey).localeCompare(String(right.dateKey))),
               },
-              $push: {
-                planningApprovals: {
-                  groupId,
-                  groupName,
-                  weekStartKey,
-                  approvedAt,
-                  approvedBy,
-                  approvedByUser,
-                  versionSavedAt: approvedVersionSavedAt,
-                  versionSavedBy: approvedVersionSavedBy,
-                  versionSavedByUser: approvedVersionSavedByUser,
+              ...(shouldRecordApproval ? {
+                $push: {
+                  planningApprovals: {
+                    groupId,
+                    groupName,
+                    weekStartKey,
+                    approvedAt,
+                    approvedBy,
+                    approvedByUser,
+                    versionSavedAt: approvedVersionSavedAt,
+                    versionSavedBy: approvedVersionSavedBy,
+                    versionSavedByUser: approvedVersionSavedByUser,
+                  },
                 },
-              },
+              } : {}),
             },
           },
         }];
@@ -1515,6 +1524,24 @@ export async function POST(request) {
 
       if (approvalOperations.length) {
         await ScheduleAssignment.bulkWrite(approvalOperations);
+
+        await ScheduleAssignment.updateMany(
+          { monthKey: { $in: targetMonthKeys }, employee: { $in: employeeObjectIds } },
+          {
+            $pull: {
+              planningApprovals: {
+                weekStartKey,
+                groupId,
+                unlockedAt: null,
+                $nor: [{
+                  versionSavedAt: approvedVersionSavedAt,
+                  versionSavedBy: approvedVersionSavedBy,
+                  versionSavedByUser: approvedVersionSavedByUser,
+                }],
+              },
+            },
+          },
+        );
       }
 
       await createAuditLog({

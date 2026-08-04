@@ -425,7 +425,7 @@ function buildWeeklyApprovalState(assignments, employeeCount, weekStartKey) {
       });
   });
 
-  const historyEntries = [...historyVersionsByKey.values()]
+  const orderedHistoryEntries = [...historyVersionsByKey.values()]
     .map((entry) => {
       const approvedCount = approvalCountsByVersionKey.get(entry.versionKey) || 0;
       const historicalApprovalCount = historicalApprovalCountsByVersionKey.get(entry.versionKey) || 0;
@@ -442,6 +442,14 @@ function buildWeeklyApprovalState(assignments, employeeCount, weekStartKey) {
       ...entry,
       versionNumber: entries.length - index,
     }));
+  const activeApprovedVersionKey = orderedHistoryEntries.find((entry) => entry.isApproved)?.versionKey || "";
+  const historyEntries = orderedHistoryEntries.map((entry) => ({
+    ...entry,
+    isApproved: entry.versionKey === activeApprovedVersionKey,
+    wasApproved:
+      entry.versionKey !== activeApprovedVersionKey
+      && (entry.wasApproved || entry.isApproved),
+  }));
   const latestHistory = historyEntries[0] || null;
   const approvedVersion = historyEntries.find((entry) => entry.isApproved) || null;
 
@@ -1538,7 +1546,7 @@ function VersionSchedulePreview({ version, employees, weekDateKeys, monthKey, ov
         </div>
         {version.isApproved ? <em className={styles.approvedVersionBadge}>Aprobada</em> : null}
         {!version.isApproved && version.wasApproved ? (
-          <em className={styles.previouslyApprovedVersionBadge}>Aprobada anteriormente</em>
+          <em className={styles.previouslyApprovedVersionBadge}>Reemplazada</em>
         ) : null}
       </div>
 
@@ -3889,7 +3897,7 @@ export default function SchedulePlanner({ initialFilters = {}, basePath = "/sche
                   <span className={styles.versionRowStatus}>
                     {entry.isApproved ? <em className={styles.approvedVersionBadge}>Aprobada</em> : null}
                     {!entry.isApproved && entry.wasApproved ? (
-                      <em className={styles.previouslyApprovedVersionBadge}>Aprobada anteriormente</em>
+                      <em className={styles.previouslyApprovedVersionBadge}>Reemplazada</em>
                     ) : null}
                     {!isLatestVersion ? (
                       <>

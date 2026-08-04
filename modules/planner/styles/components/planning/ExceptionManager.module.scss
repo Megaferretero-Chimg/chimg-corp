@@ -519,12 +519,11 @@
 }
 
 .pendingRow {
-  background: #fffdf5;
-  box-shadow: inset 3px 0 #e5a000;
+  box-shadow: inset 2px 0 #dfc477;
 }
 
 .pendingRow:hover {
-  background: #fff8dc;
+  background: #fafcff;
 }
 
 .table td strong,
@@ -548,13 +547,16 @@
 }
 
 .pendingPill {
-  background: #fff4c2;
-  color: #674300;
+  gap: 0.28rem;
+  padding: 0.3rem 0.52rem;
+  border: 1px solid #eadfbd;
+  background: #fffdf7;
+  color: #755817;
 }
 
 .table td .pendingPill {
   display: inline-flex;
-  color: #674300;
+  color: #755817;
 }
 
 .resolvedPill {

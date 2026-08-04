@@ -471,6 +471,15 @@ function dayHasPlannedLunch(day) {
 function hasInferredIncompletePunches(day) {
   if (!day || hasDayTag(day, "Picadas incompletas")) return false;
   if (day.executionException?.type === "missing_punch") return false;
+  if (
+    day.authorization?.isSaved &&
+    [
+      "complete_regular_day",
+      "pay_planned_day",
+      "justify_no_punches",
+      "justify_incomplete_punches",
+    ].includes(day.authorization.decision)
+  ) return false;
   if ((Number(day.expectedPunches) || 0) <= 2) return false;
   if (!dayHasPlannedLunch(day)) return false;
 

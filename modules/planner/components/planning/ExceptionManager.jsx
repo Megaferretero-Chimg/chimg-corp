@@ -1530,7 +1530,7 @@ export default function ExceptionManager({
                       <span className={getStatusPillClass(exception)}>
                         {exception.resolution === "pending" ? <AlertTriangle size={14} aria-hidden="true" /> : null}
                         {exception.resolution === "pending"
-                          ? "Pendiente de revisar"
+                          ? "Pendiente"
                           : exception.resolutionLabel || "Revisada"}
                       </span>
                     </td>
