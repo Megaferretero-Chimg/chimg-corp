@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { AlertTriangle, Download, RefreshCw, Save } from "lucide-react";
+import { AlertTriangle, Download, Eye, RefreshCw, Save } from "lucide-react";
 
 import ConfirmDialog from "@/components/ui/ConfirmDialog";
 import SelectInput from "@/components/ui/SelectInput";
@@ -62,6 +62,14 @@ function minutesLabel(minutes) {
   return rest ? `${hours}h ${rest}m` : `${hours}h`;
 }
 
+function differenceLabel(detectedMinutes, approvedMinutes) {
+  const difference = Math.round((Number(detectedMinutes) || 0) - (Number(approvedMinutes) || 0));
+
+  if (!difference) return "Sin diferencia";
+
+  return `Diferencia ${difference > 0 ? "+" : "-"}${minutesLabel(Math.abs(difference))}`;
+}
+
 function laborableValue(row) {
   return `${metricValue(row.regularWorkedLabel)} / ${metricValue(row.regularTargetLabel)}`;
 }
@@ -96,12 +104,14 @@ export default function MonthlyClosureView({ view = "summary", fixedMonth = "" }
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [exportMode, setExportMode] = useState("");
+  const [payrollHourMode, setPayrollHourMode] = useState("approved");
   const [isConfirmOpen, setIsConfirmOpen] = useState(false);
   const [selectedClosureId, setSelectedClosureId] = useState(() => initialState.closureId || "");
   const [error, setError] = useState("");
   const lastFocusRefreshAtRef = useRef(0);
 
   const isLiveMode = mode === "live";
+  const isDetectedPayrollMode = isPayrollView && payrollHourMode === "detected";
   const savedClosure = payload?.closure || null;
   const hasSavedCrossClosure = Boolean(savedClosure && savedClosure.completeBaseHours !== false);
   const requiresSavedCrossClosure = isPayrollView || isSummaryView;
@@ -267,7 +277,8 @@ export default function MonthlyClosureView({ view = "summary", fixedMonth = "" }
   async function exportClosure(nextExportMode) {
     if (exportMode || isLoading || !rows.length) return;
     const isDetailedExcel = nextExportMode === "detailed-xlsx";
-    const isPayrollExcel = nextExportMode === "payroll-xlsx";
+    const isPayrollExcel = ["payroll-xlsx", "payroll-detected-xlsx"].includes(nextExportMode);
+    const isDetectedPayrollExcel = nextExportMode === "payroll-detected-xlsx";
 
     try {
       setExportMode(nextExportMode);
@@ -292,7 +303,9 @@ export default function MonthlyClosureView({ view = "summary", fixedMonth = "" }
       link.download = isDetailedExcel
         ? `cierre-mensual-detallado-${month}.xlsx`
         : isPayrollExcel
-          ? `formato-nomina-${month}.xlsx`
+          ? isDetectedPayrollExcel
+            ? `formato-nomina-horas-detectadas-${month}.xlsx`
+            : `formato-nomina-${month}.xlsx`
           : `cierre-mensual-${month}.csv`;
       document.body.appendChild(link);
       link.click();
@@ -373,15 +386,26 @@ export default function MonthlyClosureView({ view = "summary", fixedMonth = "" }
               {isSavedCrossResult ? "Recalcular cruce" : "Guardar cruce"}
             </button>
           ) : isPayrollView ? (
-            <button
-              type="button"
-              className={styles.exportButton}
-              onClick={() => exportClosure("payroll-xlsx")}
-              disabled={Boolean(exportMode) || isSaving || isLoading || !rows.length}
-            >
-              {exportMode === "payroll-xlsx" ? <RefreshCw size={16} /> : <Download size={16} />}
-              Descargar formato nómina
-            </button>
+            <>
+              <button
+                type="button"
+                className={styles.secondaryButton}
+                onClick={() => setPayrollHourMode((current) => current === "approved" ? "detected" : "approved")}
+                disabled={Boolean(exportMode) || isSaving || isLoading || !rows.length}
+              >
+                <Eye size={16} />
+                {isDetectedPayrollMode ? "Ver horas aprobadas" : "Ver horas detectadas"}
+              </button>
+              <button
+                type="button"
+                className={styles.exportButton}
+                onClick={() => exportClosure(isDetectedPayrollMode ? "payroll-detected-xlsx" : "payroll-xlsx")}
+                disabled={Boolean(exportMode) || isSaving || isLoading || !rows.length}
+              >
+                {exportMode ? <RefreshCw size={16} /> : <Download size={16} />}
+                {isDetectedPayrollMode ? "Descargar horas detectadas" : "Descargar formato nómina"}
+              </button>
+            </>
           ) : (
             <>
               <button
@@ -437,6 +461,16 @@ export default function MonthlyClosureView({ view = "summary", fixedMonth = "" }
           <div>
             <strong>El cruce necesita actualizarse</strong>
             <span>Horario vs. picadas cambió después de la última copia. Revisa los nuevos valores y vuelve a guardar el cruce.</span>
+          </div>
+        </div>
+      ) : null}
+
+      {isDetectedPayrollMode ? (
+        <div className={styles.analysisNotice} role="status">
+          <Eye size={18} />
+          <div>
+            <strong>Vista de análisis: horas detectadas</strong>
+            <span>Compara el total generado con lo aprobado. Estos valores no modifican el sueldo ni el cruce guardado.</span>
           </div>
         </div>
       ) : null}
@@ -556,9 +590,9 @@ export default function MonthlyClosureView({ view = "summary", fixedMonth = "" }
                       <tr>
                         <th>Nombre</th>
                         <th>Cédula</th>
-                        <th>HS</th>
-                        <th>HE</th>
-                        <th>Sueldo total</th>
+                        <th>{isDetectedPayrollMode ? "HS detectadas" : "HS aprobadas"}</th>
+                        <th>{isDetectedPayrollMode ? "HE detectadas" : "HE aprobadas"}</th>
+                        <th>{isDetectedPayrollMode ? "Sueldo (sin cambios)" : "Sueldo total"}</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -579,13 +613,24 @@ export default function MonthlyClosureView({ view = "summary", fixedMonth = "" }
                             <span className={styles.dniValue}>{row.employeeDni || "--"}</span>
                           </td>
                           <td>
-                            <span className={styles.metricValue}>{metricValue(row.supplementaryLabel)}</span>
+                            <span className={styles.metricValue}>
+                              {metricValue(isDetectedPayrollMode ? row.detectedSupplementaryLabel : row.supplementaryLabel)}
+                            </span>
+                            {isDetectedPayrollMode ? (
+                              <span>Aprobadas {metricValue(row.supplementaryLabel)} · {differenceLabel(row.detectedSupplementaryMinutes, row.supplementaryMinutes)}</span>
+                            ) : null}
                           </td>
                           <td>
-                            <span className={styles.metricValue}>{metricValue(row.extraordinaryLabel)}</span>
+                            <span className={styles.metricValue}>
+                              {metricValue(isDetectedPayrollMode ? row.detectedExtraordinaryLabel : row.extraordinaryLabel)}
+                            </span>
+                            {isDetectedPayrollMode ? (
+                              <span>Aprobadas {metricValue(row.extraordinaryLabel)} · {differenceLabel(row.detectedExtraordinaryMinutes, row.extraordinaryMinutes)}</span>
+                            ) : null}
                           </td>
                           <td>
                             <strong className={styles.salaryValue}>{row.salaryTotalLabel || "$0.00"}</strong>
+                            {isDetectedPayrollMode ? <span>No usa horas detectadas</span> : null}
                           </td>
                         </tr>
                         );

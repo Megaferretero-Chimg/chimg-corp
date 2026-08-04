@@ -7,6 +7,7 @@
 .toolbar,
 .viewModeBar,
 .staleNotice,
+.analysisNotice,
 .tableShell,
 .errorBox,
 .loadingScene {
@@ -157,6 +158,37 @@
 .staleNotice strong,
 .staleNotice span {
   display: block;
+}
+
+.analysisNotice {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.65rem;
+  padding: 0.8rem 0.95rem;
+  border-color: rgba(31, 92, 154, 0.18);
+  background: #f3f8ff;
+  color: #194f82;
+}
+
+.analysisNotice svg {
+  flex: 0 0 auto;
+  margin-top: 0.1rem;
+}
+
+.analysisNotice div {
+  display: grid;
+  gap: 0.15rem;
+}
+
+.analysisNotice strong,
+.analysisNotice span {
+  display: block;
+}
+
+.analysisNotice span {
+  color: #526f94;
+  font-size: var(--font-size-sm);
+  font-weight: 700;
 }
 
 .staleNotice span {

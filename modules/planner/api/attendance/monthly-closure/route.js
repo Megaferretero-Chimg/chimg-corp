@@ -525,7 +525,8 @@ async function buildPayrollCsv(rows, monthKey) {
   return `\uFEFF${lines.map((line) => line.map(escapeCsvCell).join(";")).join("\r\n")}\r\n`;
 }
 
-async function buildPayrollExcel(rows, monthKey) {
+async function buildPayrollExcel(rows, monthKey, options = {}) {
+  const useDetectedHours = options.hoursSource === "detected";
   const { monthStart } = monthRangeFromKey(monthKey);
   const employeeIds = [...new Set(rows.map(getRowEmployeeId).filter(Boolean))];
   const employees = employeeIds.length
@@ -546,8 +547,8 @@ async function buildPayrollExcel(rows, monthKey) {
 
       return [
         formatEmployeeDni(employee?.dni),
-        formatPayrollMinutes(row.supplementaryMinutes),
-        formatPayrollMinutes(row.extraordinaryMinutes),
+        formatPayrollMinutes(useDetectedHours ? row.detectedSupplementaryMinutes : row.supplementaryMinutes),
+        formatPayrollMinutes(useDetectedHours ? row.detectedExtraordinaryMinutes : row.extraordinaryMinutes),
         formatPayrollMinutes(0),
         "",
         "",
@@ -749,6 +750,7 @@ export async function GET(request) {
     const exportType = request.nextUrl.searchParams.get("export");
     const wantsPayrollCsv = exportType === "payroll-csv";
     const wantsPayrollExcel = exportType === "payroll-xlsx";
+    const wantsDetectedPayrollExcel = exportType === "payroll-detected-xlsx";
     const wantsDetailedExcel = exportType === "detailed-xlsx";
     const checkFreshness = parseBooleanOption(request.nextUrl.searchParams.get("checkFreshness"), false);
     const completeBaseHours = parseBooleanOption(request.nextUrl.searchParams.get("completeBaseHours"), false);
@@ -761,7 +763,7 @@ export async function GET(request) {
       : closures.find((item) => item.isLatest !== false) || closures[0] || null;
     const hasCrossClosure = Boolean(closure && closure.completeBaseHours !== false);
 
-    if ((wantsPayrollCsv || wantsPayrollExcel || wantsDetailedExcel) && !wantsLive && !hasCrossClosure) {
+    if ((wantsPayrollCsv || wantsPayrollExcel || wantsDetectedPayrollExcel || wantsDetailedExcel) && !wantsLive && !hasCrossClosure) {
       return NextResponse.json(
         { error: "Primero guarda el cruce de horas para este mes." },
         { status: 409 },
@@ -794,14 +796,19 @@ export async function GET(request) {
       });
     }
 
-    if (wantsPayrollExcel) {
+    if (wantsPayrollExcel || wantsDetectedPayrollExcel) {
       const rows = snapshot?.rows || closure?.rows || [];
-      const excel = await buildPayrollExcel(rows, monthKey);
+      const excel = await buildPayrollExcel(rows, monthKey, {
+        hoursSource: wantsDetectedPayrollExcel ? "detected" : "approved",
+      });
+      const fileName = wantsDetectedPayrollExcel
+        ? `formato-nomina-horas-detectadas-${monthKey}.xlsx`
+        : `formato-nomina-${monthKey}.xlsx`;
 
       return new Response(excel, {
         headers: {
           "Content-Type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-          "Content-Disposition": `attachment; filename="formato-nomina-${monthKey}.xlsx"`,
+          "Content-Disposition": `attachment; filename="${fileName}"`,
           "Cache-Control": "no-store",
         },
       });
