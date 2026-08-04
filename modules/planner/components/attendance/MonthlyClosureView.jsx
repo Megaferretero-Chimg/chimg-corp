@@ -592,7 +592,7 @@ export default function MonthlyClosureView({ view = "summary", fixedMonth = "" }
                         <th>Cédula</th>
                         <th>{isDetectedPayrollMode ? "HS detectadas" : "HS aprobadas"}</th>
                         <th>{isDetectedPayrollMode ? "HE detectadas" : "HE aprobadas"}</th>
-                        <th>{isDetectedPayrollMode ? "Sueldo (sin cambios)" : "Sueldo total"}</th>
+                        <th>{isDetectedPayrollMode ? "Sueldo con detectadas" : "Sueldo total"}</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -629,8 +629,10 @@ export default function MonthlyClosureView({ view = "summary", fixedMonth = "" }
                             ) : null}
                           </td>
                           <td>
-                            <strong className={styles.salaryValue}>{row.salaryTotalLabel || "$0.00"}</strong>
-                            {isDetectedPayrollMode ? <span>No usa horas detectadas</span> : null}
+                            <strong className={styles.salaryValue}>
+                              {isDetectedPayrollMode ? row.salaryDetectedAnalysisLabel || "$0.00" : row.salaryTotalLabel || "$0.00"}
+                            </strong>
+                            {isDetectedPayrollMode ? <span>Aprobado {row.salaryTotalLabel || "$0.00"}</span> : null}
                           </td>
                         </tr>
                         );

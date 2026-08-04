@@ -64,6 +64,36 @@ function payrollLateMinutes(row = {}) {
 const SUPPLEMENTARY_SURCHARGE_MULTIPLIER = 1.5;
 const EXTRAORDINARY_SURCHARGE_MULTIPLIER = 2;
 
+function detectedSalaryTotal(row = {}) {
+  const completedMinutes = Math.max(0, Number(row.baseCompletionMinutes) || 0);
+  const rawRegularWorkedMinutes = Math.max(0, (Number(row.regularWorkedMinutes) || 0) - completedMinutes);
+  const regularTargetMinutes = Math.max(0, Number(row.regularTargetMinutes) || 0);
+  let missingRegularMinutes = Math.max(0, regularTargetMinutes - rawRegularWorkedMinutes);
+  const detectedSupplementaryMinutes = Math.max(0, Number(row.detectedSupplementaryMinutes) || 0);
+  const detectedExtraordinaryMinutes = Math.max(0, Number(row.detectedExtraordinaryMinutes) || 0);
+  const completionFromSupplementary = Math.min(detectedSupplementaryMinutes, missingRegularMinutes);
+  missingRegularMinutes -= completionFromSupplementary;
+  const completionFromExtraordinary = Math.min(detectedExtraordinaryMinutes, missingRegularMinutes);
+  missingRegularMinutes -= completionFromExtraordinary;
+
+  const payableSupplementaryMinutes = detectedSupplementaryMinutes - completionFromSupplementary;
+  const payableExtraordinaryMinutes = detectedExtraordinaryMinutes - completionFromExtraordinary;
+  const salaryBase = Math.max(
+    0,
+    Number(row.salaryBase) ||
+      (Number(row.salaryBaseAfterAttendance) || 0) + (Number(row.regularShortfallDiscount) || 0),
+  );
+  const hourlyRate = Math.max(0, Number(row.hourlyRate) || 0);
+  const shortfallDiscount = row.regularShortfallAffectsSalary === false
+    ? 0
+    : Math.min(salaryBase, (missingRegularMinutes / 60) * hourlyRate);
+  const salaryBaseAfterAttendance = Math.max(0, salaryBase - shortfallDiscount);
+
+  return salaryBaseAfterAttendance +
+    (payableSupplementaryMinutes / 60) * calculatePayrollAdditionalRate(hourlyRate, SUPPLEMENTARY_SURCHARGE_MULTIPLIER) +
+    (payableExtraordinaryMinutes / 60) * calculatePayrollAdditionalRate(hourlyRate, EXTRAORDINARY_SURCHARGE_MULTIPLIER);
+}
+
 function parseBooleanOption(value, fallback = true) {
   if (value === undefined || value === null || value === "") return fallback;
 
@@ -137,6 +167,7 @@ function serializeClosure(closure) {
       holidayExtraordinaryMinutes: Number(row.holidayExtraordinaryMinutes) || 0,
       lateMinutes: payrollLateMinutes(row),
       salaryTotal: Number(row.salaryTotal) || 0,
+      salaryDetectedAnalysis: detectedSalaryTotal(row),
       salaryBaseAfterAttendance: Number(row.salaryBaseAfterAttendance) || 0,
       regularShortfallMinutes: Number(row.regularShortfallMinutes) || 0,
       regularShortfallDiscount: Number(row.regularShortfallDiscount) || 0,
@@ -156,6 +187,7 @@ function serializeClosure(closure) {
       extraordinaryAmountLabel: moneyLabel(extraordinaryAmount(row)),
       lateLabel: minutesLabel(payrollLateMinutes(row)),
       salaryTotalLabel: moneyLabel(row.salaryTotal),
+      salaryDetectedAnalysisLabel: moneyLabel(detectedSalaryTotal(row)),
       salaryBaseAfterAttendanceLabel: moneyLabel(row.salaryBaseAfterAttendance),
       regularShortfallLabel: minutesLabel(row.regularShortfallMinutes),
       regularShortfallDiscountLabel: moneyLabel(row.regularShortfallDiscount),
@@ -181,6 +213,8 @@ function serializePreview(snapshot) {
       extraordinaryAmountLabel: moneyLabel(extraordinaryAmount(row)),
       lateLabel: minutesLabel(row.lateMinutes),
       salaryTotalLabel: moneyLabel(row.salaryTotal),
+      salaryDetectedAnalysis: detectedSalaryTotal(row),
+      salaryDetectedAnalysisLabel: moneyLabel(detectedSalaryTotal(row)),
       salaryBaseAfterAttendanceLabel: moneyLabel(row.salaryBaseAfterAttendance),
       regularShortfallLabel: minutesLabel(row.regularShortfallMinutes),
       regularShortfallDiscountLabel: moneyLabel(row.regularShortfallDiscount),
