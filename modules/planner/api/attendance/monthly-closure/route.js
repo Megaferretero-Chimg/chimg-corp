@@ -545,7 +545,7 @@ async function buildPayrollCsv(rows, monthKey) {
         const employee = employeesById.get(employeeId);
 
         return [
-          formatEmployeeDni(employee?.dni),
+          formatEmployeeDni(employee?.dni || row.employeeDni),
           formatPayrollMinutes(row.supplementaryMinutes),
           formatPayrollMinutes(row.extraordinaryMinutes),
           formatPayrollMinutes(0),
@@ -580,7 +580,7 @@ async function buildPayrollExcel(rows, monthKey, options = {}) {
       const employee = employeesById.get(getRowEmployeeId(row));
 
       return [
-        formatEmployeeDni(employee?.dni),
+        formatEmployeeDni(employee?.dni || row.employeeDni),
         formatPayrollMinutes(useDetectedHours ? row.detectedSupplementaryMinutes : row.supplementaryMinutes),
         formatPayrollMinutes(useDetectedHours ? row.detectedExtraordinaryMinutes : row.extraordinaryMinutes),
         formatPayrollMinutes(0),
@@ -615,6 +615,78 @@ async function buildPayrollExcel(rows, monthKey, options = {}) {
 
   const workbook = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(workbook, worksheet, "Nomina");
+
+  return XLSX.write(workbook, { type: "buffer", bookType: "xlsx" });
+}
+
+async function buildPayrollComparisonExcel(rows, monthKey) {
+  const { monthStart } = monthRangeFromKey(monthKey);
+  const employeeIds = [...new Set(rows.map(getRowEmployeeId).filter(Boolean))];
+  const employees = employeeIds.length
+    ? await Employee.find({ _id: { $in: employeeIds } }).select({
+        dni: 1,
+        employmentRelation: 1,
+        isActive: 1,
+        terminationDate: 1,
+      }).lean()
+    : [];
+  const employeesById = new Map(employees.map((employee) => [employee._id.toString(), employee]));
+  const bodyRows = rows
+    .slice()
+    .sort((left, right) => String(left.employeeName || "").localeCompare(String(right.employeeName || ""), "es"))
+    .filter((row) => wasEmployeeInPayrollDuringMonth(employeesById.get(getRowEmployeeId(row)), monthStart))
+    .map((row) => {
+      const employee = employeesById.get(getRowEmployeeId(row));
+
+      return [
+        formatEmployeeDni(employee?.dni || row.employeeDni),
+        row.employeeName || "",
+        decimalHours(row.supplementaryMinutes),
+        decimalHours(row.detectedSupplementaryMinutes),
+        decimalHours(row.extraordinaryMinutes),
+        decimalHours(row.detectedExtraordinaryMinutes),
+        roundMoney(row.salaryTotal),
+        roundMoney(detectedSalaryTotal(row)),
+      ];
+    });
+  const worksheet = XLSX.utils.aoa_to_sheet([
+    ["Cedula", "Nombre", "HS aprobadas", "HS detectadas", "HE aprobadas", "HE detectadas", "Sueldo aprobado", "Sueldo detectado"],
+    ...bodyRows,
+  ]);
+
+  worksheet["!cols"] = [
+    { wch: 16 },
+    { wch: 38 },
+    { wch: 16 },
+    { wch: 16 },
+    { wch: 16 },
+    { wch: 16 },
+    { wch: 18 },
+    { wch: 18 },
+  ];
+  worksheet["!autofilter"] = { ref: `A1:H${bodyRows.length + 1}` };
+
+  bodyRows.forEach((_, index) => {
+    const rowNumber = index + 2;
+    const dniCell = worksheet[`A${rowNumber}`];
+
+    if (dniCell) {
+      dniCell.t = "s";
+      dniCell.z = "@";
+    }
+
+    ["C", "D", "E", "F"].forEach((column) => {
+      const cell = worksheet[`${column}${rowNumber}`];
+      if (cell) cell.z = "0.00";
+    });
+    ["G", "H"].forEach((column) => {
+      const cell = worksheet[`${column}${rowNumber}`];
+      if (cell) cell.z = "$#,##0.00";
+    });
+  });
+
+  const workbook = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(workbook, worksheet, "Comparativa");
 
   return XLSX.write(workbook, { type: "buffer", bookType: "xlsx" });
 }
@@ -785,6 +857,7 @@ export async function GET(request) {
     const wantsPayrollCsv = exportType === "payroll-csv";
     const wantsPayrollExcel = exportType === "payroll-xlsx";
     const wantsDetectedPayrollExcel = exportType === "payroll-detected-xlsx";
+    const wantsPayrollComparisonExcel = exportType === "payroll-comparison-xlsx";
     const wantsDetailedExcel = exportType === "detailed-xlsx";
     const checkFreshness = parseBooleanOption(request.nextUrl.searchParams.get("checkFreshness"), false);
     const completeBaseHours = parseBooleanOption(request.nextUrl.searchParams.get("completeBaseHours"), false);
@@ -797,7 +870,7 @@ export async function GET(request) {
       : closures.find((item) => item.isLatest !== false) || closures[0] || null;
     const hasCrossClosure = Boolean(closure && closure.completeBaseHours !== false);
 
-    if ((wantsPayrollCsv || wantsPayrollExcel || wantsDetectedPayrollExcel || wantsDetailedExcel) && !wantsLive && !hasCrossClosure) {
+    if ((wantsPayrollCsv || wantsPayrollExcel || wantsDetectedPayrollExcel || wantsPayrollComparisonExcel || wantsDetailedExcel) && !wantsLive && !hasCrossClosure) {
       return NextResponse.json(
         { error: "Primero guarda el cruce de horas para este mes." },
         { status: 409 },
@@ -843,6 +916,19 @@ export async function GET(request) {
         headers: {
           "Content-Type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
           "Content-Disposition": `attachment; filename="${fileName}"`,
+          "Cache-Control": "no-store",
+        },
+      });
+    }
+
+    if (wantsPayrollComparisonExcel) {
+      const rows = snapshot?.rows || closure?.rows || [];
+      const excel = await buildPayrollComparisonExcel(rows, monthKey);
+
+      return new Response(excel, {
+        headers: {
+          "Content-Type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+          "Content-Disposition": `attachment; filename="comparativa-prenomina-${monthKey}.xlsx"`,
           "Cache-Control": "no-store",
         },
       });

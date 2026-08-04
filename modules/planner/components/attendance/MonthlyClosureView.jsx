@@ -279,6 +279,7 @@ export default function MonthlyClosureView({ view = "summary", fixedMonth = "" }
     const isDetailedExcel = nextExportMode === "detailed-xlsx";
     const isPayrollExcel = ["payroll-xlsx", "payroll-detected-xlsx"].includes(nextExportMode);
     const isDetectedPayrollExcel = nextExportMode === "payroll-detected-xlsx";
+    const isPayrollComparisonExcel = nextExportMode === "payroll-comparison-xlsx";
 
     try {
       setExportMode(nextExportMode);
@@ -302,6 +303,8 @@ export default function MonthlyClosureView({ view = "summary", fixedMonth = "" }
       link.href = url;
       link.download = isDetailedExcel
         ? `cierre-mensual-detallado-${month}.xlsx`
+        : isPayrollComparisonExcel
+          ? `comparativa-prenomina-${month}.xlsx`
         : isPayrollExcel
           ? isDetectedPayrollExcel
             ? `formato-nomina-horas-detectadas-${month}.xlsx`
@@ -394,7 +397,7 @@ export default function MonthlyClosureView({ view = "summary", fixedMonth = "" }
                 disabled={Boolean(exportMode) || isSaving || isLoading || !rows.length}
               >
                 <Eye size={16} />
-                {isDetectedPayrollMode ? "Ver horas aprobadas" : "Ver horas detectadas"}
+                {isDetectedPayrollMode ? "Ver aprobadas" : "Ver detectadas"}
               </button>
               <button
                 type="button"
@@ -403,7 +406,16 @@ export default function MonthlyClosureView({ view = "summary", fixedMonth = "" }
                 disabled={Boolean(exportMode) || isSaving || isLoading || !rows.length}
               >
                 {exportMode ? <RefreshCw size={16} /> : <Download size={16} />}
-                {isDetectedPayrollMode ? "Descargar horas detectadas" : "Descargar formato nómina"}
+                {isDetectedPayrollMode ? "Descargar detectadas" : "Descargar nómina"}
+              </button>
+              <button
+                type="button"
+                className={styles.exportButton}
+                onClick={() => exportClosure("payroll-comparison-xlsx")}
+                disabled={Boolean(exportMode) || isSaving || isLoading || !rows.length}
+              >
+                {exportMode === "payroll-comparison-xlsx" ? <RefreshCw size={16} /> : <Download size={16} />}
+                Comparativa Excel
               </button>
             </>
           ) : (
