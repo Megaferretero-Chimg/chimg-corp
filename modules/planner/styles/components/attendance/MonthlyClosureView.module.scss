@@ -6,6 +6,7 @@
 
 .toolbar,
 .viewModeBar,
+.staleNotice,
 .tableShell,
 .errorBox,
 .loadingScene {
@@ -17,10 +18,11 @@
 
 .toolbar {
   display: flex;
-  justify-content: space-between;
-  gap: 0.8rem;
+  justify-content: flex-start;
+  gap: 0.7rem;
   align-items: end;
-  padding: 1rem;
+  flex-wrap: nowrap;
+  padding: 0.8rem 0.9rem;
 }
 
 .toolbar label {
@@ -37,18 +39,39 @@
 
 .filterGroup {
   display: flex;
-  flex-wrap: wrap;
-  gap: 0.75rem;
+  flex: 0 1 auto;
+  flex-wrap: nowrap;
+  gap: 0.7rem;
   align-items: end;
   min-width: 0;
 }
 
 .filterGroup label {
-  min-width: 13rem;
+  flex: 0 0 10.5rem;
+  width: 10.5rem;
 }
 
-.filterGroup label:last-child {
-  min-width: min(24rem, 100%);
+.closureSelectField {
+  flex: 0 1 23rem;
+  min-width: 15rem;
+  width: clamp(17rem, 28vw, 23rem);
+}
+
+.closureSelectLabel {
+  color: var(--text-muted);
+  font-size: var(--font-size-sm);
+  font-weight: 800;
+}
+
+.closureSelectControl {
+  min-height: 2.55rem;
+  border-color: var(--border);
+  border-radius: 0.65rem;
+}
+
+.closureSelectButton {
+  min-height: calc(2.55rem - 2px);
+  padding-inline: 0.75rem;
 }
 
 .toolbar input,
@@ -83,10 +106,12 @@
 
 .actions {
   display: flex;
+  flex: 0 0 auto;
   justify-content: flex-end;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
   gap: 0.6rem;
   align-items: center;
+  margin-left: auto;
   min-width: 0;
 }
 
@@ -107,6 +132,37 @@
 .saveButton:hover:not(:disabled) {
   transform: translateY(-1px);
   box-shadow: 0 10px 22px rgba(16, 33, 62, 0.1);
+}
+
+.staleNotice {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.65rem;
+  padding: 0.8rem 0.95rem;
+  border-color: rgba(180, 83, 9, 0.2);
+  background: #fffaf0;
+  color: #92400e;
+}
+
+.staleNotice svg {
+  flex: 0 0 auto;
+  margin-top: 0.1rem;
+}
+
+.staleNotice div {
+  display: grid;
+  gap: 0.15rem;
+}
+
+.staleNotice strong,
+.staleNotice span {
+  display: block;
+}
+
+.staleNotice span {
+  color: #a16207;
+  font-size: var(--font-size-sm);
+  font-weight: 700;
 }
 
 .summaryGrid {
@@ -540,9 +596,17 @@
     align-items: stretch;
   }
 
+  .filterGroup label,
+  .closureSelectField {
+    flex: 1 1 auto;
+    min-width: 0;
+    width: 100%;
+  }
+
   .actions {
     align-items: stretch;
     flex-direction: column;
+    margin-left: 0;
   }
 
   .viewModeBar {

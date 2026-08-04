@@ -447,6 +447,43 @@ function getRowEmployeeId(row) {
   return row.employee?.toString?.() || row.employeeId || "";
 }
 
+function sourceRowsFingerprint(rows = [], restoreCompletedHours = false) {
+  const normalizedRows = rows.map((row) => {
+    const completedMinutes = restoreCompletedHours ? Number(row.baseCompletionMinutes) || 0 : 0;
+    const completedFromSupplementary = restoreCompletedHours
+      ? Number(row.baseCompletionFromSupplementaryMinutes) || 0
+      : 0;
+    const completedFromExtraordinary = restoreCompletedHours
+      ? Number(row.baseCompletionFromExtraordinaryMinutes) || 0
+      : 0;
+
+    return {
+      employeeId: getRowEmployeeId(row),
+      plannedDays: Number(row.plannedDays) || 0,
+      daysWithPunches: Number(row.daysWithPunches) || 0,
+      missingPunchDays: Number(row.missingPunchDays) || 0,
+      unplannedWorkDays: Number(row.unplannedWorkDays) || 0,
+      lateDays: Number(row.lateDays) || 0,
+      regularWorkedMinutes: Math.max(0, (Number(row.regularWorkedMinutes) || 0) - completedMinutes),
+      regularTargetMinutes: Number(row.regularTargetMinutes) || 0,
+      supplementaryMinutes: (Number(row.supplementaryMinutes) || 0) + completedFromSupplementary,
+      plannedSupplementaryMinutes: Number(row.plannedSupplementaryMinutes) || 0,
+      detectedSupplementaryMinutes: Number(row.detectedSupplementaryMinutes) || 0,
+      extraordinaryMinutes: (Number(row.extraordinaryMinutes) || 0) + completedFromExtraordinary,
+      plannedExtraordinaryMinutes: Number(row.plannedExtraordinaryMinutes) || 0,
+      detectedExtraordinaryMinutes: Number(row.detectedExtraordinaryMinutes) || 0,
+      lateMinutes: Number(row.lateMinutes) || 0,
+      salaryBase: Number(row.salaryBase) || 0,
+      hourlyRate: Number(row.hourlyRate) || 0,
+      regularShortfallAffectsSalary: row.regularShortfallAffectsSalary !== false,
+    };
+  });
+
+  normalizedRows.sort((left, right) => left.employeeId.localeCompare(right.employeeId));
+
+  return JSON.stringify(normalizedRows);
+}
+
 function formatEmployeeDni(value) {
   return String(value || "").trim();
 }
@@ -713,6 +750,7 @@ export async function GET(request) {
     const wantsPayrollCsv = exportType === "payroll-csv";
     const wantsPayrollExcel = exportType === "payroll-xlsx";
     const wantsDetailedExcel = exportType === "detailed-xlsx";
+    const checkFreshness = parseBooleanOption(request.nextUrl.searchParams.get("checkFreshness"), false);
     const completeBaseHours = parseBooleanOption(request.nextUrl.searchParams.get("completeBaseHours"), false);
     const baseCompletionEmployeeIds = parseEmployeeIdList(request.nextUrl.searchParams.get("baseCompletionEmployeeIds"));
     const closures = await MonthlyAttendanceClosure.find({ monthKey })
@@ -730,12 +768,18 @@ export async function GET(request) {
       );
     }
 
-    const snapshot = wantsLive || !closure
+    const snapshot = wantsLive || !closure || checkFreshness
       ? await buildComparisonSnapshot(request, monthKey, {
         completeBaseHours,
         baseCompletionEmployeeIds: baseCompletionEmployeeIds.length ? baseCompletionEmployeeIds : null,
       })
       : null;
+    const isStale = Boolean(
+      checkFreshness &&
+      closure &&
+      snapshot &&
+      sourceRowsFingerprint(snapshot.rows) !== sourceRowsFingerprint(closure.rows || [], true),
+    );
 
     if (wantsPayrollCsv) {
       const rows = snapshot?.rows || closure?.rows || [];
@@ -779,6 +823,7 @@ export async function GET(request) {
     return NextResponse.json({
       monthKey,
       isClosed: Boolean(closure),
+      isStale,
       mode: wantsLive ? "live" : "saved",
       closure: serializeClosure(closure),
       closures: closures.map((item) => ({

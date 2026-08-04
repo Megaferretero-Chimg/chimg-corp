@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AlertTriangle, Download, RefreshCw, Save } from "lucide-react";
 
 import ConfirmDialog from "@/components/ui/ConfirmDialog";
+import SelectInput from "@/components/ui/SelectInput";
 import { formatEcuadorDateTimeLabel, formatEcuadorMonthKey } from "@/lib/datetime/ecuador";
 import { employeeDismissalLabel, isEmployeeDismissedInMonth } from "@/modules/company/submodules/people/lib/employees";
 import styles from "@/modules/planner/styles/components/attendance/MonthlyClosureView.module.scss";
@@ -65,20 +66,15 @@ function laborableValue(row) {
   return `${metricValue(row.regularWorkedLabel)} / ${metricValue(row.regularTargetLabel)}`;
 }
 
-function rawRegularWorkedMinutes(row) {
-  return Math.max(0, (Number(row.regularWorkedMinutes) || 0) - (Number(row.baseCompletionMinutes) || 0));
-}
-
 function missingRegularMinutes(row) {
-  return Math.max(0, (Number(row.regularTargetMinutes) || 0) - rawRegularWorkedMinutes(row));
+  return Math.max(0, (Number(row.regularTargetMinutes) || 0) - (Number(row.regularWorkedMinutes) || 0));
 }
 
 function availableCompletionMinutes(row) {
   return Math.max(
     0,
     (Number(row.supplementaryMinutes) || 0) +
-      (Number(row.extraordinaryMinutes) || 0) +
-      (Number(row.baseCompletionMinutes) || 0),
+      (Number(row.extraordinaryMinutes) || 0),
   );
 }
 
@@ -95,7 +91,7 @@ export default function MonthlyClosureView({ view = "summary", fixedMonth = "" }
   const [initialState] = useState(() => readInitialState(fixedMonth));
   const initialStateRef = useRef(initialState);
   const [month, setMonth] = useState(() => initialState.month);
-  const [mode, setMode] = useState(() => (isLiveOnlyView ? "live" : initialState.mode));
+  const [mode, setMode] = useState(() => initialState.mode);
   const [payload, setPayload] = useState(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
@@ -103,6 +99,7 @@ export default function MonthlyClosureView({ view = "summary", fixedMonth = "" }
   const [isConfirmOpen, setIsConfirmOpen] = useState(false);
   const [selectedClosureId, setSelectedClosureId] = useState(() => initialState.closureId || "");
   const [error, setError] = useState("");
+  const lastFocusRefreshAtRef = useRef(0);
 
   const isLiveMode = mode === "live";
   const savedClosure = payload?.closure || null;
@@ -121,7 +118,12 @@ export default function MonthlyClosureView({ view = "summary", fixedMonth = "" }
   const totals = data?.totals || {};
   const incompleteRows = rows.filter((row) => missingRegularMinutes(row) > 0);
   const completableRows = incompleteRows.filter(canCompleteRow);
-  const displayedRows = isCrossView ? completableRows : rows;
+  const isSavedCrossResult = isCrossView && !isLiveMode && hasSavedCrossClosure;
+  const displayedRows = isCrossView
+    ? isSavedCrossResult
+      ? rows.filter((row) => (Number(row.baseCompletionMinutes) || 0) > 0)
+      : completableRows
+    : rows;
   const areaRows = useMemo(() => {
     const groups = new Map();
 
@@ -172,6 +174,7 @@ export default function MonthlyClosureView({ view = "summary", fixedMonth = "" }
       params.set("month", nextMonth);
       if (nextMode === "live") params.set("mode", "live");
       if (nextMode !== "live" && nextClosureId) params.set("closureId", nextClosureId);
+      if (isCrossView && nextMode !== "live") params.set("checkFreshness", "true");
 
       const response = await fetch(`/api/planner/attendance/monthly-closure?${params.toString()}`);
       const nextPayload = await response.json();
@@ -183,6 +186,10 @@ export default function MonthlyClosureView({ view = "summary", fixedMonth = "" }
       const nextData = nextMode === "live" ? nextPayload.preview : (nextPayload.closure || nextPayload.preview) || null;
       setPayload(nextPayload);
 
+      if (isCrossView && nextMode !== "live" && nextPayload.isStale && nextPayload.preview) {
+        setMode("live");
+      }
+
       if (shouldApplyDefaultBaseCompletion && nextMode !== "live") {
         setMode("live");
         syncState(nextMonth, "live", nextClosureId);
@@ -192,16 +199,16 @@ export default function MonthlyClosureView({ view = "summary", fixedMonth = "" }
     } finally {
       if (!isSilent) setIsLoading(false);
     }
-  }, []);
+  }, [isCrossView]);
 
   function handleMonthChange(value) {
-    const nextMode = isLiveOnlyView ? "live" : "saved";
+    const nextMode = "saved";
 
     setMonth(value);
     setMode(nextMode);
     setSelectedClosureId("");
     syncState(value, nextMode, "");
-    loadClosure(value, nextMode, "", isLiveOnlyView);
+    loadClosure(value, nextMode, "");
   }
 
   function handleModeChange(nextMode) {
@@ -299,13 +306,32 @@ export default function MonthlyClosureView({ view = "summary", fixedMonth = "" }
   }
 
   useEffect(() => {
+    lastFocusRefreshAtRef.current = Date.now();
     loadClosure(
       initialStateRef.current.month,
-      isLiveOnlyView ? "live" : initialStateRef.current.mode,
+      initialStateRef.current.mode,
       initialStateRef.current.closureId,
-      isLiveOnlyView,
     );
-  }, [isLiveOnlyView, loadClosure]);
+  }, [loadClosure]);
+
+  useEffect(() => {
+    if (!isCrossView) return undefined;
+
+    function refreshCrossOnFocus() {
+      const now = Date.now();
+      if (document.visibilityState !== "visible" || isSaving || now - lastFocusRefreshAtRef.current < 1500) return;
+      lastFocusRefreshAtRef.current = now;
+      loadClosure(month, "saved", "", false, true);
+    }
+
+    window.addEventListener("focus", refreshCrossOnFocus);
+    document.addEventListener("visibilitychange", refreshCrossOnFocus);
+
+    return () => {
+      window.removeEventListener("focus", refreshCrossOnFocus);
+      document.removeEventListener("visibilitychange", refreshCrossOnFocus);
+    };
+  }, [isCrossView, isSaving, loadClosure, month]);
 
   return (
     <section className={styles.panel}>
@@ -316,16 +342,22 @@ export default function MonthlyClosureView({ view = "summary", fixedMonth = "" }
             <input type="month" value={month} onChange={(event) => handleMonthChange(event.target.value)} disabled={hasFixedMonth || isSaving || isLoading} />
           </label>
           {!isLiveOnlyView && closures.length ? (
-            <label>
-              <span>Copia</span>
-              <select value={selectedClosureValue} onChange={(event) => handleClosureVersionChange(event.target.value)} disabled={isSaving || isLoading}>
-                {closures.map((closure) => (
-                  <option key={closure.id} value={closure.id}>
-                    v{closure.version}{closure.isLatest ? " · última" : ""} · {formatEcuadorDateTimeLabel(closure.closedAt)}
-                  </option>
-                ))}
-              </select>
-            </label>
+            <SelectInput
+              label="Copia"
+              value={selectedClosureValue}
+              onChange={(event) => handleClosureVersionChange(event.target.value)}
+              disabled={isSaving || isLoading}
+              className={styles.closureSelectField}
+              labelClassName={styles.closureSelectLabel}
+              controlClassName={styles.closureSelectControl}
+              selectClassName={styles.closureSelectButton}
+            >
+              {closures.map((closure) => (
+                <option key={closure.id} value={closure.id}>
+                  v{closure.version}{closure.isLatest ? " · última" : ""} · {formatEcuadorDateTimeLabel(closure.closedAt)}
+                </option>
+              ))}
+            </SelectInput>
           ) : null}
         </div>
 
@@ -334,11 +366,11 @@ export default function MonthlyClosureView({ view = "summary", fixedMonth = "" }
             <button
               type="button"
               className={styles.saveButton}
-              onClick={handleSaveRequest}
-              disabled={isSaving || isLoading || !completableRows.length}
+              onClick={isSavedCrossResult ? () => handleModeChange("live") : handleSaveRequest}
+              disabled={isSaving || isLoading || (!isSavedCrossResult && !completableRows.length)}
             >
-              {isSaving ? <RefreshCw size={16} /> : <Save size={16} />}
-              Guardar cruce
+              {isSaving || isSavedCrossResult ? <RefreshCw size={16} /> : <Save size={16} />}
+              {isSavedCrossResult ? "Recalcular cruce" : "Guardar cruce"}
             </button>
           ) : isPayrollView ? (
             <button
@@ -396,6 +428,16 @@ export default function MonthlyClosureView({ view = "summary", fixedMonth = "" }
             <RefreshCw size={16} />
             {isLiveMode ? "Volver a copia" : "Ver cálculo actual"}
           </button>
+        </div>
+      ) : null}
+
+      {isCrossView && payload?.isStale ? (
+        <div className={styles.staleNotice} role="status" aria-live="polite">
+          <AlertTriangle size={18} />
+          <div>
+            <strong>El cruce necesita actualizarse</strong>
+            <span>Horario vs. picadas cambió después de la última copia. Revisa los nuevos valores y vuelve a guardar el cruce.</span>
+          </div>
         </div>
       ) : null}
 
@@ -544,9 +586,6 @@ export default function MonthlyClosureView({ view = "summary", fixedMonth = "" }
                           </td>
                           <td>
                             <strong className={styles.salaryValue}>{row.salaryTotalLabel || "$0.00"}</strong>
-                            {(Number(row.regularShortfallDiscount) || 0) > 0 ? (
-                              <span>Faltantes -{moneyLabel(row.regularShortfallDiscount)}</span>
-                            ) : null}
                           </td>
                         </tr>
                         );
@@ -582,7 +621,9 @@ export default function MonthlyClosureView({ view = "summary", fixedMonth = "" }
                           </td>
                           <td>
                             <span className={styles.metricValue}>{laborableValue(row)}</span>
-                            {isCrossView ? (
+                            {isSavedCrossResult && row.baseCompletionMinutes > 0 ? (
+                              <span>Cruzadas {metricValue(row.baseCompletionLabel)}</span>
+                            ) : isCrossView ? (
                               <span>Faltan {metricValue(minutesLabel(missingRegularMinutes(row)))}</span>
                             ) : row.baseCompletionMinutes > 0 ? (
                               <span>Cruzadas {metricValue(row.baseCompletionLabel)}</span>
@@ -590,13 +631,13 @@ export default function MonthlyClosureView({ view = "summary", fixedMonth = "" }
                           </td>
                           <td>
                             <span className={styles.metricValue}>{metricValue(row.supplementaryLabel)}</span>
-                            {isCrossView ? (
+                            {isCrossView && !isSavedCrossResult ? (
                               <span>Disponible {metricValue(minutesLabel(Math.min(Number(row.supplementaryMinutes) || 0, missingRegularMinutes(row))))}</span>
                             ) : null}
                           </td>
                           <td>
                             <span className={styles.metricValue}>{metricValue(row.extraordinaryLabel)}</span>
-                            {isCrossView ? (
+                            {isCrossView && !isSavedCrossResult ? (
                               <span>Disponible {metricValue(minutesLabel(Math.max(0, Math.min(Number(row.extraordinaryMinutes) || 0, missingRegularMinutes(row) - (Number(row.supplementaryMinutes) || 0)))))}</span>
                             ) : null}
                           </td>
