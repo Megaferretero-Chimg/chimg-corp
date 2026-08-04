@@ -5,6 +5,7 @@ import { createAuditLog, resolveAuditActor } from "@/lib/audit";
 import { isAuthenticated } from "@/lib/auth";
 import connectToDatabase from "@/lib/db/mongodb";
 import { formatEcuadorDateTimeLabel, formatEcuadorMonthKey } from "@/lib/datetime/ecuador";
+import { buildEmployeeActiveInMonthQuery } from "@/modules/company/submodules/people/lib/employees";
 import { calculatePayrollAdditionalRate } from "@/modules/planner/lib/payroll/rates";
 import { parseMonthKey } from "@/modules/planner/lib/planning/holidays";
 import { Employee } from "@/modules/company/models";
@@ -522,6 +523,66 @@ function formatEmployeeDni(value) {
   return String(value || "").trim();
 }
 
+async function completePayrollExcelRows(rows, monthKey) {
+  const { monthStart } = monthRangeFromKey(monthKey);
+  const employeeQuery = buildEmployeeActiveInMonthQuery(monthStart);
+
+  employeeQuery.$and.push({
+    $or: [
+      { employmentRelation: "nomina" },
+      { employmentRelation: null },
+      { employmentRelation: { $exists: false } },
+    ],
+  });
+
+  const employees = await Employee.find(employeeQuery)
+    .select({
+      dni: 1,
+      fullName: 1,
+      salary: 1,
+      employmentRelation: 1,
+      isActive: 1,
+      terminationDate: 1,
+    })
+    .lean();
+  const rowsByEmployeeId = new Map(rows.map((row) => [getRowEmployeeId(row), row]));
+
+  return employees
+    .map((employee) => {
+      const employeeId = employee._id.toString();
+      const row = rowsByEmployeeId.get(employeeId);
+
+      if (row) {
+        return {
+          ...row,
+          employeeDni: employee.dni || row.employeeDni || "",
+          employeeName: employee.fullName || row.employeeName || "",
+        };
+      }
+
+      const salaryBase = Math.max(0, Number(employee.salary) || 0);
+
+      return {
+        employee: employee._id,
+        employeeId,
+        employeeDni: employee.dni || "",
+        employeeName: employee.fullName || "",
+        supplementaryMinutes: 0,
+        detectedSupplementaryMinutes: 0,
+        extraordinaryMinutes: 0,
+        detectedExtraordinaryMinutes: 0,
+        regularWorkedMinutes: 0,
+        regularTargetMinutes: 0,
+        lateMinutes: 0,
+        salaryBase,
+        salaryTotal: salaryBase,
+        hourlyRate: 0,
+        regularShortfallAffectsSalary: false,
+      };
+    })
+    .sort((left, right) => String(left.employeeName || "").localeCompare(String(right.employeeName || ""), "es"));
+}
+
 async function buildPayrollCsv(rows, monthKey) {
   const { monthStart } = monthRangeFromKey(monthKey);
   const employeeIds = [...new Set(rows.map(getRowEmployeeId).filter(Boolean))];
@@ -561,26 +622,11 @@ async function buildPayrollCsv(rows, monthKey) {
 
 async function buildPayrollExcel(rows, monthKey, options = {}) {
   const useDetectedHours = options.hoursSource === "detected";
-  const { monthStart } = monthRangeFromKey(monthKey);
-  const employeeIds = [...new Set(rows.map(getRowEmployeeId).filter(Boolean))];
-  const employees = employeeIds.length
-    ? await Employee.find({ _id: { $in: employeeIds } }).select({
-        dni: 1,
-        employmentRelation: 1,
-        isActive: 1,
-        terminationDate: 1,
-      }).lean()
-    : [];
-  const employeesById = new Map(employees.map((employee) => [employee._id.toString(), employee]));
-  const bodyRows = rows
-    .slice()
-    .sort((left, right) => String(left.employeeName || "").localeCompare(String(right.employeeName || ""), "es"))
-    .filter((row) => wasEmployeeInPayrollDuringMonth(employeesById.get(getRowEmployeeId(row)), monthStart))
+  const payrollRows = await completePayrollExcelRows(rows, monthKey);
+  const bodyRows = payrollRows
     .map((row) => {
-      const employee = employeesById.get(getRowEmployeeId(row));
-
       return [
-        formatEmployeeDni(employee?.dni || row.employeeDni),
+        formatEmployeeDni(row.employeeDni),
         formatPayrollMinutes(useDetectedHours ? row.detectedSupplementaryMinutes : row.supplementaryMinutes),
         formatPayrollMinutes(useDetectedHours ? row.detectedExtraordinaryMinutes : row.extraordinaryMinutes),
         formatPayrollMinutes(0),
@@ -620,26 +666,11 @@ async function buildPayrollExcel(rows, monthKey, options = {}) {
 }
 
 async function buildPayrollComparisonExcel(rows, monthKey) {
-  const { monthStart } = monthRangeFromKey(monthKey);
-  const employeeIds = [...new Set(rows.map(getRowEmployeeId).filter(Boolean))];
-  const employees = employeeIds.length
-    ? await Employee.find({ _id: { $in: employeeIds } }).select({
-        dni: 1,
-        employmentRelation: 1,
-        isActive: 1,
-        terminationDate: 1,
-      }).lean()
-    : [];
-  const employeesById = new Map(employees.map((employee) => [employee._id.toString(), employee]));
-  const bodyRows = rows
-    .slice()
-    .sort((left, right) => String(left.employeeName || "").localeCompare(String(right.employeeName || ""), "es"))
-    .filter((row) => wasEmployeeInPayrollDuringMonth(employeesById.get(getRowEmployeeId(row)), monthStart))
+  const payrollRows = await completePayrollExcelRows(rows, monthKey);
+  const bodyRows = payrollRows
     .map((row) => {
-      const employee = employeesById.get(getRowEmployeeId(row));
-
       return [
-        formatEmployeeDni(employee?.dni || row.employeeDni),
+        formatEmployeeDni(row.employeeDni),
         row.employeeName || "",
         decimalHours(row.supplementaryMinutes),
         decimalHours(row.detectedSupplementaryMinutes),

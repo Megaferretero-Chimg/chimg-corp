@@ -70,6 +70,14 @@ function differenceLabel(detectedMinutes, approvedMinutes) {
   return `Diferencia ${difference > 0 ? "+" : "-"}${minutesLabel(Math.abs(difference))}`;
 }
 
+function moneyDifferenceLabel(detectedAmount, approvedAmount) {
+  const difference = (Number(detectedAmount) || 0) - (Number(approvedAmount) || 0);
+
+  if (Math.abs(difference) < 0.005) return "Sin diferencia";
+
+  return `Diferencia ${difference > 0 ? "+" : "-"}${moneyLabel(Math.abs(difference))}`;
+}
+
 function laborableValue(row) {
   return `${metricValue(row.regularWorkedLabel)} / ${metricValue(row.regularTargetLabel)}`;
 }
@@ -134,6 +142,38 @@ export default function MonthlyClosureView({ view = "summary", fixedMonth = "" }
       ? rows.filter((row) => (Number(row.baseCompletionMinutes) || 0) > 0)
       : completableRows
     : rows;
+  const payrollMetrics = useMemo(() => rows.reduce((metrics, row) => {
+    const approvedSalary = Number(row.salaryTotal) || 0;
+    const detectedSalary = Number(row.salaryDetectedAnalysis) || 0;
+    const approvedSupplementaryMinutes = Number(row.supplementaryMinutes) || 0;
+    const detectedSupplementaryMinutes = Number(row.detectedSupplementaryMinutes) || 0;
+    const approvedExtraordinaryMinutes = Number(row.extraordinaryMinutes) || 0;
+    const detectedExtraordinaryMinutes = Number(row.detectedExtraordinaryMinutes) || 0;
+    const hasDifference =
+      approvedSupplementaryMinutes !== detectedSupplementaryMinutes ||
+      approvedExtraordinaryMinutes !== detectedExtraordinaryMinutes ||
+      Math.abs(approvedSalary - detectedSalary) >= 0.005;
+
+    metrics.approvedSalary += approvedSalary;
+    metrics.detectedSalary += detectedSalary;
+    metrics.approvedSupplementaryMinutes += approvedSupplementaryMinutes;
+    metrics.detectedSupplementaryMinutes += detectedSupplementaryMinutes;
+    metrics.approvedExtraordinaryMinutes += approvedExtraordinaryMinutes;
+    metrics.detectedExtraordinaryMinutes += detectedExtraordinaryMinutes;
+    metrics.employees += 1;
+    if (hasDifference) metrics.employeesWithDifference += 1;
+
+    return metrics;
+  }, {
+    approvedSalary: 0,
+    detectedSalary: 0,
+    approvedSupplementaryMinutes: 0,
+    detectedSupplementaryMinutes: 0,
+    approvedExtraordinaryMinutes: 0,
+    detectedExtraordinaryMinutes: 0,
+    employees: 0,
+    employeesWithDifference: 0,
+  }), [rows]);
   const areaRows = useMemo(() => {
     const groups = new Map();
 
@@ -488,33 +528,63 @@ export default function MonthlyClosureView({ view = "summary", fixedMonth = "" }
       ) : null}
 
       {!isLiveOnlyView && !isLoading && data ? (
-        <div className={styles.summaryGrid}>
-          <article>
-            <span>Laborables</span>
-            <strong>{metricValue(totals.regularWorkedLabel)} / {metricValue(totals.regularTargetLabel)}</strong>
-            <small>{totals.baseCompletionMinutes ? `Cruzadas ${metricValue(totals.baseCompletionLabel)}` : "Base registrada"}</small>
-          </article>
-          <article>
-            <span>Suplementarias</span>
-            <strong>{metricValue(totals.supplementaryLabel)}</strong>
-            <small>{totals.supplementaryAmountLabel || "Valor adicional"}</small>
-          </article>
-          <article>
-            <span>Extraordinarias</span>
-            <strong>{metricValue(totals.extraordinaryLabel)}</strong>
-            <small>{totals.extraordinaryAmountLabel || "Valor adicional"}</small>
-          </article>
-          <article>
-            <span>Atrasos</span>
-            <strong>{metricValue(totals.lateLabel)}</strong>
-            <small>Control interno</small>
-          </article>
-          <article>
-            <span>Sueldos</span>
-            <strong>{totals.salaryTotalLabel || "$0.00"}</strong>
-            <small>{totals.employees || 0} empleados</small>
-          </article>
-        </div>
+        isPayrollView ? (
+          <div className={`${styles.summaryGrid} ${styles.payrollSummaryGrid}`}>
+            <article className={styles.payrollApprovedCard}>
+              <span>Nómina aprobada</span>
+              <strong>{moneyLabel(payrollMetrics.approvedSalary)}</strong>
+              <small>Copia vigente para pago</small>
+            </article>
+            <article className={styles.payrollDetectedCard}>
+              <span>Proyección detectada</span>
+              <strong>{moneyLabel(payrollMetrics.detectedSalary)}</strong>
+              <small>{moneyDifferenceLabel(payrollMetrics.detectedSalary, payrollMetrics.approvedSalary)}</small>
+            </article>
+            <article className={styles.payrollHoursCard}>
+              <span>Horas suplementarias</span>
+              <strong>{minutesLabel(payrollMetrics.approvedSupplementaryMinutes)} / {minutesLabel(payrollMetrics.detectedSupplementaryMinutes)}</strong>
+              <small>Aprobadas / detectadas · {differenceLabel(payrollMetrics.detectedSupplementaryMinutes, payrollMetrics.approvedSupplementaryMinutes)}</small>
+            </article>
+            <article className={styles.payrollHoursCard}>
+              <span>Horas extraordinarias</span>
+              <strong>{minutesLabel(payrollMetrics.approvedExtraordinaryMinutes)} / {minutesLabel(payrollMetrics.detectedExtraordinaryMinutes)}</strong>
+              <small>Aprobadas / detectadas · {differenceLabel(payrollMetrics.detectedExtraordinaryMinutes, payrollMetrics.approvedExtraordinaryMinutes)}</small>
+            </article>
+            <article className={styles.payrollVariationCard}>
+              <span>Empleados con variación</span>
+              <strong>{payrollMetrics.employeesWithDifference} de {payrollMetrics.employees}</strong>
+              <small>Con diferencias en horas o sueldo</small>
+            </article>
+          </div>
+        ) : (
+          <div className={styles.summaryGrid}>
+            <article>
+              <span>Laborables</span>
+              <strong>{metricValue(totals.regularWorkedLabel)} / {metricValue(totals.regularTargetLabel)}</strong>
+              <small>{totals.baseCompletionMinutes ? `Cruzadas ${metricValue(totals.baseCompletionLabel)}` : "Base registrada"}</small>
+            </article>
+            <article>
+              <span>Suplementarias</span>
+              <strong>{metricValue(totals.supplementaryLabel)}</strong>
+              <small>{totals.supplementaryAmountLabel || "Valor adicional"}</small>
+            </article>
+            <article>
+              <span>Extraordinarias</span>
+              <strong>{metricValue(totals.extraordinaryLabel)}</strong>
+              <small>{totals.extraordinaryAmountLabel || "Valor adicional"}</small>
+            </article>
+            <article>
+              <span>Atrasos</span>
+              <strong>{metricValue(totals.lateLabel)}</strong>
+              <small>Control interno</small>
+            </article>
+            <article>
+              <span>Sueldos</span>
+              <strong>{totals.salaryTotalLabel || "$0.00"}</strong>
+              <small>{totals.employees || 0} empleados</small>
+            </article>
+          </div>
+        )
       ) : null}
 
       {error ? (
@@ -530,7 +600,7 @@ export default function MonthlyClosureView({ view = "summary", fixedMonth = "" }
         </div>
       ) : (
         <>
-          {!isLiveOnlyView && data ? (
+          {!isLiveOnlyView && !isPayrollView && data ? (
             <section className={styles.areaSection}>
             <div className={styles.sectionHeader}>
               <div>
@@ -630,7 +700,9 @@ export default function MonthlyClosureView({ view = "summary", fixedMonth = "" }
                             </span>
                             {isDetectedPayrollMode ? (
                               <span>Aprobadas {metricValue(row.supplementaryLabel)} · {differenceLabel(row.detectedSupplementaryMinutes, row.supplementaryMinutes)}</span>
-                            ) : null}
+                            ) : (
+                              <span>Detectadas {metricValue(row.detectedSupplementaryLabel)} · {differenceLabel(row.detectedSupplementaryMinutes, row.supplementaryMinutes)}</span>
+                            )}
                           </td>
                           <td>
                             <span className={styles.metricValue}>
@@ -638,13 +710,19 @@ export default function MonthlyClosureView({ view = "summary", fixedMonth = "" }
                             </span>
                             {isDetectedPayrollMode ? (
                               <span>Aprobadas {metricValue(row.extraordinaryLabel)} · {differenceLabel(row.detectedExtraordinaryMinutes, row.extraordinaryMinutes)}</span>
-                            ) : null}
+                            ) : (
+                              <span>Detectadas {metricValue(row.detectedExtraordinaryLabel)} · {differenceLabel(row.detectedExtraordinaryMinutes, row.extraordinaryMinutes)}</span>
+                            )}
                           </td>
                           <td>
                             <strong className={styles.salaryValue}>
                               {isDetectedPayrollMode ? row.salaryDetectedAnalysisLabel || "$0.00" : row.salaryTotalLabel || "$0.00"}
                             </strong>
-                            {isDetectedPayrollMode ? <span>Aprobado {row.salaryTotalLabel || "$0.00"}</span> : null}
+                            {isDetectedPayrollMode ? (
+                              <span>Aprobado {row.salaryTotalLabel || "$0.00"}</span>
+                            ) : (
+                              <span>Detectado {row.salaryDetectedAnalysisLabel || "$0.00"} · {moneyDifferenceLabel(row.salaryDetectedAnalysis, row.salaryTotal)}</span>
+                            )}
                           </td>
                         </tr>
                         );
