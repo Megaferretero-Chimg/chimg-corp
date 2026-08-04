@@ -674,14 +674,27 @@ async function buildPayrollComparisonExcel(rows, monthKey) {
         row.employeeName || "",
         decimalHours(row.supplementaryMinutes),
         decimalHours(row.detectedSupplementaryMinutes),
+        decimalHours((Number(row.detectedSupplementaryMinutes) || 0) - (Number(row.supplementaryMinutes) || 0)),
         decimalHours(row.extraordinaryMinutes),
         decimalHours(row.detectedExtraordinaryMinutes),
+        decimalHours((Number(row.detectedExtraordinaryMinutes) || 0) - (Number(row.extraordinaryMinutes) || 0)),
         roundMoney(row.salaryTotal),
         roundMoney(detectedSalaryTotal(row)),
       ];
     });
   const worksheet = XLSX.utils.aoa_to_sheet([
-    ["Cedula", "Nombre", "HS aprobadas", "HS detectadas", "HE aprobadas", "HE detectadas", "Sueldo aprobado", "Sueldo detectado"],
+    [
+      "Cedula",
+      "Nombre",
+      "HS aprobadas",
+      "HS detectadas",
+      "HS diferencia",
+      "HE aprobadas",
+      "HE detectadas",
+      "HE diferencia",
+      "Sueldo aprobado",
+      "Sueldo detectado",
+    ],
     ...bodyRows,
   ]);
 
@@ -692,10 +705,12 @@ async function buildPayrollComparisonExcel(rows, monthKey) {
     { wch: 16 },
     { wch: 16 },
     { wch: 16 },
+    { wch: 16 },
+    { wch: 16 },
     { wch: 18 },
     { wch: 18 },
   ];
-  worksheet["!autofilter"] = { ref: `A1:H${bodyRows.length + 1}` };
+  worksheet["!autofilter"] = { ref: `A1:J${bodyRows.length + 1}` };
 
   bodyRows.forEach((_, index) => {
     const rowNumber = index + 2;
@@ -706,11 +721,11 @@ async function buildPayrollComparisonExcel(rows, monthKey) {
       dniCell.z = "@";
     }
 
-    ["C", "D", "E", "F"].forEach((column) => {
+    ["C", "D", "E", "F", "G", "H"].forEach((column) => {
       const cell = worksheet[`${column}${rowNumber}`];
       if (cell) cell.z = "0.00";
     });
-    ["G", "H"].forEach((column) => {
+    ["I", "J"].forEach((column) => {
       const cell = worksheet[`${column}${rowNumber}`];
       if (cell) cell.z = "$#,##0.00";
     });
