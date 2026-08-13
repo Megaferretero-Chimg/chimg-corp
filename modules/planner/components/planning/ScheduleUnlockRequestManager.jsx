@@ -8,6 +8,16 @@ import FloatingNotice from "@/components/ui/FloatingNotice";
 import { formatEcuadorDateTimeLabel } from "@/lib/datetime/ecuador";
 import styles from "@/modules/planner/styles/components/planning/ScheduleUnlockRequestManager.module.scss";
 
+function formatDateKeyLabel(value) {
+  const [year, month, day] = String(value || "").split("-");
+
+  return year && month && day ? `${day}/${month}/${year}` : "Fecha no disponible";
+}
+
+function formatWeekRangeLabel(request = {}) {
+  return `${formatDateKeyLabel(request.weekStartKey)} – ${formatDateKeyLabel(request.weekEndKey)}`;
+}
+
 export default function ScheduleUnlockRequestManager() {
   const [requests, setRequests] = useState([]);
   const [capabilities, setCapabilities] = useState({ canReview: false });
@@ -80,7 +90,7 @@ export default function ScheduleUnlockRequestManager() {
         isOpen={Boolean(decision)}
         title={decision?.action === "approve" ? "Aprobar desbloqueo" : "Rechazar desbloqueo"}
         message={decision
-          ? `${decision.action === "approve" ? "La planificación se desbloqueará" : "La planificación continuará bloqueada"} para ${decision.request.groupName}, semana del ${decision.request.weekStartKey}.`
+          ? `${decision.action === "approve" ? "La planificación se desbloqueará" : "La planificación continuará bloqueada"} para ${decision.request.groupName}, del ${formatWeekRangeLabel(decision.request)}.`
           : ""}
         confirmLabel={decision?.action === "approve" ? "Aprobar y desbloquear" : "Rechazar"}
         tone={decision?.action === "reject" ? "danger" : "warning"}
@@ -110,7 +120,7 @@ export default function ScheduleUnlockRequestManager() {
                   <th>Semana</th>
                   <th>Solicitado por</th>
                   <th>Motivo</th>
-                  <th aria-label="Acciones" />
+                  <th>Acciones</th>
                 </tr>
               </thead>
               <tbody>
@@ -121,8 +131,8 @@ export default function ScheduleUnlockRequestManager() {
                       <span>{request.branchName || request.branchCode || ""}</span>
                     </td>
                     <td>
-                      <strong>{request.weekStartKey}</strong>
-                      <span>{formatEcuadorDateTimeLabel(request.requestedAt)}</span>
+                      <strong>{formatWeekRangeLabel(request)}</strong>
+                      <span>Solicitada: {formatEcuadorDateTimeLabel(request.requestedAt)}</span>
                     </td>
                     <td>{request.requestedBy || "Sin registro"}</td>
                     <td className={styles.reasonCell}>{request.reason}</td>
@@ -138,6 +148,7 @@ export default function ScheduleUnlockRequestManager() {
                             aria-label="Aprobar y desbloquear planificación"
                           >
                             <Check size={16} />
+                            <span>Aprobar y desbloquear</span>
                           </button>
                           <button
                             type="button"
@@ -148,6 +159,7 @@ export default function ScheduleUnlockRequestManager() {
                             aria-label="Rechazar solicitud de desbloqueo"
                           >
                             <X size={16} />
+                            <span>Rechazar</span>
                           </button>
                         </div>
                       ) : null}

@@ -93,17 +93,29 @@
 .actions {
   display: flex;
   justify-content: flex-end;
+  flex-wrap: wrap;
   gap: 0.4rem;
 }
 
 .actions button {
-  width: 2.2rem;
-  height: 2.2rem;
+  min-height: 2.2rem;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  border-radius: 999px;
+  gap: 0.35rem;
+  border-radius: 6px;
+  padding: 0.45rem 0.65rem;
   cursor: pointer;
+  font-size: var(--font-size-xs);
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.table .actions button span {
+  display: inline;
+  margin: 0;
+  color: currentColor;
+  font-size: inherit;
 }
 
 .approveButton {

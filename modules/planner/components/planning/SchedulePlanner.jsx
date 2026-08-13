@@ -1163,13 +1163,19 @@ function estimateWeeklyPlanningCost({
   weekDateKeys.forEach((dateKey) => {
     const shiftKey = draftDays[employee.id]?.[dateKey] || "off";
     const shift = shiftOptionsByKey.get(shiftKey) || FALLBACK_SHIFT_BY_KEY.get(shiftKey) || OFF_SHIFT_OPTION;
+    const baseMinutes = Math.max((Number(dailyBaseHours) || ECUADOR_DAILY_BASE_HOURS) * 60, 0);
+
+    if (shift.dayType === "vacation") {
+      workedDays += 1;
+      laborableMinutes += baseMinutes;
+      return;
+    }
 
     if (shift.dayType !== "workday") {
       return;
     }
 
     const netMinutes = workedNetMinutes(shift);
-    const baseMinutes = Math.max((Number(dailyBaseHours) || ECUADOR_DAILY_BASE_HOURS) * 60, 0);
 
     if (holidayDateKeys.has(dateKey)) {
       const minutes = netMinutes;

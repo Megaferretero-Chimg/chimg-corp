@@ -87,6 +87,15 @@ export function getUnlockRequestWeekMonthKeys(weekStartKey) {
   }))];
 }
 
+export function getUnlockRequestWeekEndKey(weekStartKey) {
+  const start = new Date(`${weekStartKey}T12:00:00.000Z`);
+
+  if (Number.isNaN(start.getTime())) return "";
+
+  start.setUTCDate(start.getUTCDate() + 6);
+  return start.toISOString().slice(0, 10);
+}
+
 export function serializeScheduleUnlockRequest(request) {
   if (!request) return null;
 
@@ -102,6 +111,7 @@ export function serializeScheduleUnlockRequest(request) {
     branchName: request.branchName || "",
     monthKey: request.monthKey || "",
     weekStartKey: request.weekStartKey || "",
+    weekEndKey: getUnlockRequestWeekEndKey(request.weekStartKey),
     approvalVersionKey: request.approvalVersionKey || "",
     approvalVersionSavedAt: request.approvalVersionSavedAt || null,
     approvalApprovedAt: request.approvalApprovedAt || null,

@@ -217,7 +217,7 @@ export async function PATCH(request, context) {
           },
         });
 
-        await AuditLog.create(auditDocuments, { session });
+        await AuditLog.create(auditDocuments, { session, ordered: true });
       });
     } finally {
       await session.endSession();
