@@ -1386,6 +1386,14 @@ function overlayPlannedScheduleDay(overlay, dateKey) {
   });
 }
 
+function exceptionOverlayAffectsSchedule(overlay) {
+  if (overlay?.kind !== "exception") return false;
+
+  const raw = overlay.raw || {};
+
+  return raw.status !== "void" && raw.resolution !== "no_action";
+}
+
 function applyPlanningOverlaysToDraftDays({ draftDays, employees, weekDateKeys, overlaysByEmployeeDate }) {
   const next = {};
 
@@ -1404,6 +1412,10 @@ function applyPlanningOverlaysToDraftDays({ draftDays, employees, weekDateKeys, 
 
       if (overlay.kind === "vacation") {
         employeeDays[dateKey] = RESERVED_SHIFT_KEYS.vacation;
+        return;
+      }
+
+      if (!exceptionOverlayAffectsSchedule(overlay)) {
         return;
       }
 
@@ -1974,6 +1986,24 @@ export default function SchedulePlanner({ initialFilters = {}, basePath = "/sche
     buildPlanningOverlayIndexes({ exceptions, vacations }),
   [exceptions, vacations]);
 
+  const effectiveShiftOptionsByKey = useMemo(() => {
+    const optionsByKey = new Map(shiftOptionsByKey);
+
+    overlaysByEmployeeDate.forEach((overlay, employeeDateKey) => {
+      if (!exceptionOverlayAffectsSchedule(overlay)) return;
+
+      const dateKey = String(employeeDateKey).split("|").at(-1) || overlay.dateKey;
+      const plannedDay = overlayPlannedScheduleDay(overlay, dateKey);
+
+      if (plannedDay) {
+        const option = buildShiftOption(plannedDay);
+        setShiftOption(optionsByKey, option);
+      }
+    });
+
+    return optionsByKey;
+  }, [overlaysByEmployeeDate, shiftOptionsByKey]);
+
   const holidaysByDate = useMemo(
     () => new Map(holidays.map((holiday) => [holiday.dateKey, holiday])),
     [holidays],
@@ -2073,13 +2103,13 @@ export default function SchedulePlanner({ initialFilters = {}, basePath = "/sche
         employee,
         weekDateKeys,
         draftDays: effectiveDraftDays,
-        shiftOptionsByKey,
+        shiftOptionsByKey: effectiveShiftOptionsByKey,
         holidayDateKeys,
         dailyBaseHours,
         regularWorkdayLimit: 5,
       }),
     ]));
-  }, [dailyBaseHours, effectiveDraftDays, filteredEmployees, holidayDateKeys, shiftOptionsByKey, showFinancials, showHours, showSummaries, weekDateKeys]);
+  }, [dailyBaseHours, effectiveDraftDays, effectiveShiftOptionsByKey, filteredEmployees, holidayDateKeys, showFinancials, showHours, showSummaries, weekDateKeys]);
 
   const summary = useMemo(() => {
     let extraDayIndicators = 0;
