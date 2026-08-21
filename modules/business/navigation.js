@@ -1,0 +1,34 @@
+import { businessModulePath } from "@/modules/business/routes";
+
+export const BUSINESS_MODULE_NAVIGATION = [
+  {
+    title: "Inicio",
+    href: businessModulePath("/home"),
+    items: [
+      {
+        href: businessModulePath("/home"),
+        label: "Resumen general",
+        description: "Vista del módulo de negocio",
+        permission: "business.home.view",
+      },
+    ],
+  },
+  {
+    title: "Inventario",
+    href: businessModulePath("/inventory"),
+    items: [
+      {
+        href: businessModulePath("/inventory"),
+        label: "Productos y existencias",
+        description: "Catálogo y carga desde Excel",
+        permission: "business.inventory.view",
+      },
+      {
+        href: businessModulePath("/warehouses"),
+        label: "Bodegas",
+        description: "Administración de ubicaciones de stock",
+        permission: "business.warehouses.view",
+      },
+    ],
+  },
+];

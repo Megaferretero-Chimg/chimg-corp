@@ -163,6 +163,31 @@ export const ACCESS_PERMISSION_CATALOG = [
       },
     ],
   },
+  {
+    moduleKey: "business",
+    moduleLabel: "Negocio",
+    groups: [
+      {
+        key: "business.home",
+        label: "Inicio",
+        description: "Resumen del módulo de negocio.",
+        permissions: [
+          { key: "business.home.view", label: "Ver inicio", type: "page", path: "/modules/business/home" },
+        ],
+      },
+      {
+        key: "business.inventory",
+        label: "Inventario",
+        description: "Productos, existencias, cargas y bodegas.",
+        permissions: [
+          { key: "business.inventory.view", label: "Ver inventario", type: "page", path: "/modules/business/inventory" },
+          { key: "business.inventory.import", label: "Importar inventario", type: "action", requiresAnyPage: ["business.inventory.view"] },
+          { key: "business.warehouses.view", label: "Ver bodegas", type: "page", path: "/modules/business/warehouses" },
+          { key: "business.warehouses.manage", label: "Gestionar bodegas", type: "action", requiresAnyPage: ["business.warehouses.view"] },
+        ],
+      },
+    ],
+  },
 ];
 
 export const ALL_ACCESS_PERMISSIONS = ACCESS_PERMISSION_CATALOG.flatMap((module) =>
@@ -262,6 +287,16 @@ export const ACCESS_PAGE_CATALOG = [
       ["Autorizaciones (redirección)", "/modules/planning/settings/authorizations", "planner.settings.view"],
       ["Reglas laborales (redirección)", "/modules/planning/settings/labor-rules", "planner.settings.view"],
       ["Reglas de picadas (redirección)", "/modules/planning/settings/punch-rules", "planner.settings.view"],
+    ],
+  },
+  {
+    moduleKey: "business",
+    moduleLabel: "Negocio",
+    pages: [
+      ["Entrada al módulo", "/modules/business", "business.home.view"],
+      ["Inicio", "/modules/business/home", "business.home.view"],
+      ["Inventario", "/modules/business/inventory", "business.inventory.view"],
+      ["Bodegas", "/modules/business/warehouses", "business.warehouses.view"],
     ],
   },
 ].map((module) => ({

@@ -83,6 +83,11 @@ const INLINE_EXCEPTION_OPTIONS = [
     description: "Autoriza el horario que debía aplicar en este día.",
   },
   {
+    value: "absence",
+    label: "Falta",
+    description: "Registra que el empleado faltó durante toda la jornada y descuenta el día, aunque existan picadas incompletas.",
+  },
+  {
     value: "missing_punch",
     label: "Picada omitida",
     description: "Completa la asistencia con picadas manuales o con el horario planificado.",
@@ -1139,11 +1144,12 @@ function inlineExceptionOptionsForDay(day) {
   }
 
   if (hasIncompletePunchTag(day)) {
-    return INLINE_EXCEPTION_OPTIONS.filter((option) => ["missing_punch", "schedule_change"].includes(option.value));
+    return INLINE_EXCEPTION_OPTIONS.filter((option) => ["absence", "missing_punch", "schedule_change"].includes(option.value));
   }
 
   if (hasDayTag(day, "Sin picadas")) {
     return INLINE_EXCEPTION_OPTIONS.filter((option) => [
+      "absence",
       "schedule_change",
       "missing_punch",
       "outside_work",
@@ -1563,6 +1569,19 @@ function inlineExceptionPayload(employeeId, draft) {
     notes: draft.notes,
     autoResolve: true,
   };
+
+  if (draft.type === "absence") {
+    return {
+      ...common,
+      scope: "full_day",
+      effect: "unpaid_absence",
+      attendanceMode: "ignore_attendance",
+      payMode: "discount",
+      resolution: "discount_day",
+      countsAsWorkedTime: false,
+      allowSupplementaryTime: false,
+    };
+  }
 
   if (draft.type === "extra_day") {
     return {

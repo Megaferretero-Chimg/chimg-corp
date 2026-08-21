@@ -1,5 +1,5 @@
 import Image from "next/image";
-import { Building2, CalendarRange } from "lucide-react";
+import { Building2, CalendarRange, PackageSearch } from "lucide-react";
 
 import LogoutButton from "@/components/auth/LogoutButton";
 import TransitionLink from "@/components/navigation/TransitionLink";
@@ -10,6 +10,7 @@ import styles from "./page.module.scss";
 const moduleIcons = {
   "building-2": Building2,
   "calendar-range": CalendarRange,
+  "package-search": PackageSearch,
 };
 
 export const metadata = {

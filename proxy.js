@@ -69,6 +69,24 @@ function hasAnyPermission(permissionSet, permissions = []) {
 function canAccessApi(pathname, method, permissionSet) {
   if (pathname.startsWith("/api/auth/")) return true;
 
+  if (pathname === "/api/business/inventory") {
+    return hasAnyPermission(permissionSet, ["business.inventory.view"]);
+  }
+
+  if (pathname === "/api/business/inventory/import") {
+    return hasAnyPermission(permissionSet, ["business.inventory.import"]);
+  }
+
+  if (pathname === "/api/business/warehouses") {
+    return method === "GET"
+      ? hasAnyPermission(permissionSet, ["business.warehouses.view", "business.inventory.view"])
+      : hasAnyPermission(permissionSet, ["business.warehouses.manage"]);
+  }
+
+  if (pathname.startsWith("/api/business/warehouses/")) {
+    return hasAnyPermission(permissionSet, ["business.warehouses.manage"]);
+  }
+
   if (pathname === "/api/company/employees") {
     if (method !== "GET") return hasAnyPermission(permissionSet, ["company.employees.create"]);
     return hasAnyPermission(permissionSet, [

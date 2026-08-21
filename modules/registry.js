@@ -6,9 +6,17 @@ import {
 } from "@/lib/access-control";
 import { COMPANY_MODULE } from "@/modules/company/module";
 import { PLANNING_MODULE } from "@/modules/planner/module";
+import { BUSINESS_MODULE } from "@/modules/business/module";
 import { hasAccessPermission } from "@/modules/company/submodules/access/lib/permissions";
 
 export const MODULE_DEFINITIONS = [
+  {
+    ...BUSINESS_MODULE,
+    status: "Disponible",
+    description: "Productos, existencias, bodegas y futuros datos comerciales.",
+    bullets: ["Inventario", "Bodegas", "Importación Excel", "Próximamente clientes"],
+    icon: "package-search",
+  },
   {
     ...PLANNING_MODULE,
     status: "Disponible",
@@ -76,6 +84,22 @@ export function getModuleCardsForUser(user) {
         hasAccessPermission(user, "planner.reports.view");
     }
 
+    if (module.key === BUSINESS_MODULE.key) {
+      return hasAccessPermission(user, "business.home.view") ||
+        hasAccessPermission(user, "business.inventory.view") ||
+        hasAccessPermission(user, "business.warehouses.view");
+    }
+
     return true;
-  }).map(asModuleCard);
+  }).map((module) => {
+    if (module.key !== BUSINESS_MODULE.key) return asModuleCard(module);
+
+    const href = hasAccessPermission(user, "business.home.view")
+      ? BUSINESS_MODULE.homeHref
+      : hasAccessPermission(user, "business.inventory.view")
+        ? "/modules/business/inventory"
+        : "/modules/business/warehouses";
+
+    return asModuleCard({ ...module, href });
+  });
 }
