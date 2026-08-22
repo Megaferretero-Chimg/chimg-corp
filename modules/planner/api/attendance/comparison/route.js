@@ -1558,6 +1558,11 @@ function applyWeeklyExtraDayTypes(days = []) {
     [...weekDays]
       .sort((left, right) => String(left.dateKey || "").localeCompare(String(right.dateKey || "")))
       .forEach((day) => {
+        if (day.isHoliday) {
+          byDate.set(day.dateKey, day);
+          return;
+        }
+
         if (day.isAuthorizedExtraDay && day.startTime && day.endTime) {
           const plannedExtraordinaryMinutes = resolveScheduledNetMinutes(day);
 
@@ -2828,7 +2833,13 @@ function compareDay(day, punches, employee = {}, scheduleRules = {}, permissionC
     tags.push("Trabajo sin horario");
   }
 
-  if (isWorkingDay && punchCount === 0 && !shouldUsePlannedAttendance && !shouldSuppressScheduleIssues) {
+  if (
+    isWorkingDay &&
+    !day.isHoliday &&
+    punchCount === 0 &&
+    !shouldUsePlannedAttendance &&
+    !shouldSuppressScheduleIssues
+  ) {
     tags.push("Sin picadas");
   }
 
