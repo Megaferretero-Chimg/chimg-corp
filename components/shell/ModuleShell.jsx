@@ -93,8 +93,9 @@ export default function ModuleShell({ title, description, actions = null, childr
         <Image
           src="/imgs/logo-chimg.png"
           alt=""
-          width={46}
-          height={46}
+          width={1327}
+          height={441}
+          sizes="46px"
           className={styles.mobileBrandLogo}
           priority
         />
@@ -127,8 +128,9 @@ export default function ModuleShell({ title, description, actions = null, childr
               <Image
                 src="/imgs/logo-chimg.png"
                 alt="Logo de la empresa"
-                width={42}
-                height={42}
+                width={1327}
+                height={441}
+                sizes="86px"
                 className={styles.logo}
                 priority
               />
