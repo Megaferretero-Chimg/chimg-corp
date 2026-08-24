@@ -31,4 +31,22 @@ export const BUSINESS_MODULE_NAVIGATION = [
       },
     ],
   },
+  {
+    title: "CHIMG Contingencia",
+    href: businessModulePath("/devices"),
+    items: [
+      {
+        href: businessModulePath("/devices"),
+        label: "Dispositivos",
+        description: "Activación, bodega y estado de cajas",
+        permission: "business.devices.view",
+      },
+      {
+        href: businessModulePath("/sync"),
+        label: "Documentos recibidos",
+        description: "Guías y clientes creados offline",
+        permission: "business.syncDocuments.view",
+      },
+    ],
+  },
 ];

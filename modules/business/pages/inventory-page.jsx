@@ -15,7 +15,10 @@ export default async function InventoryPage() {
       title="Inventario"
       description="Actualiza productos desde Excel y consulta el stock disponible en cada bodega."
     >
-      <InventoryManagement canImport={hasAccessPermission(user, "business.inventory.import")} />
+      <InventoryManagement
+        canImport={hasAccessPermission(user, "business.inventory.import")}
+        canPublish={hasAccessPermission(user, "business.inventory.publish")}
+      />
     </ModuleShell>
   );
 }

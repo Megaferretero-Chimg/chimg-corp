@@ -77,6 +77,26 @@ function canAccessApi(pathname, method, permissionSet) {
     return hasAnyPermission(permissionSet, ["business.inventory.import"]);
   }
 
+  if (pathname.startsWith("/api/business/inventory/imports/") && pathname.endsWith("/publish")) {
+    return hasAnyPermission(permissionSet, ["business.inventory.publish"]);
+  }
+
+  if (pathname === "/api/business/devices") {
+    return hasAnyPermission(permissionSet, ["business.devices.view"]);
+  }
+
+  if (pathname === "/api/business/devices/activation-codes" || pathname.startsWith("/api/business/devices/")) {
+    return hasAnyPermission(permissionSet, ["business.devices.manage"]);
+  }
+
+  if (pathname === "/api/business/sync/documents") {
+    return hasAnyPermission(permissionSet, ["business.syncDocuments.view"]);
+  }
+
+  if (pathname.startsWith("/api/business/sync/documents/")) {
+    return hasAnyPermission(permissionSet, ["business.syncDocuments.manage"]);
+  }
+
   if (pathname === "/api/business/warehouses") {
     return method === "GET"
       ? hasAnyPermission(permissionSet, ["business.warehouses.view", "business.inventory.view"])
@@ -201,9 +221,11 @@ export async function proxy(request) {
   const sessionCookie = request.cookies.get(SESSION_COOKIE_NAME)?.value || "";
   const session = getSignedSession(sessionCookie);
   const accessRole = session?.accessRole || "";
+  const isDeviceApi = pathname.startsWith("/api/v1/");
 
   if (
     pathname.startsWith("/api/") &&
+    !isDeviceApi &&
     accessRole === PLANNING_EXCEPTIONS_ACCESS_ROLE &&
     !canLimitedUserAccessApi(pathname)
   ) {
@@ -213,7 +235,7 @@ export async function proxy(request) {
     );
   }
 
-  if (pathname.startsWith("/api/") && session && !isAdminAccessRole(accessRole)) {
+  if (pathname.startsWith("/api/") && !isDeviceApi && session && !isAdminAccessRole(accessRole)) {
     try {
       const permissionSet = new Set(session.permissions || []);
 

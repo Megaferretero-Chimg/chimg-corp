@@ -33,7 +33,23 @@ function formatDateTime(value) {
   return new Intl.DateTimeFormat("es-EC", { dateStyle: "medium", timeStyle: "short" }).format(new Date(value));
 }
 
-function ImportHistory({ imports }) {
+function statusLabel(status) {
+  return {
+    validated: "Validada",
+    needs_review: "Requiere revisión",
+    published: "Publicada",
+    failed: "Fallida",
+    processing: "Procesando",
+  }[status] || status;
+}
+
+function defaultGeneratedAt() {
+  const now = new Date();
+  now.setMinutes(now.getMinutes() - now.getTimezoneOffset());
+  return now.toISOString().slice(0, 16);
+}
+
+function ImportHistory({ imports, canPublish, publishingId, onPublish }) {
   if (!imports.length) return <p className={styles.emptyNote}>Todavía no se han realizado cargas.</p>;
 
   return (
@@ -43,11 +59,18 @@ function ImportHistory({ imports }) {
           <FileSpreadsheet size={18} />
           <div>
             <strong>{item.fileName}</strong>
-            <span>{formatDateTime(item.importedAt)} · {item.uploadedBy || "Sistema"}</span>
+            <span>{formatDateTime(item.sourceGeneratedAt)} · {statusLabel(item.status)}</span>
+            {item.unknownWarehouses?.length ? <span>Bodegas desconocidas: {item.unknownWarehouses.join(", ")}</span> : null}
+            {item.validationErrors?.length ? <span>{item.validationErrors[0]}</span> : null}
           </div>
           <div className={styles.historyResult}>
             <strong>{item.productCount}</strong>
             <span>productos</span>
+            {canPublish && item.status === "validated" ? (
+              <button type="button" onClick={() => onPublish(item.id)} disabled={publishingId === item.id}>
+                {publishingId === item.id ? "Publicando..." : "Publicar"}
+              </button>
+            ) : null}
           </div>
         </article>
       ))}
@@ -55,18 +78,21 @@ function ImportHistory({ imports }) {
   );
 }
 
-export default function InventoryManagement({ canImport = false }) {
+export default function InventoryManagement({ canImport = false, canPublish = false }) {
   const [data, setData] = useState({
     products: [],
     pagination: { page: 1, pages: 1, total: 0 },
     summary: { productCount: 0, warehouseCount: 0, totalQuantity: 0, totalValue: 0 },
     imports: [],
+    publications: [],
   });
   const [search, setSearch] = useState("");
   const [page, setPage] = useState(1);
   const [selectedFile, setSelectedFile] = useState(null);
+  const [generatedAt, setGeneratedAt] = useState(defaultGeneratedAt);
   const [isLoading, setIsLoading] = useState(true);
   const [isImporting, setIsImporting] = useState(false);
+  const [publishingId, setPublishingId] = useState("");
   const [isDragging, setIsDragging] = useState(false);
   const [notice, setNotice] = useState(null);
   const inputRef = useRef(null);
@@ -110,6 +136,7 @@ export default function InventoryManagement({ canImport = false }) {
     try {
       const formData = new FormData();
       formData.append("file", selectedFile);
+      formData.append("generatedAt", new Date(generatedAt).toISOString());
       const response = await fetch("/api/business/inventory/import", { method: "POST", body: formData });
       const payload = await response.json();
       if (!response.ok) throw new Error(payload.error || "No se pudo importar el archivo.");
@@ -122,6 +149,21 @@ export default function InventoryManagement({ canImport = false }) {
       setNotice({ type: "error", message: error.message });
     } finally {
       setIsImporting(false);
+    }
+  }
+
+  async function publishImport(importId) {
+    setPublishingId(importId);
+    try {
+      const response = await fetch(`/api/business/inventory/imports/${importId}/publish`, { method: "POST" });
+      const payload = await response.json();
+      if (!response.ok) throw new Error(payload.error || "No se pudo publicar el inventario.");
+      await loadInventory(1, search);
+      setNotice({ type: "success", message: payload.message });
+    } catch (error) {
+      setNotice({ type: "error", message: error.message });
+    } finally {
+      setPublishingId("");
     }
   }
 
@@ -152,6 +194,10 @@ export default function InventoryManagement({ canImport = false }) {
           <p>El sistema identifica cada producto por su código de venta y actualiza su existencia en cada bodega.</p>
         </div>
         <form className={styles.importForm} onSubmit={importFile}>
+          <label className={styles.generatedAtField}>
+            <span>Fecha de generación empresarial</span>
+            <input type="datetime-local" value={generatedAt} onChange={(event) => setGeneratedAt(event.target.value)} required />
+          </label>
           <label
             className={`${styles.dropzone} ${isDragging ? styles.dropzoneActive : ""}`}
             onDragOver={(event) => { event.preventDefault(); setIsDragging(true); }}
@@ -172,7 +218,7 @@ export default function InventoryManagement({ canImport = false }) {
             <span>{selectedFile ? selectedFile.name : "Arrastra el Excel o selecciónalo"}</span>
             <small>Formatos .xlsx y .xls · máximo 15 MB</small>
           </label>
-          <button type="submit" className="catalog-button-primary" disabled={!selectedFile || isImporting}>
+          <button type="submit" className="catalog-button-primary" disabled={!selectedFile || !generatedAt || isImporting}>
             <Upload size={17} />
             {isImporting ? "Procesando..." : "Importar y actualizar"}
           </button>
@@ -243,7 +289,27 @@ export default function InventoryManagement({ canImport = false }) {
 
       <section className={styles.historyPanel}>
         <div><p className={styles.eyebrow}>Trazabilidad</p><h2>Últimas cargas</h2></div>
-        <ImportHistory imports={data.imports || []} />
+        <ImportHistory
+          imports={data.imports || []}
+          canPublish={canPublish}
+          publishingId={publishingId}
+          onPublish={publishImport}
+        />
+      </section>
+
+      <section className={styles.historyPanel}>
+        <div><p className={styles.eyebrow}>Cajas offline</p><h2>Versiones publicadas</h2></div>
+        {(data.publications || []).length ? (
+          <div className={styles.historyList}>
+            {data.publications.map((item) => (
+              <article key={item.id} className={styles.historyItem}>
+                <PackageSearch size={18} />
+                <div><strong>{item.version}</strong><span>{item.checksum} · {item.status}</span></div>
+                <div className={styles.historyResult}><strong>{item.productCount}</strong><span>productos</span></div>
+              </article>
+            ))}
+          </div>
+        ) : <p className={styles.emptyNote}>Todavía no hay inventario publicado para las cajas.</p>}
       </section>
     </div>
   );

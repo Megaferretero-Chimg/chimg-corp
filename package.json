@@ -6,7 +6,9 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "migrate:business-sync": "node --env-file=.env.local scripts/migrate-business-sync.mjs",
+    "test:business-sync": "node --env-file=.env.local scripts/verify-business-sync.mjs"
   },
   "dependencies": {
     "@vercel/analytics": "^2.0.1",

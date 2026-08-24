@@ -14,7 +14,7 @@ export const MODULE_DEFINITIONS = [
     ...BUSINESS_MODULE,
     status: "Disponible",
     description: "Productos, existencias, bodegas y futuros datos comerciales.",
-    bullets: ["Inventario", "Bodegas", "Importación Excel", "Próximamente clientes"],
+    bullets: ["Inventario", "Bodegas", "Cajas offline", "Sincronización"],
     icon: "package-search",
   },
   {
@@ -87,7 +87,9 @@ export function getModuleCardsForUser(user) {
     if (module.key === BUSINESS_MODULE.key) {
       return hasAccessPermission(user, "business.home.view") ||
         hasAccessPermission(user, "business.inventory.view") ||
-        hasAccessPermission(user, "business.warehouses.view");
+        hasAccessPermission(user, "business.warehouses.view") ||
+        hasAccessPermission(user, "business.devices.view") ||
+        hasAccessPermission(user, "business.syncDocuments.view");
     }
 
     return true;
@@ -98,7 +100,11 @@ export function getModuleCardsForUser(user) {
       ? BUSINESS_MODULE.homeHref
       : hasAccessPermission(user, "business.inventory.view")
         ? "/modules/business/inventory"
-        : "/modules/business/warehouses";
+        : hasAccessPermission(user, "business.warehouses.view")
+          ? "/modules/business/warehouses"
+          : hasAccessPermission(user, "business.devices.view")
+            ? "/modules/business/devices"
+            : "/modules/business/sync";
 
     return asModuleCard({ ...module, href });
   });

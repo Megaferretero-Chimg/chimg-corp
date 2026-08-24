@@ -16,6 +16,21 @@ function number(value) {
   return Number.isFinite(parsed) ? parsed : 0;
 }
 
+function taxRate(row) {
+  const labels = [row.NombreCuentaVenta, row.DescripcionTipoProducto, row.DescripcionTipoProducto1]
+    .map(text)
+    .join(" ");
+  const match = labels.match(/(\d+(?:[.,]\d+)?)\s*%/);
+  if (match) return number(match[1].replace(",", "."));
+
+  const basePrice = number(row.PrecioVentaProducto);
+  const priceWithTax = number(row.PrecioConIva);
+  if (basePrice > 0 && priceWithTax >= basePrice) {
+    return Math.max(0, Number((((priceWithTax / basePrice) - 1) * 100).toFixed(4)));
+  }
+  return 0;
+}
+
 export function parseInventoryWorkbook(buffer) {
   const workbook = XLSX.read(buffer, { type: "buffer", cellDates: true, dense: true });
   const sheetName = workbook.SheetNames[0];
@@ -69,6 +84,7 @@ export function parseInventoryWorkbook(buffer) {
         salePrice: number(row.PrecioVentaProducto),
         priceWithTax: number(row.PrecioConIva),
         discountedPriceWithTax: number(row.PVPConDescuentoIncIVA),
+        taxRate: taxRate(row),
         sourceData: row,
         isActive: true,
       },
@@ -91,6 +107,9 @@ export function serializeImport(item) {
     fileName: item.fileName,
     fileSize: item.fileSize || 0,
     status: item.status,
+    sourceGeneratedAt: item.sourceGeneratedAt || null,
+    validatedAt: item.validatedAt || null,
+    publishedVersion: item.publishedVersion || "",
     totalRows: item.totalRows || 0,
     processedRows: item.processedRows || 0,
     skippedRows: item.skippedRows || 0,
@@ -98,6 +117,8 @@ export function serializeImport(item) {
     warehouseCount: item.warehouseCount || 0,
     stockCount: item.stockCount || 0,
     warnings: item.warnings || [],
+    validationErrors: item.validationErrors || [],
+    unknownWarehouses: item.unknownWarehouses || [],
     uploadedBy: item.uploadedBy || "",
     importedAt: item.importedAt || item.createdAt,
     createdAt: item.createdAt,

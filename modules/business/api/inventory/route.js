@@ -3,7 +3,8 @@ import { NextResponse } from "next/server";
 import connectToDatabase from "@/lib/db/mongodb";
 import { getBusinessAccess } from "@/modules/business/lib/access";
 import { serializeImport } from "@/modules/business/lib/inventory";
-import { InventoryImport, InventoryStock, Product, Warehouse } from "@/modules/business/models";
+import { serializePublication } from "@/modules/business/lib/inventory-publication";
+import { InventoryImport, InventoryPublication, InventoryStock, Product, Warehouse } from "@/modules/business/models";
 
 function escapeRegex(value) {
   return String(value || "").replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
@@ -49,7 +50,7 @@ export async function GET(request) {
         }
       : {};
 
-    const [products, totalProducts, warehouseCount, totals, imports] = await Promise.all([
+    const [products, totalProducts, warehouseCount, totals, imports, publications] = await Promise.all([
       Product.find(query).sort({ description: 1 }).skip((page - 1) * pageSize).limit(pageSize).lean(),
       Product.countDocuments(query),
       Warehouse.countDocuments({ isActive: { $ne: false } }),
@@ -57,6 +58,7 @@ export async function GET(request) {
         { $group: { _id: null, totalQuantity: { $sum: "$quantity" }, totalValue: { $sum: "$totalValue" } } },
       ]),
       InventoryImport.find({}).sort({ createdAt: -1 }).limit(8).lean(),
+      InventoryPublication.find({}).sort({ publishedAt: -1 }).limit(8).lean(),
     ]);
     const productIds = products.map((product) => product._id);
     const stockDocs = productIds.length
@@ -91,6 +93,7 @@ export async function GET(request) {
         totalValue: totals[0]?.totalValue || 0,
       },
       imports: imports.map(serializeImport),
+      publications: publications.map(serializePublication),
     });
   } catch (error) {
     return NextResponse.json({ error: error.message || "No se pudo cargar el inventario." }, { status: 500 });

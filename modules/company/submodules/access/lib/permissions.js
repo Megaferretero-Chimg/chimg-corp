@@ -182,8 +182,20 @@ export const ACCESS_PERMISSION_CATALOG = [
         permissions: [
           { key: "business.inventory.view", label: "Ver inventario", type: "page", path: "/modules/business/inventory" },
           { key: "business.inventory.import", label: "Importar inventario", type: "action", requiresAnyPage: ["business.inventory.view"] },
+          { key: "business.inventory.publish", label: "Publicar inventario para cajas", type: "action", requiresAnyPage: ["business.inventory.view"] },
           { key: "business.warehouses.view", label: "Ver bodegas", type: "page", path: "/modules/business/warehouses" },
           { key: "business.warehouses.manage", label: "Gestionar bodegas", type: "action", requiresAnyPage: ["business.warehouses.view"] },
+        ],
+      },
+      {
+        key: "business.contingency",
+        label: "CHIMG Contingencia",
+        description: "Dispositivos y documentos recibidos desde las cajas offline.",
+        permissions: [
+          { key: "business.devices.view", label: "Ver dispositivos", type: "page", path: "/modules/business/devices" },
+          { key: "business.devices.manage", label: "Activar y revocar dispositivos", type: "action", requiresAnyPage: ["business.devices.view"] },
+          { key: "business.syncDocuments.view", label: "Ver documentos sincronizados", type: "page", path: "/modules/business/sync" },
+          { key: "business.syncDocuments.manage", label: "Procesar documentos sincronizados", type: "action", requiresAnyPage: ["business.syncDocuments.view"] },
         ],
       },
     ],
@@ -297,6 +309,8 @@ export const ACCESS_PAGE_CATALOG = [
       ["Inicio", "/modules/business/home", "business.home.view"],
       ["Inventario", "/modules/business/inventory", "business.inventory.view"],
       ["Bodegas", "/modules/business/warehouses", "business.warehouses.view"],
+      ["Dispositivos", "/modules/business/devices", "business.devices.view"],
+      ["Documentos sincronizados", "/modules/business/sync", "business.syncDocuments.view"],
     ],
   },
 ].map((module) => ({

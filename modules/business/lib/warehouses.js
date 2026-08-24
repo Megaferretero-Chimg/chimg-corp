@@ -1,9 +1,23 @@
 export const DEFAULT_WAREHOUSES = [
-  { code: "SAL-ALM", name: "SALCEDO ALMACEN", location: "Salcedo", sourceNames: ["SALCEDO ALMACEN"] },
-  { code: "AMB-ALM", name: "AMBATO ALMACEN", location: "Ambato", sourceNames: ["AMBATO ALMACEN", "ALMACEN"] },
+  {
+    code: "SAL-ALM",
+    name: "ALMACÉN SALCEDO",
+    location: "Salcedo",
+    sourceNames: ["ALMACÉN SALCEDO", "ALMACEN SALCEDO", "SALCEDO ALMACEN"],
+  },
+  {
+    code: "AMB-ALM",
+    name: "ALMACÉN AMBATO",
+    location: "Ambato",
+    sourceNames: ["ALMACÉN AMBATO", "ALMACEN AMBATO", "AMBATO ALMACEN", "ALMACEN"],
+  },
   { code: "INT", name: "INTERNA", location: "", sourceNames: ["INTERNA"] },
   { code: "EXT", name: "EXTERNA", location: "", sourceNames: ["EXTERNA"] },
 ];
+
+export const PUBLISHABLE_WAREHOUSE_NAMES = new Set(
+  DEFAULT_WAREHOUSES.map((warehouse) => warehouse.name),
+);
 
 export function normalizeWarehouseText(value) {
   return String(value || "").trim().replace(/\s+/g, " ").toUpperCase();

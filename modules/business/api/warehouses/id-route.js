@@ -17,7 +17,10 @@ export async function PATCH(request, context) {
     if (!existing) return NextResponse.json({ error: "Bodega no encontrada." }, { status: 404 });
 
     const payload = normalizeWarehousePayload(await request.json());
-    const warehouse = await Warehouse.findByIdAndUpdate(id, payload, { new: true, runValidators: true });
+    const warehouse = await Warehouse.findByIdAndUpdate(id, payload, {
+      returnDocument: "after",
+      runValidators: true,
+    });
     const actor = await resolveAuditActor();
 
     await createAuditLog({

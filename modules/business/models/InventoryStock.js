@@ -4,9 +4,9 @@ const inventoryStockSchema = new Schema(
   {
     product: { type: Schema.Types.ObjectId, ref: "BusinessProduct", required: true },
     warehouse: { type: Schema.Types.ObjectId, ref: "BusinessWarehouse", required: true },
-    quantity: { type: Number, default: 0 },
-    fractionalQuantity: { type: Number, default: 0 },
-    totalValue: { type: Number, default: 0 },
+    quantity: { type: Number, default: 0, min: 0 },
+    fractionalQuantity: { type: Number, default: 0, min: 0 },
+    totalValue: { type: Number, default: 0, min: 0 },
     lastImportedAt: { type: Date, default: null },
     lastImport: { type: Schema.Types.ObjectId, ref: "BusinessInventoryImport", default: null },
   },
