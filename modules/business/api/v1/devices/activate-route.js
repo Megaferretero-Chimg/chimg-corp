@@ -22,7 +22,7 @@ export async function POST(request) {
   const rate = await consumeRateLimit(`activation:${getClientIp(request)}`, { limit: 10, windowMs: 15 * 60_000 });
   if (!rate.allowed) {
     return NextResponse.json(
-      { error: "Demasiados intentos de activación." },
+      { error: "Demasiados intentos de vinculación." },
       { status: 429, headers: { "Retry-After": String(rate.retryAfterSeconds) } },
     );
   }
@@ -49,23 +49,25 @@ export async function POST(request) {
         const existingDevice = await Device.findOne({ deviceId }).session(session);
         if (existingDevice) throw new Error("DEVICE_ALREADY_REGISTERED");
 
-        const activation = await DeviceActivationCode.findOneAndUpdate(
-          {
-            codeHash,
-            usedAt: null,
-            revokedAt: null,
-            expiresAt: { $gt: now },
-          },
-          { $set: { usedAt: now, usedByDeviceId: deviceId } },
-          { returnDocument: "after", session },
-        ).select("+codeHash");
-        if (!activation) throw new Error("INVALID_ACTIVATION_CODE");
+        const activation = await DeviceActivationCode.findOne({ codeHash }).select("+codeHash").session(session);
+        const isExpiredLegacyCode = !activation?.permanent
+          && (!activation?.expiresAt || activation.expiresAt <= now);
+        if (!activation || activation.revokedAt || isExpiredLegacyCode) {
+          throw new Error("INVALID_DEVICE_KEY");
+        }
+        if (activation.usedAt || activation.usedByDeviceId) {
+          throw new Error("DEVICE_KEY_ALREADY_LINKED");
+        }
+
+        activation.usedAt = now;
+        activation.usedByDeviceId = deviceId;
+        await activation.save({ session });
 
         [device] = await Device.create([{
           deviceId,
           deviceName: activation.deviceName,
-          warehouse: activation.warehouse,
-          warehouseName: activation.warehouseName,
+          warehouse: activation.warehouse || null,
+          warehouseName: activation.warehouseName || "TODAS LAS BODEGAS",
           tokenHash,
           status: "active",
           activatedAt: now,
@@ -97,12 +99,15 @@ export async function POST(request) {
     return NextResponse.json({
       deviceId: device.deviceId,
       deviceName: device.deviceName,
-      warehouse: device.warehouseName,
+      warehouse: device.warehouseName || "TODAS LAS BODEGAS",
       accessToken,
     });
   } catch (error) {
-    if (error.message === "INVALID_ACTIVATION_CODE") {
-      return NextResponse.json({ error: "Código inválido, utilizado o vencido." }, { status: 401 });
+    if (error.message === "INVALID_DEVICE_KEY") {
+      return NextResponse.json({ error: "Llave inválida o bloqueada." }, { status: 401 });
+    }
+    if (error.message === "DEVICE_KEY_ALREADY_LINKED") {
+      return NextResponse.json({ error: "Esta llave ya está vinculada a otra instalación." }, { status: 409 });
     }
     if (error.message === "DEVICE_ALREADY_REGISTERED" || error?.code === 11000) {
       return NextResponse.json({ error: "El dispositivo ya fue registrado." }, { status: 409 });

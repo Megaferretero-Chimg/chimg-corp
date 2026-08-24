@@ -28,9 +28,10 @@ export function createAccessToken() {
   return `chimg_${crypto.randomBytes(32).toString("base64url")}`;
 }
 
-export function createActivationCode(length = 6) {
+export function createActivationCode(length = 16) {
   const bytes = crypto.randomBytes(length);
-  return [...bytes].map((byte) => ACTIVATION_ALPHABET[byte % ACTIVATION_ALPHABET.length]).join("");
+  const value = [...bytes].map((byte) => ACTIVATION_ALPHABET[byte % ACTIVATION_ALPHABET.length]).join("");
+  return `CHIMG-${value.match(/.{1,4}/g).join("-")}`;
 }
 
 export function getClientIp(request) {
@@ -92,7 +93,7 @@ export async function authenticateDeviceRequest(request, { action = "manifest" }
 
   if (device.status === "revoked") {
     await logDeviceSync({ device, action: "auth_rejected", status: "rejected", details: { requestedAction: action, reason: "revoked" } });
-    return { error: "El dispositivo fue revocado.", status: 403, device };
+    return { error: "La llave de este dispositivo fue eliminada.", status: 403, device };
   }
 
   const rate = await consumeRateLimit(`device:${device.deviceId}`, { limit: 120, windowMs: 60_000 });

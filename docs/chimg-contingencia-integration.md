@@ -18,32 +18,32 @@ Una bodega desconocida deja la importación en revisión y bloquea su publicaci�
 1. En `/modules/business/inventory`, cargar el Excel e indicar la fecha de generación empresarial.
 2. Revisar errores, productos, bodegas y existencias detectadas.
 3. Publicar el borrador validado. La operación asigna una versión `YYYYMMDD-##`, genera el JSON determinista, calcula SHA-256 y guarda el paquete por fragmentos en MongoDB dentro de una transacción.
-4. En `/modules/business/devices`, crear un código temporal para una caja y una bodega. El código es de un solo uso.
+4. En `/modules/business/devices`, crear una llave permanente indicando únicamente el nombre de la caja. La primera instalación que usa la llave queda vinculada; otra computadora no puede usar esa misma llave. Todos los dispositivos descargan existencias de todas las bodegas.
 5. En `/modules/business/sync`, revisar guías y clientes recibidos, y cambiar su estado administrativo.
 
 Las publicaciones conservan el historial. Una publicación nueva marca la anterior como `superseded`, pero la versión anterior sigue disponible por su URL exacta. Los campos de contenido, checksum y versión de una publicación no pueden modificarse después de creada.
 
 ## Autenticación de dispositivos
 
-La activación recibe un UUID persistente generado por la app local. El servidor devuelve el token solo una vez; en MongoDB se guarda únicamente su SHA-256. Todos los endpoints de sincronización requieren:
+La vinculación recibe un UUID persistente generado por la app local. La llave no vence y queda asignada permanentemente a la primera instalación que la utiliza. El servidor devuelve una credencial interna solo al vincularla; la app la guarda en el almacén seguro de Windows y en MongoDB se conserva únicamente su SHA-256. El cajero no debe volver a ingresar la llave durante el funcionamiento normal. Todos los endpoints de sincronización requieren:
 
 ```http
 Authorization: Bearer <accessToken>
 ```
 
-Un token inválido recibe `401`; un dispositivo revocado recibe `403`. La activación y la autenticación de dispositivos tienen rate limiting persistido en MongoDB con expiración TTL.
+Una credencial inválida recibe `401`; un dispositivo cuya llave fue eliminada recibe `403`. La vinculación y la autenticación de dispositivos tienen rate limiting persistido en MongoDB con expiración TTL.
 
 ## Contrato HTTP
 
 La URL base de producción es `https://chimg-corp.vercel.app`.
 
-### Activar dispositivo
+### Vincular dispositivo
 
 `POST /api/v1/devices/activate`
 
 ```json
 {
-  "activationCode": "ABC123",
+  "activationCode": "CHIMG-ABCD-EFGH-JKLM-NPQR",
   "deviceId": "b6b4c068-dfee-4f39-b603-b6cfec5a90d6",
   "deviceName": "CAJA AMBATO 01"
 }
@@ -60,7 +60,7 @@ Respuesta `200`:
 }
 ```
 
-El nombre y la bodega efectivos son los autorizados por el administrador al crear el código. El código inválido, vencido o reutilizado recibe `401`.
+El nombre efectivo es el autorizado por el administrador al crear la llave. Las llaves no vencen y no se asignan a una bodega: todos los equipos reciben el catálogo completo. Una llave inválida o eliminada recibe `401`; una llave ya vinculada que se intenta usar en otra instalación recibe `409`. Desde el administrador se puede eliminar la llave de una caja; esto invalida su credencial y la siguiente sincronización recibe `403`.
 
 ### Consultar manifiesto
 
@@ -164,7 +164,7 @@ La idempotencia se garantiza por `syncUuid`: reenviar un registro aceptado lo co
 
 No se usa almacenamiento permanente del filesystem de Vercel. Los borradores, metadatos y fragmentos inmutables de paquetes se guardan en MongoDB. La publicación usa transacciones, por lo que MongoDB debe operar como replica set o clúster compatible.
 
-No se agregaron variables de entorno: se reutilizan `MONGODB_URI` y `SESSION_SECRET`. `SESSION_SECRET` también protege mediante HMAC los códigos de activación.
+No se agregaron variables de entorno: se reutilizan `MONGODB_URI` y `SESSION_SECRET`. `SESSION_SECRET` también protege mediante HMAC las llaves permanentes; su valor completo no se almacena en MongoDB.
 
 Aplicar índices y sembrar las cuatro bodegas:
 

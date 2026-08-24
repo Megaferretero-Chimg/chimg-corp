@@ -27,11 +27,11 @@ async function jsonRequest(path, options = {}) {
   return { response, body, text };
 }
 
-async function createActivation(deviceName, warehouseId, expiresInMinutes = 60) {
+async function createActivation(deviceName) {
   return jsonRequest("/api/business/devices/activation-codes", {
     method: "POST",
     headers: { ...adminHeaders, "Content-Type": "application/json" },
-    body: JSON.stringify({ deviceName, warehouseId, expiresInMinutes }),
+    body: JSON.stringify({ deviceName }),
   });
 }
 
@@ -92,15 +92,15 @@ const deviceCatalog = await jsonRequest("/api/business/devices", { headers: admi
 check("listar bodegas para activación", deviceCatalog.response.status === 200 && deviceCatalog.body.warehouses?.length === 4);
 const ambato = deviceCatalog.body.warehouses.find((item) => item.name === "ALMACÉN AMBATO");
 
-const firstCode = await createActivation("CAJA PRUEBA REVOCACIÓN", ambato.id, 60);
-check("crear código de activación", firstCode.response.status === 201 && firstCode.body.activationCode);
+const firstCode = await createActivation("CAJA PRUEBA BLOQUEO");
+check("crear llave permanente", firstCode.response.status === 201 && firstCode.body.deviceKey && firstCode.body.permanent === true);
 const firstDeviceId = crypto.randomUUID();
 const firstActivation = await activate(firstCode.body.activationCode, firstDeviceId, "CAJA-LOCAL-PRUEBA");
-check("activar dispositivo", firstActivation.response.status === 200 && firstActivation.body.deviceId === firstDeviceId);
+check("vincular llave al dispositivo", firstActivation.response.status === 200 && firstActivation.body.deviceId === firstDeviceId);
 const firstToken = firstActivation.body.accessToken;
 
 const reused = await activate(firstCode.body.activationCode, crypto.randomUUID(), "CAJA-REUSO");
-check("rechazar código reutilizado", reused.response.status === 401, { status: reused.response.status });
+check("rechazar llave vinculada desde otra computadora", reused.response.status === 409, { status: reused.response.status });
 
 await mongoose.connect(process.env.MONGODB_URI, { bufferCommands: false });
 const expiredCode = "EXP" + crypto.randomBytes(3).toString("hex").toUpperCase();
@@ -147,11 +147,14 @@ check("impedir mutar versión publicada", immutableRejected && checksumAfterAtte
 const devicesAfterActivation = await jsonRequest("/api/business/devices", { headers: adminHeaders });
 const firstDevice = devicesAfterActivation.body.devices.find((item) => item.deviceId === firstDeviceId);
 const revoked = await jsonRequest(`/api/business/devices/${firstDevice.id}/revoke`, { method: "PATCH", headers: adminHeaders });
-check("revocar dispositivo", revoked.response.status === 200);
+check("eliminar llave del dispositivo", revoked.response.status === 200);
+const devicesAfterKeyDeletion = await jsonRequest("/api/business/devices", { headers: adminHeaders });
+const deletedKey = devicesAfterKeyDeletion.body.activationCodes.find((item) => item.deviceName === "CAJA PRUEBA BLOQUEO");
+check("marcar llave como eliminada", Boolean(deletedKey?.revokedAt));
 const revokedManifest = await jsonRequest("/api/v1/sync/manifest", { headers: { Authorization: `Bearer ${firstToken}` } });
-check("rechazar dispositivo revocado", revokedManifest.response.status === 403, { status: revokedManifest.response.status });
+check("rechazar dispositivo con llave eliminada", revokedManifest.response.status === 403, { status: revokedManifest.response.status });
 
-const activeCode = await createActivation("CAJA AMBATO INTEGRACIÓN", ambato.id, 1440);
+const activeCode = await createActivation("CAJA AMBATO INTEGRACIÓN");
 const activeDeviceId = crypto.randomUUID();
 const activeActivation = await activate(activeCode.body.activationCode, activeDeviceId, "CAJA-ACTIVA-PRUEBA");
 check("crear dispositivo activo de prueba", activeActivation.response.status === 200);
@@ -197,7 +200,7 @@ const spoofed = await jsonRequest("/api/v1/sync/batch", {
 });
 check("impedir suplantación de dispositivo", spoofed.response.status === 403, { status: spoofed.response.status });
 
-const pendingCode = await createActivation("CAJA PRUEBA PENDIENTE", ambato.id, 1440);
+const pendingCode = await createActivation("CAJA PRUEBA PENDIENTE");
 check("dejar código de activación de prueba", pendingCode.response.status === 201);
 
 const report = {

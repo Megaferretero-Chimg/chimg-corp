@@ -4,8 +4,8 @@ const deviceSchema = new Schema(
   {
     deviceId: { type: String, required: true, trim: true, unique: true },
     deviceName: { type: String, required: true, trim: true },
-    warehouse: { type: Schema.Types.ObjectId, ref: "BusinessWarehouse", required: true },
-    warehouseName: { type: String, required: true, trim: true, uppercase: true },
+    warehouse: { type: Schema.Types.ObjectId, ref: "BusinessWarehouse", default: null },
+    warehouseName: { type: String, trim: true, uppercase: true, default: "TODAS LAS BODEGAS" },
     tokenHash: { type: String, required: true, trim: true, unique: true, select: false },
     status: { type: String, enum: ["active", "revoked"], default: "active" },
     activatedAt: { type: Date, required: true },

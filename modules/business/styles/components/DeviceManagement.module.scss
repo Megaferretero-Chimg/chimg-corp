@@ -4,9 +4,9 @@
 .metrics span, .metrics strong { display: block; } .metrics span { color: #64748b; font-size: .72rem; } .metrics strong { color: #10213e; font-size: 1.25rem; }
 .activationPanel, .panel { border: 1px solid rgba(16,33,62,.08); border-radius: 1.35rem; background: rgba(255,255,255,.95); box-shadow: 0 16px 38px rgba(16,33,62,.06); padding: 1.2rem; }
 .activationPanel { display: grid; grid-template-columns: minmax(220px,.65fr) minmax(460px,1.35fr); gap: 1.2rem; align-items: start; }
-.eyebrow { margin: 0 0 .25rem; color: #0e7490; font-size: .68rem; font-weight: 800; letter-spacing: .13em; text-transform: uppercase; }
+.eyebrow { margin: 0 0 .25rem; color: #1f6fff; font-size: .68rem; font-weight: 800; letter-spacing: .13em; text-transform: uppercase; }
 .activationPanel h2, .panel h2 { margin: 0; color: #10213e; font-size: 1.2rem; } .activationPanel p:last-child { color: #66758e; }
-.activationPanel form { display: grid; grid-template-columns: 1fr 1fr 1fr auto; gap: .7rem; align-items: end; }
+.activationPanel form { display: grid; grid-template-columns: minmax(240px, 1fr) auto; gap: .7rem; align-items: end; }
 .activationPanel label { display: grid; gap: .35rem; color: #31506d; font-size: .7rem; font-weight: 750; }
 .activationPanel input, .activationPanel select { min-width: 0; border: 1px solid rgba(16,33,62,.12); border-radius: .85rem; background: white; padding: .72rem .78rem; }
 .generatedCode { grid-column: 2; display: flex; align-items: center; justify-content: space-between; gap: 1rem; border-radius: 1rem; background: #e7f8fb; padding: .9rem 1rem; }
