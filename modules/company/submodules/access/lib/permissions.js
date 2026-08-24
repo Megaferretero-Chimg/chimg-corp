@@ -189,11 +189,11 @@ export const ACCESS_PERMISSION_CATALOG = [
       },
       {
         key: "business.contingency",
-        label: "CHIMG Contingencia",
+        label: "CONTINGENCIA",
         description: "Dispositivos y documentos recibidos desde las cajas offline.",
         permissions: [
           { key: "business.devices.view", label: "Ver dispositivos", type: "page", path: "/modules/business/devices" },
-          { key: "business.devices.manage", label: "Activar y revocar dispositivos", type: "action", requiresAnyPage: ["business.devices.view"] },
+          { key: "business.devices.manage", label: "Crear y eliminar llaves", type: "action", requiresAnyPage: ["business.devices.view"] },
           { key: "business.syncDocuments.view", label: "Ver documentos sincronizados", type: "page", path: "/modules/business/sync" },
           { key: "business.syncDocuments.manage", label: "Procesar documentos sincronizados", type: "action", requiresAnyPage: ["business.syncDocuments.view"] },
         ],

@@ -98,18 +98,18 @@ export default function DeviceManagement({ canManage = false }) {
       </section>
 
       {canManage ? <section className={styles.activationPanel}>
-        <div><p className={styles.eyebrow}>Vinculación permanente</p><h2>Crear llave para una caja</h2><p>La primera computadora que use la llave quedará ligada a este nombre y podrá consultar todas las bodegas.</p></div>
+        <div><h2>Crear llave</h2></div>
         <form onSubmit={generateCode}>
           <label><span>Nombre del equipo</span><input value={form.deviceName} onChange={(event) => setForm((current) => ({ ...current, deviceName: event.target.value }))} placeholder="CAJA AMBATO 01" required /></label>
-          <button type="submit" className="catalog-button-primary" disabled={isSaving || !form.deviceName}><KeyRound size={17} /> Crear llave permanente</button>
+          <button type="submit" className="catalog-button-primary" disabled={isSaving || !form.deviceName}><KeyRound size={17} /> Crear llave</button>
         </form>
-        {generated ? <div className={styles.generatedCode}><div><span>Llave para {generated.deviceName}</span><strong>{generated.deviceKey || generated.activationCode}</strong><small>Permanente · quedará ligada a la primera instalación</small></div><button type="button" onClick={copyCode}><Copy size={17} /> Copiar</button></div> : null}
+        {generated ? <div className={styles.generatedCode}><div><span>Llave para {generated.deviceName}</span><strong>{generated.deviceKey || generated.activationCode}</strong></div><button type="button" onClick={copyCode}><Copy size={17} /> Copiar</button></div> : null}
       </section> : null}
 
       <section className={styles.panel}>
         <div className={styles.panelHead}><div><p className={styles.eyebrow}>Cajas instaladas</p><h2>Dispositivos</h2></div><button type="button" onClick={load} disabled={isLoading}><RefreshCw size={16} /> Actualizar</button></div>
         <div className={styles.tableWrap}><table><thead><tr><th>Equipo</th><th>Acceso</th><th>Estado</th><th>Última conexión</th><th>Inventario</th><th>Documentos</th><th /></tr></thead><tbody>
-          {isLoading ? <tr><td colSpan="7">Cargando...</td></tr> : data.devices.map((item) => <tr key={item.id}>
+          {isLoading ? <tr><td colSpan="7"><div className={styles.loadingState} role="status" aria-live="polite"><RefreshCw size={20} aria-hidden="true" /><span><strong>Cargando dispositivos</strong><small>Consultando el estado de las cajas</small></span></div></td></tr> : data.devices.map((item) => <tr key={item.id}>
             <td><strong>{item.deviceName}</strong><span>{item.deviceId}</span></td><td>{item.warehouseName || "TODAS LAS BODEGAS"}</td><td><span className={item.status === "active" ? styles.active : styles.revoked}>{item.status === "active" ? "Vinculado" : "Llave eliminada"}</span></td><td>{formatDate(item.lastSeenAt)}</td><td>{item.lastDownloadedVersion || "Sin descarga"}</td><td>{item.documentCount}</td><td>{canManage && item.status === "active" ? <button type="button" className={styles.revokeButton} onClick={() => setRevokeTarget(item)}><ShieldOff size={15} /> Eliminar llave</button> : null}</td>
           </tr>)}
           {!isLoading && !data.devices.length ? <tr><td colSpan="7">No hay dispositivos activados.</td></tr> : null}

@@ -32,13 +32,13 @@ export const BUSINESS_MODULE_NAVIGATION = [
     ],
   },
   {
-    title: "CHIMG Contingencia",
+    title: "CONTINGENCIA",
     href: businessModulePath("/devices"),
     items: [
       {
         href: businessModulePath("/devices"),
         label: "Dispositivos",
-        description: "Activación, bodega y estado de cajas",
+        description: "Llaves y estado de cajas",
         permission: "business.devices.view",
       },
       {

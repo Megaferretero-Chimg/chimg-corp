@@ -8,5 +8,5 @@ export const metadata = { title: "Dispositivos | Negocio" };
 
 export default async function DevicesPage() {
   const user = await requireAuthenticatedUser();
-  return <ModuleShell moduleConfig={getBusinessModuleForUser(user)} title="Dispositivos de contingencia" description="Activa cajas, asigna bodegas y supervisa su última sincronización."><DeviceManagement canManage={hasAccessPermission(user, "business.devices.manage")} /></ModuleShell>;
+  return <ModuleShell moduleConfig={getBusinessModuleForUser(user)} title="Dispositivos" description="Administra las llaves y supervisa la última sincronización de cada caja."><DeviceManagement canManage={hasAccessPermission(user, "business.devices.manage")} /></ModuleShell>;
 }
