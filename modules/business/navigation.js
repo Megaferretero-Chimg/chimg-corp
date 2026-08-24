@@ -32,7 +32,7 @@ export const BUSINESS_MODULE_NAVIGATION = [
     ],
   },
   {
-    title: "CONTINGENCIA",
+    title: "Contingencia",
     href: businessModulePath("/devices"),
     items: [
       {

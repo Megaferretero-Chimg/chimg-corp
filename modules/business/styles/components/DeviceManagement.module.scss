@@ -4,25 +4,17 @@
 .stack > :nth-child(3) { animation-delay: 105ms; }
 .stack > :nth-child(4) { animation-delay: 155ms; }
 .metrics { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: .8rem; }
-.metrics article { display: flex; align-items: center; gap: .8rem; border: 1px solid rgba(16,33,62,.08); border-radius: 1.1rem; background: white; padding: 1rem; color: #0e7490; }
+.metrics article { display: flex; align-items: center; gap: .8rem; border: 1px solid rgba(16,33,62,.08); border-radius: 1.1rem; background: white; padding: 1rem; color: #1f6fff; }
 .metrics span, .metrics strong { display: block; } .metrics span { color: #64748b; font-size: .72rem; } .metrics strong { color: #10213e; font-size: 1.25rem; }
-.activationPanel, .panel { border: 1px solid rgba(16,33,62,.08); border-radius: 1.35rem; background: rgba(255,255,255,.95); box-shadow: 0 16px 38px rgba(16,33,62,.06); padding: 1.2rem; }
-.activationPanel { display: grid; grid-template-columns: minmax(150px,.38fr) minmax(0,1.62fr); gap: 1.2rem; align-items: start; }
-.activationPanel > * { min-width: 0; }
+.panel { border: 1px solid rgba(16,33,62,.08); border-radius: 1.35rem; background: rgba(255,255,255,.95); box-shadow: 0 16px 38px rgba(16,33,62,.06); padding: 1.2rem; }
 .eyebrow { margin: 0 0 .25rem; color: #1f6fff; font-size: .68rem; font-weight: 800; letter-spacing: .13em; text-transform: uppercase; }
-.activationPanel h2, .panel h2 { margin: 0; color: #10213e; font-size: 1.2rem; } .activationPanel p:last-child { color: #66758e; }
-.activationPanel form { display: grid; grid-template-columns: minmax(240px, 1fr) auto; gap: .7rem; align-items: end; }
-.activationPanel label { display: grid; gap: .35rem; color: #31506d; font-size: .7rem; font-weight: 750; }
-.activationPanel input, .activationPanel select { min-width: 0; border: 1px solid rgba(16,33,62,.12); border-radius: .85rem; background: white; padding: .72rem .78rem; }
-.generatedCode { grid-column: 2; width: 100%; min-width: 0; display: grid; grid-template-columns: minmax(0,1fr) auto; align-items: center; gap: .85rem; border: 1px solid #cbdcff; border-radius: .9rem; background: #f5f8ff; padding: .78rem .9rem; }
-.generatedCode > div { min-width: 0; }
-.generatedCode span, .generatedCode strong { display: block; }
-.generatedCode span { margin-bottom: .25rem; color: #617298; font-size: .68rem; }
-.generatedCode strong { overflow-wrap: anywhere; color: #174fd0; font-size: clamp(.92rem,1.35vw,1.12rem); line-height: 1.3; letter-spacing: .075em; }
-.generatedCode button, .panelHead button, .revokeButton { display: inline-flex; align-items: center; gap: .35rem; border: 0; border-radius: 999px; padding: .48rem .7rem; cursor: pointer; }
-.generatedCode button, .panelHead button { background: white; color: #17428c; }
+.panel h2 { margin: 0; color: #10213e; font-size: 1.2rem; }
+.panelHead button, .revokeButton { display: inline-flex; align-items: center; justify-content: center; gap: .35rem; border: 0; border-radius: 999px; padding: .48rem .7rem; cursor: pointer; }
+.panelHead button { background: white; color: #17428c; }
 .panelHead { display: flex; align-items: center; justify-content: space-between; margin-bottom: 1rem; }
-.tableWrap { overflow-x: auto; } .tableWrap table { width: 100%; min-width: 950px; border-collapse: collapse; }
+.panelActions { display: flex; align-items: center; gap: .55rem; }
+.panelHead .createKeyButton { color: white; background: #1f6fff; box-shadow: 0 8px 18px rgba(31,111,255,.2); }
+.tableWrap { overflow-x: auto; } .tableWrap table { width: 100%; min-width: 560px; border-collapse: collapse; }
 .tableWrap th { color: #66758e; background: #f5f8fc; padding: .7rem; font-size: .68rem; text-align: left; text-transform: uppercase; }
 .tableWrap td { border-top: 1px solid rgba(16,33,62,.07); color: #344a68; padding: .75rem; font-size: .78rem; }
 .tableWrap td strong, .tableWrap td span { display: block; } .tableWrap td span { color: #7b8799; font-size: .66rem; }
@@ -32,9 +24,17 @@
 .loadingState strong { color: #16325f; font-size: .78rem; }
 .loadingState small { color: #71809a; font-size: .68rem; }
 .active, .revoked { display: inline-flex !important; width: fit-content; border-radius: 999px; padding: .28rem .5rem; font-weight: 800; } .active { color: #067647 !important; background: #ecfdf3; } .revoked { color: #b42318 !important; background: #fff1f0; }
-.revokeButton { color: #b42318; background: #fff1f0; }
-@media (max-width: 1000px) { .activationPanel { grid-template-columns: 1fr; } .activationPanel form { grid-template-columns: minmax(0,1fr) auto; } .generatedCode { grid-column: 1; } }
-@media (max-width: 680px) { .metrics { grid-template-columns: 1fr; } .activationPanel form, .generatedCode { grid-template-columns: 1fr; } .generatedCode button { justify-self: start; } }
+.rowStatus { display: flex; align-items: center; gap: .5rem; }
+.revokeButton { width: 2rem; height: 2rem; padding: 0; color: #b42318; background: #fff1f0; }
+.keyForm, .keyResult { display: grid; gap: 1rem; }
+.keyForm label { display: grid; gap: .4rem; color: #31506d; font-size: .75rem; font-weight: 750; }
+.keyForm input { min-width: 0; border: 1px solid rgba(16,33,62,.14); border-radius: .85rem; background: white; padding: .78rem .85rem; outline: none; }
+.keyForm input:focus { border-color: #1f6fff; box-shadow: 0 0 0 3px rgba(31,111,255,.12); }
+.keyForm > div, .keyResult > div { display: flex; justify-content: flex-end; gap: .55rem; }
+.keyResult { padding-top: .2rem; }
+.keyResult > span { color: #617298; font-size: .75rem; }
+.keyResult > strong { overflow-wrap: anywhere; border: 1px solid #cbdcff; border-radius: .9rem; color: #174fd0; background: #f5f8ff; padding: 1rem; font-size: clamp(1rem,2.2vw,1.3rem); line-height: 1.35; letter-spacing: .08em; text-align: center; }
+@media (max-width: 680px) { .metrics { grid-template-columns: 1fr; } .panelHead { align-items: flex-start; gap: .8rem; } .panelActions { align-items: stretch; flex-direction: column; } }
 @keyframes contingency-enter { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
 @keyframes contingency-item-enter { from { opacity: 0; transform: translateY(12px) scale(.992); } to { opacity: 1; transform: translateY(0) scale(1); } }
 @keyframes contingency-spin { to { transform: rotate(360deg); } }

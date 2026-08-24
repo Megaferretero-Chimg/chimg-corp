@@ -189,7 +189,7 @@ export const ACCESS_PERMISSION_CATALOG = [
       },
       {
         key: "business.contingency",
-        label: "CONTINGENCIA",
+        label: "Contingencia",
         description: "Dispositivos y documentos recibidos desde las cajas offline.",
         permissions: [
           { key: "business.devices.view", label: "Ver dispositivos", type: "page", path: "/modules/business/devices" },

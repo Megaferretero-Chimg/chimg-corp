@@ -5,6 +5,7 @@ import { Copy, KeyRound, Laptop, RefreshCw, ShieldOff } from "lucide-react";
 
 import ConfirmDialog from "@/components/ui/ConfirmDialog";
 import FloatingNotice from "@/components/ui/FloatingNotice";
+import FloatingModal from "@/components/ui/FloatingModal";
 import styles from "@/modules/business/styles/components/DeviceManagement.module.scss";
 
 function formatDate(value) {
@@ -16,6 +17,7 @@ export default function DeviceManagement({ canManage = false }) {
   const [data, setData] = useState({ devices: [], activationCodes: [], warehouses: [] });
   const [form, setForm] = useState({ deviceName: "" });
   const [generated, setGenerated] = useState(null);
+  const [isKeyModalOpen, setIsKeyModalOpen] = useState(false);
   const [revokeTarget, setRevokeTarget] = useState(null);
   const [notice, setNotice] = useState(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -54,9 +56,7 @@ export default function DeviceManagement({ canManage = false }) {
       const payload = await response.json();
       if (!response.ok) throw new Error(payload.error || "No se pudo generar la llave.");
       setGenerated(payload);
-      setForm((current) => ({ ...current, deviceName: "" }));
       await load();
-      setNotice({ type: "success", message: "Llave permanente creada. Se mostrará completa solamente ahora." });
     } catch (error) {
       setNotice({ type: "error", message: error.message });
     } finally {
@@ -88,6 +88,19 @@ export default function DeviceManagement({ canManage = false }) {
     setNotice({ type: "success", message: "Llave copiada." });
   }
 
+  function openKeyModal() {
+    setForm({ deviceName: "" });
+    setGenerated(null);
+    setIsKeyModalOpen(true);
+  }
+
+  function closeKeyModal() {
+    if (isSaving) return;
+    setIsKeyModalOpen(false);
+    setGenerated(null);
+    setForm({ deviceName: "" });
+  }
+
   return (
     <div className={styles.stack}>
       <FloatingNotice notice={notice} onClose={() => setNotice(null)} />
@@ -97,24 +110,20 @@ export default function DeviceManagement({ canManage = false }) {
         <article><KeyRound size={20} /><div><span>Llaves disponibles</span><strong>{data.activationCodes.filter((item) => item.permanent && !item.usedAt && !item.revokedAt).length}</strong></div></article>
       </section>
 
-      {canManage ? <section className={styles.activationPanel}>
-        <div><h2>Crear llave</h2></div>
-        <form onSubmit={generateCode}>
-          <label><span>Nombre del equipo</span><input value={form.deviceName} onChange={(event) => setForm((current) => ({ ...current, deviceName: event.target.value }))} placeholder="CAJA AMBATO 01" required /></label>
-          <button type="submit" className="catalog-button-primary" disabled={isSaving || !form.deviceName}><KeyRound size={17} /> Crear llave</button>
-        </form>
-        {generated ? <div className={styles.generatedCode}><div><span>Llave para {generated.deviceName}</span><strong>{generated.deviceKey || generated.activationCode}</strong></div><button type="button" onClick={copyCode}><Copy size={17} /> Copiar</button></div> : null}
-      </section> : null}
-
       <section className={styles.panel}>
-        <div className={styles.panelHead}><div><p className={styles.eyebrow}>Cajas instaladas</p><h2>Dispositivos</h2></div><button type="button" onClick={load} disabled={isLoading}><RefreshCw size={16} /> Actualizar</button></div>
-        <div className={styles.tableWrap}><table><thead><tr><th>Equipo</th><th>Acceso</th><th>Estado</th><th>Última conexión</th><th>Inventario</th><th>Documentos</th><th /></tr></thead><tbody>
-          {isLoading ? <tr><td colSpan="7"><div className={styles.loadingState} role="status" aria-live="polite"><RefreshCw size={20} aria-hidden="true" /><span><strong>Cargando dispositivos</strong><small>Consultando el estado de las cajas</small></span></div></td></tr> : data.devices.map((item) => <tr key={item.id}>
-            <td><strong>{item.deviceName}</strong><span>{item.deviceId}</span></td><td>{item.warehouseName || "TODAS LAS BODEGAS"}</td><td><span className={item.status === "active" ? styles.active : styles.revoked}>{item.status === "active" ? "Vinculado" : "Llave eliminada"}</span></td><td>{formatDate(item.lastSeenAt)}</td><td>{item.lastDownloadedVersion || "Sin descarga"}</td><td>{item.documentCount}</td><td>{canManage && item.status === "active" ? <button type="button" className={styles.revokeButton} onClick={() => setRevokeTarget(item)}><ShieldOff size={15} /> Eliminar llave</button> : null}</td>
+        <div className={styles.panelHead}><div><p className={styles.eyebrow}>Cajas instaladas</p><h2>Dispositivos</h2></div><div className={styles.panelActions}>{canManage ? <button type="button" className={styles.createKeyButton} onClick={openKeyModal}><KeyRound size={16} /> Crear llave</button> : null}<button type="button" onClick={load} disabled={isLoading}><RefreshCw size={16} /> Actualizar</button></div></div>
+        <div className={styles.tableWrap}><table><thead><tr><th>Equipo</th><th>Estado</th><th>Última conexión</th></tr></thead><tbody>
+          {isLoading ? <tr><td colSpan="3"><div className={styles.loadingState} role="status" aria-live="polite"><RefreshCw size={20} aria-hidden="true" /><span><strong>Cargando dispositivos</strong><small>Consultando el estado de las cajas</small></span></div></td></tr> : data.devices.map((item) => <tr key={item.id}>
+            <td><strong>{item.deviceName}</strong></td><td><div className={styles.rowStatus}><span className={item.status === "active" ? styles.active : styles.revoked}>{item.status === "active" ? "Vinculado" : "Llave eliminada"}</span>{canManage && item.status === "active" ? <button type="button" className={styles.revokeButton} onClick={() => setRevokeTarget(item)} aria-label={`Eliminar llave de ${item.deviceName}`} title="Eliminar llave"><ShieldOff size={15} /></button> : null}</div></td><td>{formatDate(item.lastSeenAt)}</td>
           </tr>)}
-          {!isLoading && !data.devices.length ? <tr><td colSpan="7">No hay dispositivos activados.</td></tr> : null}
+          {!isLoading && !data.devices.length ? <tr><td colSpan="3">No hay dispositivos vinculados.</td></tr> : null}
         </tbody></table></div>
       </section>
+
+      <FloatingModal isOpen={isKeyModalOpen} title={generated ? "Llave creada" : "Crear llave"} isPending={isSaving} onClose={closeKeyModal}>
+        {generated ? <div className={styles.keyResult}><span>Llave para {generated.deviceName}</span><strong>{generated.deviceKey || generated.activationCode}</strong><div><button type="button" className="catalog-button-ghost" onClick={copyCode}><Copy size={16} /> Copiar</button><button type="button" className="catalog-button-primary" onClick={closeKeyModal}>Listo</button></div></div>
+          : <form className={styles.keyForm} onSubmit={generateCode}><label><span>Nombre del equipo</span><input autoFocus value={form.deviceName} onChange={(event) => setForm({ deviceName: event.target.value })} placeholder="CAJA AMBATO 01" required /></label><div><button type="button" className="catalog-button-ghost" onClick={closeKeyModal}>Cancelar</button><button type="submit" className="catalog-button-primary" disabled={isSaving || !form.deviceName.trim()}><KeyRound size={16} /> {isSaving ? "Creando…" : "Crear llave"}</button></div></form>}
+      </FloatingModal>
 
       <ConfirmDialog isOpen={Boolean(revokeTarget)} title="Eliminar llave" message={`La caja ${revokeTarget?.deviceName || ""} perderá acceso y dejará de sincronizar. Para volver a usarla será necesario crear y vincular una llave nueva.`} confirmLabel="Eliminar llave" isPending={isSaving} onCancel={() => setRevokeTarget(null)} onConfirm={revoke} />
     </div>
