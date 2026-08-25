@@ -10,28 +10,18 @@
 .metricCard p { margin: 0 0 .18rem; color: #64748b; font-size: .78rem; font-weight: 700; }
 .metricCard strong { color: #10213e; font-size: 1.2rem; }
 .importPanel, .inventoryPanel, .historyPanel { border: 1px solid rgba(16, 33, 62, .08); border-radius: 1.5rem; background: rgba(255, 255, 255, .94); box-shadow: 0 18px 44px rgba(16, 33, 62, .07); padding: 1.3rem; }
-.importPanel { display: grid; grid-template-columns: minmax(290px, .82fr) minmax(590px, 1.18fr); gap: 1.75rem; align-items: center; background: linear-gradient(135deg, rgba(238, 245, 255, .95), rgba(255, 255, 255, .97)); }
+.importPanel { display: grid; grid-template-columns: minmax(290px, .9fr) minmax(460px, 1.1fr); gap: 1.75rem; align-items: center; background: linear-gradient(135deg, rgba(238, 245, 255, .95), rgba(255, 255, 255, .97)); }
 .eyebrow { margin: 0 0 .3rem; color: #1f6fff; font-size: .7rem; font-weight: 800; letter-spacing: .14em; text-transform: uppercase; }
 .importCopy h2, .toolbar h2, .historyPanel h2 { margin: 0; color: #10213e; font-size: 1.22rem; }
 .importCopy > p:last-child { margin: .55rem 0 0; color: #5d6d88; line-height: 1.65; }
-.importForm { display: grid; grid-template-columns: minmax(245px, .72fr) minmax(280px, 1fr) auto; gap: .8rem; align-items: end; }
-.generatedAtField { position: relative; display: grid; gap: .38rem; min-width: 0; color: #31506d; font-size: .7rem; font-weight: 750; }
-.dateTimePicker { width: 100%; min-height: 64px; display: grid; grid-template-columns: auto minmax(0, 1fr) 1px minmax(58px, auto) auto; align-items: center; gap: .7rem; border: 1px solid rgba(31, 111, 255, .2); border-radius: 1.05rem; background: rgba(255, 255, 255, .94); color: #1f6fff; padding: .65rem .8rem; text-align: left; cursor: pointer; transition: border-color 160ms ease, box-shadow 160ms ease, transform 160ms ease; }
-.dateTimePicker:hover { border-color: rgba(31, 111, 255, .48); box-shadow: 0 9px 22px rgba(31, 111, 255, .09); transform: translateY(-1px); }
-.dateTimePicker:focus-visible { border-color: #1f6fff; outline: 0; box-shadow: 0 0 0 4px rgba(31, 111, 255, .12); }
-.dateTimePicker > span { display: grid; gap: .12rem; min-width: 0; }
-.dateTimePicker small { color: #7a89a2; font-size: .58rem; font-weight: 700; text-transform: uppercase; letter-spacing: .06em; }
-.dateTimePicker strong { display: flex; align-items: center; gap: .3rem; color: #16325f; font-size: .78rem; white-space: nowrap; }
-.dateTimePicker > i { width: 1px; height: 30px; background: rgba(31, 111, 255, .14); }
-.dateTimePicker > svg:last-child { color: #6f83aa; }
-.nativeDateTimeInput { position: absolute; width: 1px; height: 1px; bottom: 0; left: 50%; border: 0; opacity: 0; pointer-events: none; }
+.importForm { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: .85rem; align-items: center; }
 .dropzone { min-width: 0; min-height: 64px; display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: center; gap: .15rem .7rem; border: 1.5px dashed rgba(31, 111, 255, .32); border-radius: 1.1rem; background: rgba(255, 255, 255, .82); color: #174fd0; padding: .8rem 1rem; cursor: pointer; transition: 160ms ease; }
 .dropzone:hover, .dropzoneActive { border-color: #1f6fff; background: white; transform: translateY(-1px); }
 .dropzone input { position: absolute; width: 1px; height: 1px; opacity: 0; }
 .dropzone svg { grid-row: span 2; }
 .dropzone span { overflow: hidden; color: #16325f; font-weight: 750; text-overflow: ellipsis; white-space: nowrap; }
 .dropzone small { color: #6b7b91; }
-.importForm > button { min-height: 54px; white-space: nowrap; }
+.importForm > button { min-height: 54px; padding-inline: 1.25rem; white-space: nowrap; }
 .toolbar { display: flex; align-items: center; justify-content: space-between; gap: 1rem; margin-bottom: 1rem; }
 .searchField { display: flex; align-items: center; gap: .55rem; min-width: min(360px, 100%); border: 1px solid rgba(16, 33, 62, .12); border-radius: 999px; color: #60708b; padding: .68rem .9rem; }
 .searchField input { width: 100%; border: 0; outline: 0; background: transparent; color: #10213e; }

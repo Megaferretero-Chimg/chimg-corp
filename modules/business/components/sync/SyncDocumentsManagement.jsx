@@ -1,9 +1,10 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { ChevronDown, RefreshCw, Search, UserRoundPlus, Waypoints } from "lucide-react";
+import { ChevronDown, LoaderCircle, Search, UserRoundPlus, Waypoints } from "lucide-react";
 
 import FloatingNotice from "@/components/ui/FloatingNotice";
+import SelectInput from "@/components/ui/SelectInput";
 import styles from "@/modules/business/styles/components/SyncDocumentsManagement.module.scss";
 
 function formatDate(value) {
@@ -72,19 +73,46 @@ export default function SyncDocumentsManagement({ canManage = false }) {
         <div className={styles.toolbar}>
           <div className={styles.tabs}><button type="button" className={tab === "guides" ? styles.activeTab : ""} onClick={() => setTab("guides")}>Guías</button><button type="button" className={tab === "customers" ? styles.activeTab : ""} onClick={() => setTab("customers")}>Clientes pendientes</button></div>
           <label><Search size={16} /><input value={filters.search} onChange={(event) => setFilters((current) => ({ ...current, search: event.target.value }))} placeholder="Buscar documento" /></label>
-          <select value={filters.status} onChange={(event) => setFilters((current) => ({ ...current, status: event.target.value }))}><option value="">Todos los estados</option><option value="pending">Pendiente</option><option value="processed">Procesado</option><option value="rejected">Rechazado</option></select>
-          {tab === "guides" ? <select value={filters.warehouse} onChange={(event) => setFilters((current) => ({ ...current, warehouse: event.target.value }))}><option value="">Todas las bodegas</option><option>ALMACÉN AMBATO</option><option>ALMACÉN SALCEDO</option><option>INTERNA</option><option>EXTERNA</option></select> : null}
-          <button type="button" onClick={load}><RefreshCw size={16} /></button>
+          <SelectInput
+            value={filters.status}
+            onChange={(event) => setFilters((current) => ({ ...current, status: event.target.value }))}
+            className={styles.filterSelectField}
+            controlClassName={styles.filterSelectControl}
+            selectClassName={styles.filterSelectButton}
+            menuClassName={styles.filterSelectMenu}
+            aria-label="Filtrar por estado"
+          >
+            <option value="">Todos los estados</option>
+            <option value="pending">Pendiente</option>
+            <option value="processed">Procesado</option>
+            <option value="rejected">Rechazado</option>
+          </SelectInput>
+          {tab === "guides" ? (
+            <SelectInput
+              value={filters.warehouse}
+              onChange={(event) => setFilters((current) => ({ ...current, warehouse: event.target.value }))}
+              className={styles.filterSelectField}
+              controlClassName={styles.filterSelectControl}
+              selectClassName={styles.filterSelectButton}
+              menuClassName={styles.filterSelectMenu}
+              aria-label="Filtrar por bodega"
+            >
+              <option value="">Todas las bodegas</option>
+              <option>ALMACÉN AMBATO</option>
+              <option>ALMACÉN SALCEDO</option>
+              <option>INTERNA</option>
+              <option>EXTERNA</option>
+            </SelectInput>
+          ) : null}
         </div>
 
-        <div className={styles.list}>
-          {isLoading ? <p className={styles.empty}>Cargando documentos...</p> : items.map((item) => (
+        <div className={`${styles.list} ${isLoading ? styles.listLoading : ""}`} aria-busy={isLoading}>
+          {isLoading ? <div className={styles.loadingState} role="status" aria-live="polite"><LoaderCircle size={24} aria-hidden="true" /><span><strong>Cargando documentos</strong><small>Consultando la información recibida…</small></span></div> : items.map((item) => (
             <details key={item.id} className={styles.item}>
               <summary>
                 <span className={styles.itemIcon}>{tab === "guides" ? <Waypoints size={18} /> : <UserRoundPlus size={18} />}</span>
                 <div><strong>{tab === "guides" ? item.internalNumber : item.name}</strong><span>{tab === "guides" ? `${item.customerName} · ${item.warehouse}` : `${item.identification} · ${item.city}`}</span></div>
                 <div><strong>{tab === "guides" ? money(item.total) : item.deviceId.slice(0, 8)}</strong><span>{formatDate(item.receivedAt)}</span></div>
-                <span className={`${styles.status} ${styles[item.status]}`}>{item.status}</span>
                 <ChevronDown size={17} />
               </summary>
               <div className={styles.detail}>

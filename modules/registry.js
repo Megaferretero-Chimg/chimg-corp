@@ -7,7 +7,10 @@ import {
 import { COMPANY_MODULE } from "@/modules/company/module";
 import { PLANNING_MODULE } from "@/modules/planner/module";
 import { BUSINESS_MODULE } from "@/modules/business/module";
-import { hasAccessPermission } from "@/modules/company/submodules/access/lib/permissions";
+import {
+  hasAccessPermission,
+  isAdminAccessUser,
+} from "@/modules/company/submodules/access/lib/permissions";
 
 export const MODULE_DEFINITIONS = [
   {
@@ -53,18 +56,20 @@ export function getModuleCardsForUser(user) {
   }
 
   if (isCompanyEmployeeOnlyUser(user)) {
-    return MODULE_DEFINITIONS.map((module) => {
-      if (module.key !== COMPANY_MODULE.key) {
-        return asModuleCard(module);
-      }
+    return MODULE_DEFINITIONS
+      .filter((module) => module.key !== BUSINESS_MODULE.key || isAdminAccessUser(user))
+      .map((module) => {
+        if (module.key !== COMPANY_MODULE.key) {
+          return asModuleCard(module);
+        }
 
-      return asModuleCard({
-        ...module,
-        href: COMPANY_EMPLOYEES_PATH,
-        description: "Gestión de empleados autorizada para tu perfil.",
-        bullets: ["Empleados"],
+        return asModuleCard({
+          ...module,
+          href: COMPANY_EMPLOYEES_PATH,
+          description: "Gestión de empleados autorizada para tu perfil.",
+          bullets: ["Empleados"],
+        });
       });
-    });
   }
 
   return MODULE_DEFINITIONS.filter((module) => {
@@ -85,27 +90,11 @@ export function getModuleCardsForUser(user) {
     }
 
     if (module.key === BUSINESS_MODULE.key) {
-      return hasAccessPermission(user, "business.home.view") ||
-        hasAccessPermission(user, "business.inventory.view") ||
-        hasAccessPermission(user, "business.warehouses.view") ||
-        hasAccessPermission(user, "business.devices.view") ||
-        hasAccessPermission(user, "business.syncDocuments.view");
+      return isAdminAccessUser(user);
     }
 
     return true;
   }).map((module) => {
-    if (module.key !== BUSINESS_MODULE.key) return asModuleCard(module);
-
-    const href = hasAccessPermission(user, "business.home.view")
-      ? BUSINESS_MODULE.homeHref
-      : hasAccessPermission(user, "business.inventory.view")
-        ? "/modules/business/inventory"
-        : hasAccessPermission(user, "business.warehouses.view")
-          ? "/modules/business/warehouses"
-          : hasAccessPermission(user, "business.devices.view")
-            ? "/modules/business/devices"
-            : "/modules/business/sync";
-
-    return asModuleCard({ ...module, href });
+    return asModuleCard(module);
   });
 }

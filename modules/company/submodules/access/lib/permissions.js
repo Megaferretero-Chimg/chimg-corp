@@ -455,6 +455,7 @@ export function getAccessibleModuleKeys(user) {
   };
 
   return ACCESS_PAGE_CATALOG
+    .filter((module) => module.moduleKey !== "business" || isAdminAccessUser(user))
     .filter((module) => module.pages.some((page) => hasAccessPermission(user, page.permission)))
     .map((module) => routeModuleKeyByPermissionModule[module.moduleKey] || module.moduleKey);
 }

@@ -112,11 +112,11 @@ export default function DeviceManagement({ canManage = false }) {
 
       <section className={styles.panel}>
         <div className={styles.panelHead}><div><p className={styles.eyebrow}>Cajas instaladas</p><h2>Dispositivos</h2></div><div className={styles.panelActions}>{canManage ? <button type="button" className={styles.createKeyButton} onClick={openKeyModal}><KeyRound size={16} /> Crear llave</button> : null}<button type="button" onClick={load} disabled={isLoading}><RefreshCw size={16} /> Actualizar</button></div></div>
-        <div className={styles.tableWrap}><table><thead><tr><th>Equipo</th><th>Estado</th><th>Última conexión</th></tr></thead><tbody>
-          {isLoading ? <tr><td colSpan="3"><div className={styles.loadingState} role="status" aria-live="polite"><RefreshCw size={20} aria-hidden="true" /><span><strong>Cargando dispositivos</strong><small>Consultando el estado de las cajas</small></span></div></td></tr> : data.devices.map((item) => <tr key={item.id}>
-            <td><strong>{item.deviceName}</strong></td><td><div className={styles.rowStatus}><span className={item.status === "active" ? styles.active : styles.revoked}>{item.status === "active" ? "Vinculado" : "Llave eliminada"}</span>{canManage && item.status === "active" ? <button type="button" className={styles.revokeButton} onClick={() => setRevokeTarget(item)} aria-label={`Eliminar llave de ${item.deviceName}`} title="Eliminar llave"><ShieldOff size={15} /></button> : null}</div></td><td>{formatDate(item.lastSeenAt)}</td>
+        <div className={styles.tableWrap}><table><thead><tr><th>Equipo</th><th>Estado</th><th>Última conexión</th><th className={styles.actionsColumn}>Acciones</th></tr></thead><tbody>
+          {isLoading ? <tr><td colSpan="4"><div className={styles.loadingState} role="status" aria-live="polite"><RefreshCw size={20} aria-hidden="true" /><span><strong>Cargando dispositivos</strong><small>Consultando el estado de las cajas</small></span></div></td></tr> : data.devices.map((item) => <tr key={item.id}>
+            <td><strong>{item.deviceName}</strong></td><td><span className={item.status === "active" ? styles.active : styles.revoked}>{item.status === "active" ? "Vinculado" : "Llave eliminada"}</span></td><td>{formatDate(item.lastSeenAt)}</td><td className={styles.actionsCell}>{canManage && item.status === "active" ? <button type="button" className={styles.revokeButton} onClick={() => setRevokeTarget(item)} aria-label={`Eliminar llave de ${item.deviceName}`} title="Eliminar llave"><ShieldOff size={15} /></button> : null}</td>
           </tr>)}
-          {!isLoading && !data.devices.length ? <tr><td colSpan="3">No hay dispositivos vinculados.</td></tr> : null}
+          {!isLoading && !data.devices.length ? <tr><td colSpan="4">No hay dispositivos vinculados.</td></tr> : null}
         </tbody></table></div>
       </section>
 

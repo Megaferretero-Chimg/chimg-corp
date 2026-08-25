@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Edit3, MapPin, Plus, Search, Trash2, Warehouse } from "lucide-react";
+import { Edit3, LoaderCircle, MapPin, Plus, Search, Trash2, Warehouse } from "lucide-react";
 
 import CatalogDrawer from "@/components/catalog/CatalogDrawer";
 import ConfirmDialog from "@/components/ui/ConfirmDialog";
@@ -135,8 +135,8 @@ export default function WarehouseManagement({ canManage = false }) {
           {canManage ? <button type="button" className="catalog-button-primary" onClick={openCreate}><Plus size={17} /> Crear bodega</button> : null}
         </div>
 
-        <div className={styles.grid}>
-          {isLoading ? <p className={styles.empty}>Cargando bodegas...</p> : filtered.map((item) => (
+        <div className={`${styles.grid} ${isLoading ? styles.gridLoading : ""}`} aria-busy={isLoading}>
+          {isLoading ? <div className={styles.loadingState} role="status" aria-live="polite"><LoaderCircle size={24} aria-hidden="true" /><span><strong>Cargando bodegas</strong><small>Consultando ubicaciones y existencias…</small></span></div> : filtered.map((item) => (
             <article key={item.id} className={styles.card}>
               <div className={styles.cardHead}>
                 <span className={styles.icon}><Warehouse size={21} /></span>

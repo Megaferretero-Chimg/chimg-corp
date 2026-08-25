@@ -3,12 +3,9 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
   Boxes,
-  CalendarDays,
-  ChevronDown,
   ChevronLeft,
   ChevronRight,
   CircleDollarSign,
-  Clock3,
   FileSpreadsheet,
   LoaderCircle,
   PackageSearch,
@@ -45,21 +42,6 @@ function statusLabel(status) {
     failed: "Fallida",
     processing: "Procesando",
   }[status] || status;
-}
-
-function defaultGeneratedAt() {
-  const now = new Date();
-  now.setMinutes(now.getMinutes() - now.getTimezoneOffset());
-  return now.toISOString().slice(0, 16);
-}
-
-function formatGeneratedAt(value) {
-  const [date = "", time = ""] = value.split("T");
-  const [year, month, day] = date.split("-");
-  return {
-    date: day && month && year ? `${day}/${month}/${year}` : "Seleccionar fecha",
-    time: time || "--:--",
-  };
 }
 
 function ImportHistory({ imports, canPublish, publishingId, onPublish }) {
@@ -102,14 +84,12 @@ export default function InventoryManagement({ canImport = false, canPublish = fa
   const [search, setSearch] = useState("");
   const [page, setPage] = useState(1);
   const [selectedFile, setSelectedFile] = useState(null);
-  const [generatedAt, setGeneratedAt] = useState(defaultGeneratedAt);
   const [isLoading, setIsLoading] = useState(true);
   const [isImporting, setIsImporting] = useState(false);
   const [publishingId, setPublishingId] = useState("");
   const [isDragging, setIsDragging] = useState(false);
   const [notice, setNotice] = useState(null);
   const inputRef = useRef(null);
-  const generatedAtRef = useRef(null);
 
   const loadInventory = useCallback(async (requestedPage = page, requestedSearch = search) => {
     setIsLoading(true);
@@ -150,7 +130,7 @@ export default function InventoryManagement({ canImport = false, canPublish = fa
     try {
       const formData = new FormData();
       formData.append("file", selectedFile);
-      formData.append("generatedAt", new Date(generatedAt).toISOString());
+      formData.append("generatedAt", new Date().toISOString());
       const response = await fetch("/api/business/inventory/import", { method: "POST", body: formData });
       const payload = await response.json();
       if (!response.ok) throw new Error(payload.error || "No se pudo importar el archivo.");
@@ -187,7 +167,6 @@ export default function InventoryManagement({ canImport = false, canPublish = fa
     { label: "Unidades registradas", value: formatNumber(data.summary.totalQuantity), icon: Boxes },
     { label: "Valor de existencia", value: formatMoney(data.summary.totalValue), icon: CircleDollarSign },
   ];
-  const generatedAtDisplay = formatGeneratedAt(generatedAt);
 
   return (
     <div className={styles.stack}>
@@ -209,29 +188,6 @@ export default function InventoryManagement({ canImport = false, canPublish = fa
           <p>El sistema identifica cada producto por su código de venta y actualiza su existencia en cada bodega.</p>
         </div>
         <form className={styles.importForm} onSubmit={importFile}>
-          <div className={styles.generatedAtField}>
-            <span>Fecha de generación empresarial</span>
-            <button
-              type="button"
-              className={styles.dateTimePicker}
-              onClick={() => generatedAtRef.current?.showPicker?.()}
-              aria-label={`Fecha de generación: ${generatedAtDisplay.date}, ${generatedAtDisplay.time}`}
-            >
-              <CalendarDays size={19} />
-              <span><small>Fecha</small><strong>{generatedAtDisplay.date}</strong></span>
-              <i />
-              <span><small>Hora</small><strong><Clock3 size={13} />{generatedAtDisplay.time}</strong></span>
-              <ChevronDown size={16} />
-            </button>
-            <input
-              ref={generatedAtRef}
-              className={styles.nativeDateTimeInput}
-              type="datetime-local"
-              value={generatedAt}
-              onChange={(event) => setGeneratedAt(event.target.value)}
-              tabIndex={-1}
-            />
-          </div>
           <label
             className={`${styles.dropzone} ${isDragging ? styles.dropzoneActive : ""}`}
             onDragOver={(event) => { event.preventDefault(); setIsDragging(true); }}
@@ -252,7 +208,7 @@ export default function InventoryManagement({ canImport = false, canPublish = fa
             <span>{selectedFile ? selectedFile.name : "Arrastra el Excel o selecciónalo"}</span>
             <small>Formatos .xlsx y .xls · máximo 15 MB</small>
           </label>
-          <button type="submit" className="catalog-button-primary" disabled={!selectedFile || !generatedAt || isImporting}>
+          <button type="submit" className="catalog-button-primary" disabled={!selectedFile || isImporting}>
             <Upload size={17} />
             {isImporting ? "Procesando..." : "Importar y actualizar"}
           </button>

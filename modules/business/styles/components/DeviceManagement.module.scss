@@ -24,7 +24,8 @@
 .loadingState strong { color: #16325f; font-size: .78rem; }
 .loadingState small { color: #71809a; font-size: .68rem; }
 .active, .revoked { display: inline-flex !important; width: fit-content; border-radius: 999px; padding: .28rem .5rem; font-weight: 800; } .active { color: #067647 !important; background: #ecfdf3; } .revoked { color: #b42318 !important; background: #fff1f0; }
-.rowStatus { display: flex; align-items: center; gap: .5rem; }
+.actionsColumn, .actionsCell { width: 5.5rem; text-align: right !important; }
+.actionsCell .revokeButton { margin-left: auto; }
 .revokeButton { width: 2rem; height: 2rem; padding: 0; color: #b42318; background: #fff1f0; }
 .keyForm, .keyResult { display: grid; gap: 1rem; }
 .keyForm label { display: grid; gap: .4rem; color: #31506d; font-size: .75rem; font-weight: 750; }
