@@ -29,6 +29,12 @@ export const BUSINESS_MODULE_NAVIGATION = [
         description: "Administración de ubicaciones de stock",
         permission: "business.warehouses.view",
       },
+      {
+        href: businessModulePath("/customers"),
+        label: "Clientes",
+        description: "Catálogo empresarial para las cajas",
+        permission: "business.inventory.view",
+      },
     ],
   },
   {

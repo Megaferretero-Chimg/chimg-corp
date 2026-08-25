@@ -12,3 +12,9 @@ export { default as DeviceSyncLog } from "@/modules/business/models/DeviceSyncLo
 export { default as SyncGuide } from "@/modules/business/models/SyncGuide";
 export { default as PendingCustomer } from "@/modules/business/models/PendingCustomer";
 export { default as ApiRateLimit } from "@/modules/business/models/ApiRateLimit";
+export { default as Customer } from "@/modules/business/models/Customer";
+export { default as CustomerImport } from "@/modules/business/models/CustomerImport";
+export { default as CustomerDraft } from "@/modules/business/models/CustomerDraft";
+export { default as CustomerPublication } from "@/modules/business/models/CustomerPublication";
+export { default as CustomerPackageChunk } from "@/modules/business/models/CustomerPackageChunk";
+export { default as CustomerVersionCounter } from "@/modules/business/models/CustomerVersionCounter";

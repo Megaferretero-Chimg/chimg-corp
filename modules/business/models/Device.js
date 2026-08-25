@@ -15,6 +15,7 @@ const deviceSchema = new Schema(
     lastManifestAt: { type: Date, default: null },
     lastSyncAt: { type: Date, default: null },
     lastDownloadedVersion: { type: String, trim: true, default: "" },
+    lastDownloadedCustomerVersion: { type: String, trim: true, default: "" },
     documentCount: { type: Number, default: 0, min: 0 },
   },
   { timestamps: true },

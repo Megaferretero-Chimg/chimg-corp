@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 
 import connectToDatabase from "@/lib/db/mongodb";
 import { authenticateDeviceRequest, logDeviceSync } from "@/modules/business/lib/device-auth";
-import { Device, InventoryPublication } from "@/modules/business/models";
+import { CustomerPublication, Device, InventoryPublication } from "@/modules/business/models";
 
 export async function GET(request) {
   const auth = await authenticateDeviceRequest(request, { action: "manifest" });
@@ -14,7 +14,10 @@ export async function GET(request) {
   }
 
   await connectToDatabase();
-  const publication = await InventoryPublication.findOne({ status: "published" }).sort({ publishedAt: -1 }).lean();
+  const [publication, customerPublication] = await Promise.all([
+    InventoryPublication.findOne({ status: "published" }).sort({ publishedAt: -1 }).lean(),
+    CustomerPublication.findOne({ status: "published" }).sort({ publishedAt: -1 }).lean(),
+  ]);
   const now = new Date();
   await Promise.all([
     Device.updateOne({ _id: auth.device._id }, { $set: { lastManifestAt: now, lastSeenAt: now } }),
@@ -27,6 +30,12 @@ export async function GET(request) {
       checksum: publication.checksum,
       generatedAt: publication.generatedAtText,
       downloadUrl: `/api/v1/sync/packages/inventory/${publication.version}`,
+    } : null,
+    customers: customerPublication ? {
+      version: customerPublication.version,
+      checksum: customerPublication.checksum,
+      generatedAt: customerPublication.generatedAtText,
+      downloadUrl: `/api/v1/sync/packages/customers/${customerPublication.version}`,
     } : null,
   }, {
     headers: {

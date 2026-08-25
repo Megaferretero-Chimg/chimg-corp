@@ -6,6 +6,7 @@ import {
   FileCheck2,
   Laptop,
   PackageSearch,
+  Users,
   Warehouse as WarehouseIcon,
 } from "lucide-react";
 
@@ -16,6 +17,8 @@ import connectToDatabase from "@/lib/db/mongodb";
 import { getBusinessModuleForUser } from "@/modules/business/module";
 import {
   Device,
+  Customer,
+  CustomerPublication,
   InventoryPublication,
   InventoryStock,
   PendingCustomer,
@@ -46,7 +49,7 @@ function formatDate(value) {
 async function getBusinessSnapshot() {
   await connectToDatabase();
 
-  const [productCount, warehouses, stockByWarehouse, devices, publication, guideCount, customerCount] = await Promise.all([
+  const [productCount, warehouses, stockByWarehouse, devices, publication, guideCount, pendingCustomerCount, customerCount, customerPublication] = await Promise.all([
     Product.countDocuments({}),
     Warehouse.find({ isActive: { $ne: false } }).select("name code").sort({ name: 1 }).lean(),
     InventoryStock.aggregate([
@@ -56,6 +59,8 @@ async function getBusinessSnapshot() {
     InventoryPublication.findOne({ status: "published" }).sort({ publishedAt: -1 }).lean(),
     SyncGuide.countDocuments({}),
     PendingCustomer.countDocuments({}),
+    Customer.countDocuments({ isActive: { $ne: false } }),
+    CustomerPublication.findOne({ status: "published" }).sort({ publishedAt: -1 }).lean(),
   ]);
 
   const stockMap = new Map(stockByWarehouse.map((item) => [item._id.toString(), item]));
@@ -89,6 +94,8 @@ async function getBusinessSnapshot() {
     connectedDevices: devices.filter((device) => device.lastSeenAt).length,
     guideCount,
     customerCount,
+    pendingCustomerCount,
+    customerPublication,
   };
 }
 
@@ -164,7 +171,12 @@ export default async function BusinessHomePage() {
               </TransitionLink>
               <TransitionLink href={businessModulePath("/sync")} className={styles.activityItem}>
                 <span><DatabaseZap size={18} /></span>
-                <div><strong>{snapshot.guideCount} documentos recibidos</strong><small>{snapshot.customerCount} clientes pendientes de revisión</small></div>
+                <div><strong>{snapshot.guideCount} documentos recibidos</strong><small>{snapshot.pendingCustomerCount} clientes pendientes de revisión</small></div>
+                <ArrowRight size={16} />
+              </TransitionLink>
+              <TransitionLink href={businessModulePath("/customers")} className={styles.activityItem}>
+                <span><Users size={18} /></span>
+                <div><strong>{snapshot.customerCount} clientes maestros</strong><small>{snapshot.customerPublication ? `Versión ${snapshot.customerPublication.version} publicada` : "Catálogo pendiente de publicar"}</small></div>
                 <ArrowRight size={16} />
               </TransitionLink>
             </div>
@@ -177,6 +189,7 @@ export default async function BusinessHomePage() {
             <TransitionLink href={businessModulePath("/inventory")}><PackageSearch size={15} /> Inventario</TransitionLink>
             <TransitionLink href={businessModulePath("/warehouses")}><WarehouseIcon size={15} /> Bodegas</TransitionLink>
             <TransitionLink href={businessModulePath("/devices")}><Laptop size={15} /> Dispositivos</TransitionLink>
+            <TransitionLink href={businessModulePath("/customers")}><Users size={15} /> Clientes</TransitionLink>
           </div>
         </section>
       </div>
