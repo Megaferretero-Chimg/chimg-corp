@@ -29,6 +29,12 @@ export const BUSINESS_MODULE_NAVIGATION = [
         description: "Administración de ubicaciones de stock",
         permission: "business.warehouses.view",
       },
+    ],
+  },
+  {
+    title: "Clientes",
+    href: businessModulePath("/customers"),
+    items: [
       {
         href: businessModulePath("/customers"),
         label: "Clientes",

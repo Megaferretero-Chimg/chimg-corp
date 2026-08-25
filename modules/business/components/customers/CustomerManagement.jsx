@@ -77,7 +77,6 @@ export default function CustomerManagement({ canImport = false, canPublish = fal
     <FloatingNotice notice={notice} onClose={() => setNotice(null)} />
     <section className={styles.metricsGrid}>{metrics.map(([label, value, Icon]) => <article key={label} className={styles.metricCard}><span><Icon size={20} /></span><div><p>{label}</p><strong>{number(value)}</strong></div></article>)}</section>
     {canImport ? <section className={styles.importPanel}>
-      <div className={styles.importCopy}><p className={styles.eyebrow}>Actualizar clientes</p><h2>Cargar plantilla de clientes</h2><p>El sistema identifica cada cliente por su cédula, RUC o identificación y prepara una versión para las cajas.</p></div>
       <form className={styles.importForm} onSubmit={importFile}>
         <label className={`${styles.dropzone} ${isDragging ? styles.dropzoneActive : ""}`} onDragOver={(event) => { event.preventDefault(); setIsDragging(true); }} onDragLeave={() => setIsDragging(false)} onDrop={(event) => { event.preventDefault(); setIsDragging(false); selectFile(event.dataTransfer.files[0]); }}>
           <FileSpreadsheet size={22} /><span>{selectedFile?.name || "Arrastra el Excel o selecciónalo"}</span><small>Formatos .xlsx y .xls · máximo 15 MB</small><input ref={inputRef} type="file" accept=".xlsx,.xls" onChange={(event) => selectFile(event.target.files?.[0])} />
