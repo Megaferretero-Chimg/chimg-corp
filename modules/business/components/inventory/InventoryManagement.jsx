@@ -182,11 +182,6 @@ export default function InventoryManagement({ canImport = false, canPublish = fa
       </section>
 
       {canImport ? <section className={styles.importPanel}>
-        <div className={styles.importCopy}>
-          <p className={styles.eyebrow}>Actualizar inventario</p>
-          <h2>Cargar plantilla de productos</h2>
-          <p>El sistema identifica cada producto por su código de venta y actualiza su existencia en cada bodega.</p>
-        </div>
         <form className={styles.importForm} onSubmit={importFile}>
           <label
             className={`${styles.dropzone} ${isDragging ? styles.dropzoneActive : ""}`}
