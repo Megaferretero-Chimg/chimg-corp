@@ -3,10 +3,14 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
   Boxes,
+  CalendarDays,
+  ChevronDown,
   ChevronLeft,
   ChevronRight,
   CircleDollarSign,
+  Clock3,
   FileSpreadsheet,
+  LoaderCircle,
   PackageSearch,
   Search,
   Upload,
@@ -47,6 +51,15 @@ function defaultGeneratedAt() {
   const now = new Date();
   now.setMinutes(now.getMinutes() - now.getTimezoneOffset());
   return now.toISOString().slice(0, 16);
+}
+
+function formatGeneratedAt(value) {
+  const [date = "", time = ""] = value.split("T");
+  const [year, month, day] = date.split("-");
+  return {
+    date: day && month && year ? `${day}/${month}/${year}` : "Seleccionar fecha",
+    time: time || "--:--",
+  };
 }
 
 function ImportHistory({ imports, canPublish, publishingId, onPublish }) {
@@ -96,6 +109,7 @@ export default function InventoryManagement({ canImport = false, canPublish = fa
   const [isDragging, setIsDragging] = useState(false);
   const [notice, setNotice] = useState(null);
   const inputRef = useRef(null);
+  const generatedAtRef = useRef(null);
 
   const loadInventory = useCallback(async (requestedPage = page, requestedSearch = search) => {
     setIsLoading(true);
@@ -173,6 +187,7 @@ export default function InventoryManagement({ canImport = false, canPublish = fa
     { label: "Unidades registradas", value: formatNumber(data.summary.totalQuantity), icon: Boxes },
     { label: "Valor de existencia", value: formatMoney(data.summary.totalValue), icon: CircleDollarSign },
   ];
+  const generatedAtDisplay = formatGeneratedAt(generatedAt);
 
   return (
     <div className={styles.stack}>
@@ -194,10 +209,29 @@ export default function InventoryManagement({ canImport = false, canPublish = fa
           <p>El sistema identifica cada producto por su código de venta y actualiza su existencia en cada bodega.</p>
         </div>
         <form className={styles.importForm} onSubmit={importFile}>
-          <label className={styles.generatedAtField}>
+          <div className={styles.generatedAtField}>
             <span>Fecha de generación empresarial</span>
-            <input type="datetime-local" value={generatedAt} onChange={(event) => setGeneratedAt(event.target.value)} required />
-          </label>
+            <button
+              type="button"
+              className={styles.dateTimePicker}
+              onClick={() => generatedAtRef.current?.showPicker?.()}
+              aria-label={`Fecha de generación: ${generatedAtDisplay.date}, ${generatedAtDisplay.time}`}
+            >
+              <CalendarDays size={19} />
+              <span><small>Fecha</small><strong>{generatedAtDisplay.date}</strong></span>
+              <i />
+              <span><small>Hora</small><strong><Clock3 size={13} />{generatedAtDisplay.time}</strong></span>
+              <ChevronDown size={16} />
+            </button>
+            <input
+              ref={generatedAtRef}
+              className={styles.nativeDateTimeInput}
+              type="datetime-local"
+              value={generatedAt}
+              onChange={(event) => setGeneratedAt(event.target.value)}
+              tabIndex={-1}
+            />
+          </div>
           <label
             className={`${styles.dropzone} ${isDragging ? styles.dropzoneActive : ""}`}
             onDragOver={(event) => { event.preventDefault(); setIsDragging(true); }}
@@ -242,12 +276,17 @@ export default function InventoryManagement({ canImport = false, canPublish = fa
           </label>
         </div>
 
-        <div className={styles.tableWrap}>
+        <div className={`${styles.tableWrap} ${isLoading ? styles.tableWrapLoading : ""}`} aria-busy={isLoading}>
           <table className={styles.table}>
             <thead><tr><th>Producto</th><th>Clasificación</th><th>Precios</th><th>Existencias por bodega</th><th>Total</th></tr></thead>
             <tbody>
               {isLoading ? (
-                <tr><td colSpan="5" className={styles.emptyCell}>Cargando inventario...</td></tr>
+                <tr><td colSpan="5" className={styles.loadingCell}>
+                  <div className={styles.loadingState} role="status" aria-live="polite">
+                    <LoaderCircle size={24} />
+                    <span><strong>Cargando inventario</strong><small>Consultando productos y existencias…</small></span>
+                  </div>
+                </td></tr>
               ) : data.products.length ? data.products.map((product) => (
                 <tr key={product.id}>
                   <td>
