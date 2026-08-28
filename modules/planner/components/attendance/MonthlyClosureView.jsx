@@ -136,11 +136,12 @@ export default function MonthlyClosureView({ view = "summary", fixedMonth = "" }
   const totals = data?.totals || {};
   const incompleteRows = rows.filter((row) => missingRegularMinutes(row) > 0);
   const completableRows = incompleteRows.filter(canCompleteRow);
+  const isDismissedRow = (row) => isEmployeeDismissedInMonth(row, month);
   const isSavedCrossResult = isCrossView && !isLiveMode && hasSavedCrossClosure;
   const displayedRows = isCrossView
     ? isSavedCrossResult
-      ? rows.filter((row) => (Number(row.baseCompletionMinutes) || 0) > 0)
-      : completableRows
+      ? rows.filter((row) => (Number(row.baseCompletionMinutes) || 0) > 0 || isDismissedRow(row))
+      : rows.filter((row) => canCompleteRow(row) || isDismissedRow(row))
     : rows;
   const payrollMetrics = useMemo(() => rows.reduce((metrics, row) => {
     const approvedSalary = Number(row.salaryTotal) || 0;
@@ -755,6 +756,9 @@ export default function MonthlyClosureView({ view = "summary", fixedMonth = "" }
                           <td>
                             <strong className={styles.employeeName}>{row.employeeName}</strong>
                             <span>{row.branchName} · {row.areaName} · {row.roleName}</span>
+                            {isDismissed ? (
+                              <span className={styles.dismissalLabel}>{employeeDismissalLabel(row)}</span>
+                            ) : null}
                           </td>
                           <td>
                             <span className={styles.metricValue}>{laborableValue(row)}</span>

@@ -74,12 +74,17 @@ export function isEmployeeActiveInMonth(employee = {}, monthKey = "") {
   if (!startKey) return employee?.isActive !== false;
 
   const employmentStartKey = dateKeyFromValue(employee.employmentStartDate);
+  const terminationDateKey = dateKeyFromValue(employee.terminationDate);
 
   if (employmentStartKey && endKey && employmentStartKey > endKey) {
     return false;
   }
 
-  return isEmployeeActiveOnDate(employee, startKey) || isEmployeeActiveOnDate(employee, employmentStartKey || startKey);
+  if (terminationDateKey) {
+    return terminationDateKey >= startKey;
+  }
+
+  return employee?.isActive !== false;
 }
 
 export function isEmployeeDismissedInMonth(employee = {}, monthKey = "") {

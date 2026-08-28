@@ -2738,7 +2738,9 @@ function compareDay(day, punches, employee = {}, scheduleRules = {}, permissionC
   const punchesAffectHours = scheduleAffectsSalary;
   const shouldUsePlannedAttendance = !scheduleAffectsSalary && isWorkingDay && punchCount === 0;
   const shouldSuppressScheduleIssues = !scheduleAffectsSalary;
+  const isOutsideEmploymentPeriod = ["employment_pending", "employment_ended"].includes(day.source);
   const shouldIgnorePunchesForPayroll =
+    isOutsideEmploymentPeriod ||
     !punchesAffectHours ||
     (!payrollPolicy.appliesSupplementaryHours &&
       !payrollPolicy.appliesExtraordinaryHours &&
@@ -3465,6 +3467,16 @@ export async function GET(request) {
       const visibleDays = attendanceClassifiedDays.filter((day) => monthKeyFromDateKey(day.dateKey) === monthKey);
       const classifiedDays = applyMonthlyHourTarget(visibleDays);
       const days = classifiedDays.map((day) => {
+        // La fecha de ingreso y la fecha de salida delimitan el cruce de horas.
+        // Se conservan las picadas para auditoría, pero ninguna decisión puede
+        // volver a sumar horas fuera de la relación laboral.
+        if (["employment_pending", "employment_ended"].includes(day.source)) {
+          return {
+            ...day,
+            executionException: null,
+          };
+        }
+
         const employeeDateKey = `${employeeKey}|${day.dateKey}`;
         const operationalDecision = operationalDecisionsByEmployeeDate.get(employeeDateKey);
         const savedDayDecision = decisionWithResolutionState(

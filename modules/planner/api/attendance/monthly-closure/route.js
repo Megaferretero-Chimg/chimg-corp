@@ -501,6 +501,8 @@ function sourceRowsFingerprint(rows = [], restoreCompletedHours = false) {
 
     return {
       employeeId: getRowEmployeeId(row),
+      isActive: row.isActive !== false,
+      terminationDate: String(row.terminationDate || ""),
       plannedDays: Number(row.plannedDays) || 0,
       daysWithPunches: Number(row.daysWithPunches) || 0,
       missingPunchDays: Number(row.missingPunchDays) || 0,

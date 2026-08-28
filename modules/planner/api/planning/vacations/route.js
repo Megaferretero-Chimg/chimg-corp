@@ -16,6 +16,10 @@ import {
   normalizeVacationPayload,
   serializeVacationRecord,
 } from "@/modules/planner/lib/planning/vacations";
+import {
+  buildVacationReportWorkbook,
+  filterVacationsForReport,
+} from "@/modules/planner/lib/planning/vacationReport";
 import { Employee } from "@/modules/company/models";
 import { VacationRequest } from "@/modules/planner/models";
 
@@ -47,10 +51,12 @@ export async function GET(request) {
     await connectToDatabase();
 
     const { searchParams } = new URL(request.url);
-    const query = buildMonthVacationQuery(searchParams.get("month"));
+    const monthKey = String(searchParams.get("month") || "").trim();
+    const query = buildMonthVacationQuery(monthKey);
     const plannerScope = await resolvePlannerEmployeeScope();
     const canViewVacationRequests = hasAccessPermission(user, "planner.timeOff.view");
     const canManageVacationRequests = hasAccessPermission(user, "planner.timeOff.manage");
+    const wantsExcelReport = searchParams.get("export") === "xlsx";
 
     if (
       !canViewVacationRequests
@@ -59,19 +65,58 @@ export async function GET(request) {
       return NextResponse.json({ error: "No tienes permiso para ver vacaciones." }, { status: 403 });
     }
 
+    if (wantsExcelReport && !canViewVacationRequests) {
+      return NextResponse.json({ error: "No tienes permiso para exportar vacaciones." }, { status: 403 });
+    }
+
     applyPlannerScopeToEmployeeReferenceQuery(query, plannerScope);
 
-    if (searchParams.get("includeRequests") !== "true" || !canViewVacationRequests) {
+    if (wantsExcelReport && !monthKey) {
+      throw new Error("Debes seleccionar el mes del reporte.");
+    }
+
+    const employeeId = wantsExcelReport
+      ? String(searchParams.get("employeeId") || "").trim()
+      : "";
+
+    if (employeeId) {
+      assertEmployeesInPlannerScope([employeeId], plannerScope);
+      query.employee = employeeId;
+    }
+
+    if (!wantsExcelReport && (searchParams.get("includeRequests") !== "true" || !canViewVacationRequests)) {
       query.status = APPROVED_VACATION_STATUS_QUERY;
     }
 
     const vacations = await VacationRequest.find(query)
       .sort({ startDate: 1, employeeName: 1 })
       .lean();
+    const serializedVacations = vacations.map(serializeVacationRecord);
+
+    if (wantsExcelReport) {
+      const search = String(searchParams.get("search") || "").trim();
+      const reportVacations = filterVacationsForReport(serializedVacations, search);
+      const filterLabel = employeeId
+        ? reportVacations[0]?.employeeName || "Empleado seleccionado"
+        : search ? `Busqueda: ${search}` : "Todos los empleados";
+      const excel = buildVacationReportWorkbook({
+        vacations: reportVacations,
+        monthKey,
+        filterLabel,
+      });
+
+      return new Response(excel, {
+        headers: {
+          "Content-Type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+          "Content-Disposition": `attachment; filename="resumen-vacaciones-${monthKey}.xlsx"`,
+          "Cache-Control": "no-store",
+        },
+      });
+    }
 
     return NextResponse.json({
-      vacations: vacations.map((vacation) => {
-        const serializedVacation = serializeVacationRecord(vacation);
+      vacations: vacations.map((vacation, index) => {
+        const serializedVacation = serializedVacations[index];
 
         return {
           ...serializedVacation,

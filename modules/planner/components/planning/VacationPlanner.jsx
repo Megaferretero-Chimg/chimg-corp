@@ -7,6 +7,7 @@ import {
   Check,
   ChevronLeft,
   ChevronRight,
+  Download,
   Plane,
   Plus,
   Save,
@@ -78,6 +79,17 @@ export default function VacationPlanner() {
   const noticeRemoveTimeoutRef = useRef(null);
   const monthKey = format(monthDate, "yyyy-MM");
   const monthLabel = format(monthDate, "MMMM yyyy", { locale: es });
+  const reportHref = useMemo(() => {
+    const params = new URLSearchParams({ month: monthKey, export: "xlsx" });
+
+    if (vacationEmployeeId) {
+      params.set("employeeId", vacationEmployeeId);
+    } else if (vacationEmployeeQuery.trim()) {
+      params.set("search", vacationEmployeeQuery.trim());
+    }
+
+    return `/api/planner/planning/vacations?${params.toString()}`;
+  }, [monthKey, vacationEmployeeId, vacationEmployeeQuery]);
 
   const activeEmployees = useMemo(
     () => employees.filter((employee) => employee.isActive !== false),
@@ -470,6 +482,12 @@ export default function VacationPlanner() {
                   : `Periodo ${monthLabel}`}
             </p>
           </div>
+          {capabilities.canRequest ? (
+            <a className={styles.secondaryButton} href={reportHref} download>
+              <Download size={16} aria-hidden="true" />
+              Descargar Excel
+            </a>
+          ) : null}
         </div>
 
         {isLoading ? (
