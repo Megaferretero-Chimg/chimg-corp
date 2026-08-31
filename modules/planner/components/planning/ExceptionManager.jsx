@@ -83,7 +83,7 @@ const EXCEPTION_FLOWS = [
     resolution: "approved_work_time",
     effect: "external_work",
     attendanceMode: "use_authorized_schedule",
-    payMode: "regular_only",
+    payMode: "regular_and_extra",
   },
   {
     category: "execution",
@@ -918,7 +918,9 @@ export default function ExceptionManager({
     const isRejected = resolution === "no_action";
     const isDiscounted = resolution === "discount_day";
     const isDeductionDecision = flow.reviewMode === "deduction";
-    const isAuthorizedOvertime = flow.value === "overtime_authorization" && resolution === "approved_work_time";
+    const approvesAdditionalTime = ["overtime_authorization", "external_work"].includes(flow.value)
+      && resolution === "approved_work_time";
+    const approvesExternalWork = flow.value === "external_work" && resolution === "approved_work_time";
 
     return {
       id: exception.id,
@@ -970,8 +972,8 @@ export default function ExceptionManager({
         : isDiscounted
           ? "discount"
           : flow.payMode || exception.payMode,
-      countsAsWorkedTime: isDeductionDecision && !isDiscounted,
-      allowSupplementaryTime: isAuthorizedOvertime,
+      countsAsWorkedTime: approvesExternalWork || (isDeductionDecision && !isDiscounted),
+      allowSupplementaryTime: approvesAdditionalTime,
       resolution,
       resolutionNotes: reviewNotes.trim(),
       notes: exception.notes || "",

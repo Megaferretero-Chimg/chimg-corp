@@ -937,6 +937,13 @@ function suppressSecondaryAttendanceIssues(day) {
   if (!hasBlockingAttendanceIssue(tags)) return day;
 
   const nextTags = tags.filter((tag) => !SECONDARY_ATTENDANCE_TAGS.has(tag));
+  const preserveApprovedAdditionalTime = day.authorization?.approvedAdditionalIndependentOfPunches === true;
+  const approvedSupplementaryMinutes = preserveApprovedAdditionalTime
+    ? Math.max(0, Number(day.authorization?.authorizedSupplementaryMinutes) || 0)
+    : 0;
+  const approvedExtraordinaryMinutes = preserveApprovedAdditionalTime
+    ? Math.max(0, Number(day.authorization?.authorizedExtraordinaryMinutes) || 0)
+    : 0;
 
   return {
     ...day,
@@ -949,14 +956,14 @@ function suppressSecondaryAttendanceIssues(day) {
     earlyLeaveLabel: "--",
     additionalSupplementaryMinutes: 0,
     additionalSupplementaryLabel: "--",
-    detectedSupplementaryMinutes: 0,
-    detectedSupplementaryLabel: "--",
-    detectedExtraordinaryMinutes: 0,
-    detectedExtraordinaryLabel: "--",
-    supplementaryMinutes: 0,
-    supplementaryLabel: "--",
-    extraordinaryMinutes: 0,
-    extraordinaryLabel: "--",
+    detectedSupplementaryMinutes: approvedSupplementaryMinutes,
+    detectedSupplementaryLabel: approvedSupplementaryMinutes ? minutesLabel(approvedSupplementaryMinutes) : "--",
+    detectedExtraordinaryMinutes: approvedExtraordinaryMinutes,
+    detectedExtraordinaryLabel: approvedExtraordinaryMinutes ? minutesLabel(approvedExtraordinaryMinutes) : "--",
+    supplementaryMinutes: approvedSupplementaryMinutes,
+    supplementaryLabel: approvedSupplementaryMinutes ? minutesLabel(approvedSupplementaryMinutes) : "--",
+    extraordinaryMinutes: approvedExtraordinaryMinutes,
+    extraordinaryLabel: approvedExtraordinaryMinutes ? minutesLabel(approvedExtraordinaryMinutes) : "--",
   };
 }
 
@@ -1016,6 +1023,9 @@ function buildOperationalExceptionDecisionMap(exceptions = []) {
         employee: exception.employee,
         decision: "full",
         authorizedAdditionalMinutes: authorizedMinutes,
+        authorizedAdditionalStartTime: exception.startTime || "",
+        authorizedAdditionalEndTime: exception.endTime || "",
+        creditVerifiedAdditionalTime: true,
         allowSupplementaryTime: true,
         note: [
           "Autorización de tiempo adicional",
@@ -1051,11 +1061,19 @@ function buildOperationalExceptionDecisionMap(exceptions = []) {
       : scope === "missing_punch"
         ? "justify_incomplete_punches"
       : "complete_regular_day";
+    const isApprovedExternalWork = effect === "external_work"
+      && attendanceMode === "use_authorized_schedule"
+      && ["approved_work_time", "complete_scheduled_time"].includes(exception.resolution);
     const baseDecision = {
       employee: exception.employee,
       decision,
       allowSupplementaryTime:
-        exception.payMode === "regular_and_extra" || exception.allowSupplementaryTime === true,
+        isApprovedExternalWork
+        || exception.payMode === "regular_and_extra"
+        || exception.allowSupplementaryTime === true,
+      authorizedSupplementaryMinutes: isApprovedExternalWork
+        ? Math.max(0, authorizedScheduleWorkMinutes(exception) - REGULAR_DAY_MINUTES)
+        : 0,
       note: [
         "Justificacion operativa",
         exception.resolutionNotes || exception.notes || "",
@@ -1089,6 +1107,29 @@ function justifiedIntervalMinutes(exception) {
   }
 
   return Math.max(0, Math.round((end - start) / 60000));
+}
+
+function authorizedScheduleWorkMinutes(exception) {
+  const totalMinutes = justifiedIntervalMinutes(exception);
+
+  if (!totalMinutes) return 0;
+
+  const startMinutes = parseScheduleTimeToMinutes(exception.startTime);
+  const endMinutes = parseScheduleTimeToMinutes(exception.endTime);
+  const lunchStartMinutes = parseScheduleTimeToMinutes(exception.plannedLunchStartTime);
+  const lunchEndMinutes = parseScheduleTimeToMinutes(exception.plannedLunchEndTime);
+  const hasLunchInsideAuthorizedSchedule = startMinutes !== null
+    && endMinutes !== null
+    && endMinutes > startMinutes
+    && lunchStartMinutes !== null
+    && lunchEndMinutes !== null
+    && lunchStartMinutes >= startMinutes
+    && lunchEndMinutes > lunchStartMinutes
+    && lunchEndMinutes <= endMinutes;
+
+  return hasLunchInsideAuthorizedSchedule
+    ? Math.max(0, totalMinutes - (lunchEndMinutes - lunchStartMinutes))
+    : totalMinutes;
 }
 
 function isDeparturePermission(exception = {}) {
@@ -1178,7 +1219,9 @@ function buildJustifiedWorkIntervalMap(exceptions = []) {
         startTime: exception.startTime || "",
         endTime: exception.endTime || "",
         destination: exception.destination || "",
-        allowSupplementaryTime: exception.payMode === "regular_and_extra" || exception.allowSupplementaryTime !== false,
+        allowSupplementaryTime: shouldUseAuthorizedExternalWork
+          || exception.payMode === "regular_and_extra"
+          || exception.allowSupplementaryTime !== false,
         note: exception.resolutionNotes || exception.notes || "",
         decidedBy: exception.authorizedBy || exception.registeredBy || "",
         statusLabel: effect === "paid_partial_leave" ? "Permiso sin descuento" : "Trabajo fuera justificado",
@@ -1883,6 +1926,31 @@ function operationalDecisionTag(decision) {
   return decision?.source === "operational_exception" ? "Justificación operativa" : "";
 }
 
+function workedMinutesInsideAuthorizedAdditionalRange(day, decision) {
+  const rangeStart = parseScheduleTimeToMinutes(decision?.authorizedAdditionalStartTime);
+  const rangeEnd = parseScheduleTimeToMinutes(decision?.authorizedAdditionalEndTime);
+
+  if (rangeStart === null || rangeEnd === null || rangeEnd <= rangeStart) return 0;
+
+  const punchMinutes = (day?.punches || [])
+    .filter((punch) => !punch.isIgnored)
+    .map((punch) => parseScheduleTimeToMinutes(punch.time))
+    .filter((minutes) => minutes !== null);
+  let workedMinutes = 0;
+
+  for (let index = 0; index + 1 < punchMinutes.length; index += 2) {
+    const punchStart = punchMinutes[index];
+    const punchEnd = punchMinutes[index + 1];
+
+    workedMinutes += Math.max(
+      0,
+      Math.min(punchEnd, rangeEnd) - Math.max(punchStart, rangeStart),
+    );
+  }
+
+  return Math.min(rangeEnd - rangeStart, workedMinutes);
+}
+
 function applyDayDecision(day, decision) {
   const paidPlannedDayDecisions = new Set([
     "pay_planned_day",
@@ -1909,6 +1977,21 @@ function applyDayDecision(day, decision) {
       Number(day.detectedExtraordinaryMinutes) || 0,
       Number(decision?.detectedExtraordinaryMinutes) || 0,
     );
+  const authorizedAdditionalMinutes = Math.max(0, Number(decision?.authorizedAdditionalMinutes) || 0);
+  const creditedAuthorizedAdditionalMinutes = decision?.creditVerifiedAdditionalTime === true
+    ? Math.max(
+      0,
+      authorizedAdditionalMinutes - workedMinutesInsideAuthorizedAdditionalRange(day, decision),
+    )
+    : 0;
+
+  if (creditedAuthorizedAdditionalMinutes > 0) {
+    if (isExtraordinaryDay && policy.appliesExtraordinaryHours !== false) {
+      detectedExtraordinaryMinutes += creditedAuthorizedAdditionalMinutes;
+    } else if (policy.appliesSupplementaryHours !== false) {
+      detectedSupplementaryMinutes += creditedAuthorizedAdditionalMinutes;
+    }
+  }
   const shouldInferAdditionalFromIncompletePunches =
     decision?.decision === "justify_incomplete_punches" &&
     decision.allowSupplementaryTime === true;
@@ -1970,7 +2053,6 @@ function applyDayDecision(day, decision) {
         ? Number(day.scheduledWorkedMinutes) || 0
         : Number(day.plannedExtraordinaryMinutes) || 0),
   );
-  const authorizedAdditionalMinutes = Math.max(0, Number(decision?.authorizedAdditionalMinutes) || 0);
   const effectiveDecision = decision
     ? authorizedAdditionalMinutes
       ? {
@@ -2121,12 +2203,26 @@ function applyDayDecision(day, decision) {
       )
       : 0;
     const completedRegularMinutes = isExtraordinaryDay ? 0 : plannedPaidRegularMinutes;
-    const completedWorkedMinutes = completedRegularMinutes + completedExtraordinaryMinutes;
+    const completedSupplementaryMinutes = !isExtraordinaryDay
+      && effectiveDecision.allowSupplementaryTime === true
+      && policy.appliesSupplementaryHours !== false
+      ? Math.min(
+        plannedPaidSupplementaryMinutes,
+        Math.max(0, Number(effectiveDecision.authorizedSupplementaryMinutes) || 0),
+      )
+      : 0;
+    const completedWorkedMinutes = completedRegularMinutes
+      + completedSupplementaryMinutes
+      + completedExtraordinaryMinutes;
+    const nextDetectedSupplementaryMinutes = Math.max(
+      detectedSupplementaryMinutes,
+      completedSupplementaryMinutes,
+    );
     const nextDetectedExtraordinaryMinutes = Math.max(detectedExtraordinaryMinutes, completedExtraordinaryMinutes);
 
     return {
       ...day,
-      tags: [...completedTags, statusLabel, operationalTag].filter(Boolean),
+      tags: [...new Set([...completedTags, statusLabel, operationalTag].filter(Boolean))],
       hasIssue: false,
       workedMinutes: completedWorkedMinutes,
       workedLabel: completedWorkedMinutes ? minutesLabel(completedWorkedMinutes) : "--",
@@ -2134,18 +2230,18 @@ function applyDayDecision(day, decision) {
       regularWorkedLabel: completedRegularMinutes ? minutesLabel(completedRegularMinutes) : "--",
       lateMinutes: 0,
       earlyLeaveMinutes: 0,
-      supplementaryMinutes: 0,
-      supplementaryLabel: "--",
+      supplementaryMinutes: completedSupplementaryMinutes,
+      supplementaryLabel: completedSupplementaryMinutes ? minutesLabel(completedSupplementaryMinutes) : "--",
       extraordinaryMinutes: completedExtraordinaryMinutes,
       extraordinaryLabel: completedExtraordinaryMinutes ? minutesLabel(completedExtraordinaryMinutes) : "--",
-      detectedSupplementaryMinutes,
-      detectedSupplementaryLabel: detectedSupplementaryMinutes ? minutesLabel(detectedSupplementaryMinutes) : "--",
+      detectedSupplementaryMinutes: nextDetectedSupplementaryMinutes,
+      detectedSupplementaryLabel: nextDetectedSupplementaryMinutes ? minutesLabel(nextDetectedSupplementaryMinutes) : "--",
       detectedExtraordinaryMinutes: nextDetectedExtraordinaryMinutes,
       detectedExtraordinaryLabel: nextDetectedExtraordinaryMinutes ? minutesLabel(nextDetectedExtraordinaryMinutes) : "--",
       authorization: {
         decision: effectiveDecision.decision,
         statusLabel,
-        authorizedSupplementaryMinutes: 0,
+        authorizedSupplementaryMinutes: completedSupplementaryMinutes,
         authorizedExtraordinaryMinutes: completedExtraordinaryMinutes,
         detectedLateMinutes,
         adjustedLateMinutes: 0,
@@ -2404,18 +2500,21 @@ function applyDayDecision(day, decision) {
   }
 
   const isSavedDecision = Boolean(decision);
-  const issueAdjustedTags = lateAdjustedTags.filter((tag) => ![
+  const attendanceTagsResolvedByDecision = [
     "Atraso",
     "Atraso justificado",
     "Salida anticipada",
     "Salida justificada",
-    "Sin picadas",
-    "Picadas incompletas",
-  ].includes(tag)).filter((tag) => !isSavedDecision || ![
+    ...(decision?.creditVerifiedAdditionalTime === true ? [] : ["Sin picadas", "Picadas incompletas"]),
+  ];
+  const issueAdjustedTags = lateAdjustedTags.filter((tag) =>
+    !attendanceTagsResolvedByDecision.includes(tag),
+  ).filter((tag) => !isSavedDecision || ![
     "Tiempo adicional",
     "Tiempo adicional sin justificar",
   ].includes(tag));
   if (!isSavedDecision && authorizedExtraordinaryMinutes > 0) issueAdjustedTags.push("Extraordinaria");
+  if (creditedAuthorizedAdditionalMinutes > 0) issueAdjustedTags.push("Tiempo adicional aprobado");
   if (
     isSavedDecision
     && (
@@ -2436,11 +2535,11 @@ function applyDayDecision(day, decision) {
     : Number(day.regularWorkedMinutes) || 0;
   const workedMinutes = shouldCompleteLabor
     ? Math.max(
-      Number(day.workedMinutes) || 0,
+      (Number(day.workedMinutes) || 0) + creditedAuthorizedAdditionalMinutes,
       decisionWorkedMinutes,
       plannedPaidRegularMinutes + plannedPaidSupplementaryMinutes + authorizedExtraordinaryMinutes,
     )
-    : Number(day.workedMinutes) || 0;
+    : (Number(day.workedMinutes) || 0) + creditedAuthorizedAdditionalMinutes;
 
   return {
     ...day,
@@ -2496,6 +2595,8 @@ function applyDayDecision(day, decision) {
       decidedBy: effectiveDecision.decidedBy || "",
       source: effectiveDecision.source || "attendance_decision",
       isSaved: Boolean(decision),
+      creditedAdditionalMinutes: creditedAuthorizedAdditionalMinutes,
+      approvedAdditionalIndependentOfPunches: decision?.creditVerifiedAdditionalTime === true,
       hasUnauthorizedSupplementaryTime,
       hasUnauthorizedExtraordinaryTime,
     },

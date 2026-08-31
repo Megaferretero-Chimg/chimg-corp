@@ -379,7 +379,12 @@ export function normalizeExceptionPayload(body, employee) {
   }
 
   const attendanceMode = normalizeAttendanceMode(body?.attendanceMode, effect, effectInput);
-  const payMode = normalizePayMode(body?.payMode, effect, effectInput);
+  const isApprovedExternalWork = effect === "external_work"
+    && attendanceMode === "use_authorized_schedule"
+    && ["approved_work_time", "complete_scheduled_time"].includes(resolution);
+  const payMode = isApprovedExternalWork
+    ? "regular_and_extra"
+    : normalizePayMode(body?.payMode, effect, effectInput);
   const applicableWeekdays = normalizeApplicableWeekdays(body?.applicableWeekdays, effect);
 
   if (!TYPE_VALUES.has(type)) {
@@ -527,8 +532,8 @@ export function normalizeExceptionPayload(body, employee) {
     permissionPunchTimes,
     discountMinutes: payMode === "discount" ? discountMinutes : 0,
     destination,
-    countsAsWorkedTime,
-    allowSupplementaryTime,
+    countsAsWorkedTime: isApprovedExternalWork || countsAsWorkedTime,
+    allowSupplementaryTime: isApprovedExternalWork || allowSupplementaryTime,
     planningSource,
     registeredBy,
     authorizedBy,
@@ -545,7 +550,12 @@ export function serializeOperationalException(exception) {
   const scope = exception.scope || "full_day";
   const effect = normalizeResolutionEffect(exception.effect, exception);
   const attendanceMode = normalizeAttendanceMode(exception.attendanceMode, effect, exception);
-  const payMode = normalizePayMode(exception.payMode, effect, exception);
+  const isApprovedExternalWork = effect === "external_work"
+    && attendanceMode === "use_authorized_schedule"
+    && ["approved_work_time", "complete_scheduled_time"].includes(resolution);
+  const payMode = isApprovedExternalWork
+    ? "regular_and_extra"
+    : normalizePayMode(exception.payMode, effect, exception);
 
   return {
     id: exception._id.toString(),
@@ -599,8 +609,8 @@ export function serializeOperationalException(exception) {
       : [],
     discountMinutes: Math.max(0, Number(exception.discountMinutes) || 0),
     destination: exception.destination || "",
-    countsAsWorkedTime: Boolean(exception.countsAsWorkedTime),
-    allowSupplementaryTime: Boolean(exception.allowSupplementaryTime),
+    countsAsWorkedTime: isApprovedExternalWork || Boolean(exception.countsAsWorkedTime),
+    allowSupplementaryTime: isApprovedExternalWork || Boolean(exception.allowSupplementaryTime),
     planningSource: exception.planningSource || "",
     registeredBy: exception.registeredBy || "",
     authorizedBy: exception.authorizedBy || "",
