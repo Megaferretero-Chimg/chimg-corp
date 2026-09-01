@@ -466,6 +466,10 @@ function resolvePlannedExtraordinaryMinutes(day) {
     return 0;
   }
 
+  if (day?.dayType === "vacation" && (Number(day?.workedMinutes) || 0) <= 0) {
+    return 0;
+  }
+
   const plannedDayType = day?.plannedDayType || day?.dayType;
 
   if (plannedDayType === "weekend_overtime") {
@@ -1583,14 +1587,16 @@ function applyExceptionPlannedSchedule(day, plannedSchedule) {
 }
 
 function weeklyRegularDayLimit(weekDays = []) {
-  const weekdayHolidayCount = weekDays.filter((day) =>
-    day.isHoliday && !isWeekendDateKey(day.dateKey)
-  ).length;
-  const weekdayVacationCount = weekDays.filter((day) =>
-    day.dayType === "vacation" && !isWeekendDateKey(day.dateKey)
-  ).length;
+  const unavailableWeekdays = new Set(
+    weekDays
+      .filter((day) => (
+        !isWeekendDateKey(day.dateKey) &&
+        (day.isHoliday || day.dayType === "vacation")
+      ))
+      .map((day) => day.dateKey),
+  );
 
-  return Math.max(0, 5 - weekdayHolidayCount - weekdayVacationCount);
+  return Math.max(0, 5 - unavailableWeekdays.size);
 }
 
 function applyWeeklyExtraDayTypes(days = []) {
@@ -3117,7 +3123,8 @@ function compareDay(day, punches, employee = {}, scheduleRules = {}, permissionC
   const hasRestDayAttendance = hasAssignedSchedule && day.dayType === "off_day" && punchCount > 0;
   const displayDayTypeLabel = hasRestDayAttendance ? "Extraordinaria" : dayTypeLabel(day.dayType);
   const displayScheduleLabel = hasRestDayAttendance ? "Extraordinaria" : buildScheduleLabel(day);
-  const plannedExtraordinaryMinutes = hasAssignedSchedule && isExtraordinaryAttendanceDay(day)
+  const vacationHasAttendance = day.dayType !== "vacation" || workedMinutes > 0;
+  const plannedExtraordinaryMinutes = hasAssignedSchedule && isExtraordinaryAttendanceDay(day) && vacationHasAttendance
     ? day.isHoliday
       ? resolveHolidayPlannedNetMinutes(day) || plannedMinutes.scheduledWorkedMinutes
       : plannedMinutes.scheduledWorkedMinutes

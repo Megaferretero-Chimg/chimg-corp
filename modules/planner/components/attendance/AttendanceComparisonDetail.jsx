@@ -367,7 +367,9 @@ function isFirstWeekendDay(days = [], index) {
 }
 
 function isExtraPlannedDay(day) {
-  return Boolean(day?.isHoliday) || day?.dayType === "weekend_overtime";
+  const vacationHasAttendance = day?.dayType !== "vacation" || Number(day?.workedMinutes) > 0;
+
+  return (Boolean(day?.isHoliday) && vacationHasAttendance) || day?.dayType === "weekend_overtime";
 }
 
 function formatWeekRange(days = []) {
@@ -587,7 +589,9 @@ function hasPlannedStart(day) {
 }
 
 function isExtraordinaryDay(day) {
-  return Boolean(day?.isHoliday) || ["weekend_overtime", "off_day"].includes(day?.dayType);
+  const vacationHasAttendance = day?.dayType !== "vacation" || Number(day?.workedMinutes) > 0;
+
+  return (Boolean(day?.isHoliday) && vacationHasAttendance) || ["weekend_overtime", "off_day"].includes(day?.dayType);
 }
 
 function additionalKindLabel(day, long = false) {
@@ -1002,7 +1006,7 @@ function canManuallyAuthorizeHours(day) {
     return day.payrollPolicy?.appliesSupplementaryHours !== false;
   }
 
-  return (day.isHoliday || ["weekend_overtime", "off_day"].includes(day.dayType)) &&
+  return isExtraordinaryDay(day) &&
     day.payrollPolicy?.appliesExtraordinaryHours !== false;
 }
 
