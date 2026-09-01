@@ -28,6 +28,16 @@ import {
 import { Employee } from "@/modules/company/models";
 import { OperationalException } from "@/modules/planner/models";
 
+function reviewResolutionForAction(action, exception = {}) {
+  if (action === "reject") return "no_action";
+  if (action === "discount") return "discount_day";
+  if (action !== "approve") return "";
+
+  return exception.effect === "planning_change" || exception.type === "schedule_change"
+    ? "reschedule"
+    : "approved_work_time";
+}
+
 export async function PATCH(request, context) {
   try {
     const params = await context.params;
@@ -45,7 +55,6 @@ export async function PATCH(request, context) {
     }
 
     const body = await request.json();
-    const employeeId = String(body?.employeeId || "").trim();
     const user = plannerScope.user;
     const currentException = await OperationalException.findById(exceptionId).lean();
     const canApproveExceptions = await canUserApproveExceptions(user);
@@ -68,6 +77,30 @@ export async function PATCH(request, context) {
       );
     }
 
+    const action = String(body?.action || "").trim();
+    const actionResolution = reviewResolutionForAction(action, currentException);
+
+    if (action && !actionResolution) {
+      return NextResponse.json(
+        { error: "La acción de revisión no es válida." },
+        { status: 400 },
+      );
+    }
+
+    if (action && currentException.resolution !== "pending") {
+      return NextResponse.json(
+        { error: "Esta excepción ya fue revisada." },
+        { status: 409 },
+      );
+    }
+
+    const employeeId = String(
+      body?.employeeId
+      || currentException.employee?.toString?.()
+      || currentException.employee
+      || "",
+    ).trim();
+
     assertEmployeesInPlannerScope([
       currentException.employee?.toString?.() || currentException.employee,
       employeeId,
@@ -75,8 +108,34 @@ export async function PATCH(request, context) {
 
     const employee = await Employee.findById(employeeId).lean();
     const registeredBy = currentException.registeredBy || user?.employeeName || user?.username || user?.id || "SISTEMA";
+    const reviewBody = action
+      ? {
+          ...currentException,
+          ...body,
+          resolution: actionResolution,
+          effect: action === "reject"
+            ? "alert_review"
+            : action === "discount"
+              ? "unpaid_absence"
+              : currentException.effect,
+          attendanceMode: action === "reject"
+            ? "none"
+            : action === "discount"
+              ? "ignore_attendance"
+              : currentException.attendanceMode,
+          payMode: action === "reject"
+            ? "no_pay_change"
+            : action === "discount"
+              ? "discount"
+              : currentException.payMode,
+          countsAsWorkedTime: action === "discount"
+            ? false
+            : currentException.countsAsWorkedTime,
+          resolutionNotes: String(body?.resolutionNotes || "").trim(),
+        }
+      : body;
     const bodyWithPermissionPunches = {
-      ...body,
+      ...reviewBody,
       permissionPunchIds: Array.isArray(body?.permissionPunchIds)
         ? body.permissionPunchIds
         : (currentException.permissionPunches || []).map(String),
@@ -107,7 +166,9 @@ export async function PATCH(request, context) {
     });
 
     try {
-      await syncExceptionManualPunch(exception);
+      await syncExceptionManualPunch(exception, {
+        manualPunchConflictChoices: body?.manualPunchConflictChoices,
+      });
     } catch (syncError) {
       await OperationalException.replaceOne({ _id: currentException._id }, currentException);
       throw syncError;
@@ -139,8 +200,13 @@ export async function PATCH(request, context) {
     });
   } catch (error) {
     return NextResponse.json(
-      { error: error.message || "No se pudo actualizar la excepcion." },
-      { status: 400 },
+      {
+        error: error.message || "No se pudo actualizar la excepcion.",
+        ...(error.code === "MANUAL_PUNCH_CONFLICT"
+          ? { manualPunchReview: error.conflictReview }
+          : {}),
+      },
+      { status: error.code === "MANUAL_PUNCH_CONFLICT" ? 409 : 400 },
     );
   }
 }

@@ -25,6 +25,7 @@ import {
   serializeOperationalException,
 } from "@/modules/planner/lib/planning/exceptions";
 import {
+  inspectExceptionManualPunchConflicts,
   resolvePermissionPunchSelection,
   syncExceptionManualPunch,
 } from "@/modules/planner/lib/planning/exceptionPunches";
@@ -40,11 +41,17 @@ export async function GET(request) {
       return NextResponse.json({ error: "Sesion invalida o expirada." }, { status: 401 });
     }
 
-    if (!hasAccessPermission(plannerScope.user, "planner.exceptions.view")) {
+    const { searchParams } = new URL(request.url);
+    const isAttendanceReviewRequest = searchParams.get("context") === "attendance_review";
+    const canReviewAttendance = hasAccessPermission(plannerScope.user, "planner.attendance.review");
+
+    if (
+      !hasAccessPermission(plannerScope.user, "planner.exceptions.view")
+      && !(isAttendanceReviewRequest && canReviewAttendance)
+    ) {
       return NextResponse.json({ error: "No tienes permiso para ver ajustes y excepciones." }, { status: 403 });
     }
 
-    const { searchParams } = new URL(request.url);
     const query = buildMonthExceptionQuery(searchParams.get("month"));
     const isWeeklyIndicatorRequest = searchParams.get("context") === "weekly"
       && hasAccessPermission(plannerScope.user, "planner.schedules.weekly.view");
@@ -52,6 +59,21 @@ export async function GET(request) {
     const canApproveExceptions = await canUserApproveExceptions(user);
     const canDeleteOwnExceptions = hasAccessPermission(user, "planner.exceptions.deleteOwn");
     const canCreateExceptions = hasAccessPermission(user, "planner.exceptions.create");
+    const requestedEmployeeId = String(searchParams.get("employeeId") || "").trim();
+    const requestedDateKey = String(searchParams.get("dateKey") || "").trim();
+
+    if (isAttendanceReviewRequest) {
+      if (!requestedEmployeeId || !/^\d{4}-\d{2}-\d{2}$/.test(requestedDateKey)) {
+        return NextResponse.json(
+          { error: "Debes indicar el empleado y la fecha que estás revisando." },
+          { status: 400 },
+        );
+      }
+
+      assertEmployeesInPlannerScope([requestedEmployeeId], plannerScope);
+      query.employee = requestedEmployeeId;
+      query.resolution = "pending";
+    }
 
     applyPlannerScopeToEmployeeReferenceQuery(query, plannerScope);
 
@@ -59,25 +81,44 @@ export async function GET(request) {
       query.resolution = { $ne: "no_action" };
     }
 
-    if (!isWeeklyIndicatorRequest && !hasAccessPermission(user, "planner.exceptions.viewAll")) {
+    if (
+      !isWeeklyIndicatorRequest
+      && !isAttendanceReviewRequest
+      && !hasAccessPermission(user, "planner.exceptions.viewAll")
+    ) {
       query.createdByUser = user.id;
     }
 
-    const exceptions = await OperationalException.find(query)
+    const exceptionDocs = await OperationalException.find(query)
       .sort({ date: -1, employeeName: 1 })
       .lean();
+    const exceptions = isAttendanceReviewRequest
+      ? exceptionDocs.filter((exception) => {
+          const startKey = String(exception.dateKey || "");
+          const endKey = String(exception.endDateKey || startKey);
+          return startKey <= requestedDateKey && endKey >= requestedDateKey;
+        })
+      : exceptionDocs;
 
-    return NextResponse.json({
-      exceptions: exceptions.map((exception) => {
+    const serializedExceptions = await Promise.all(exceptions.map(async (exception) => {
         const serializedException = serializeOperationalException(exception);
         const isOwner = String(exception.createdByUser || "").trim() === String(user?.id || "").trim();
         const isPending = exception.resolution === "pending" && exception.status !== "void";
+        const manualPunchReview = isAttendanceReviewRequest
+          && isPending
+          && (exception.effect === "manual_punch" || exception.attendanceMode === "add_manual_punch")
+          ? await inspectExceptionManualPunchConflicts(exception)
+          : null;
 
         return {
           ...serializedException,
           canDelete: isPending && (canApproveExceptions || (canDeleteOwnExceptions && isOwner)),
+          manualPunchReview,
         };
-      }),
+      }));
+
+    return NextResponse.json({
+      exceptions: serializedExceptions,
       options: {
         types: EXCEPTION_TYPES,
         resolutions: EXCEPTION_RESOLUTIONS,
@@ -211,7 +252,9 @@ export async function POST(request) {
     }
 
     try {
-      await syncExceptionManualPunch(exception);
+      await syncExceptionManualPunch(exception, {
+        manualPunchConflictChoices: body?.manualPunchConflictChoices,
+      });
     } catch (syncError) {
       await OperationalException.findByIdAndDelete(exception._id);
       throw syncError;

@@ -5,6 +5,8 @@ import { formatEcuadorDateKey, formatEcuadorDateTime, formatEcuadorTime } from "
 import { AttendancePunch } from "@/modules/planner/models";
 import { OperationalException } from "@/modules/planner/models";
 
+const MANUAL_PUNCH_NEARBY_MINUTES = 5;
+
 function buildManualPunchReason(exception) {
   const detail = exception.notes ? ` Motivo: ${exception.notes}` : "";
 
@@ -96,12 +98,8 @@ export async function resolvePermissionPunchSelection(body = {}, employeeId, exc
   };
 }
 
-function buildManualPunchDateTimes(exception) {
+function buildRequestedManualPunchDateTimes(exception) {
   if (exception.effect !== "manual_punch" && exception.attendanceMode !== "add_manual_punch") {
-    return [];
-  }
-
-  if (exception.resolution !== "approved_work_time") {
     return [];
   }
 
@@ -122,6 +120,82 @@ function buildManualPunchDateTimes(exception) {
   });
 }
 
+function buildManualPunchDateTimes(exception) {
+  if (exception.resolution !== "approved_work_time") {
+    return [];
+  }
+
+  return buildRequestedManualPunchDateTimes(exception);
+}
+
+function serializeConflictPunch(punch) {
+  return {
+    id: punch._id.toString(),
+    time: formatEcuadorTime(punch.punchedAt),
+    source: punch.source || "upload",
+    isIgnored: Boolean(punch.isIgnored),
+  };
+}
+
+export async function inspectExceptionManualPunchConflicts(exception) {
+  const requestedPunches = buildRequestedManualPunchDateTimes(exception);
+
+  if (!requestedPunches.length) {
+    return { requested: [], exactMatches: [], nearbyConflicts: [], requiresDecision: false };
+  }
+
+  const existingPunchIds = resolveManualPunchIds(exception);
+  const firstDate = new Date(`${exception.dateKey}T00:00:00.000-05:00`);
+  const nextDate = new Date(firstDate);
+  nextDate.setUTCDate(nextDate.getUTCDate() + 1);
+  const existingPunches = await AttendancePunch.find({
+    employee: exception.employee,
+    isIgnored: { $ne: true },
+    ...(existingPunchIds.length ? { _id: { $nin: existingPunchIds } } : {}),
+    punchedAt: { $gte: firstDate, $lt: nextDate },
+  }).sort({ punchedAt: 1 }).lean();
+  const exactMatches = [];
+  const nearbyConflicts = [];
+
+  requestedPunches.forEach(({ manualPunchTime, punchedAt }) => {
+    const requestedTimestamp = punchedAt.getTime();
+    const matches = existingPunches
+      .map((punch) => ({
+        punch,
+        differenceMinutes: Math.abs(Math.round((punch.punchedAt.getTime() - requestedTimestamp) / 60000)),
+        isSameMinute: formatEcuadorTime(punch.punchedAt) === manualPunchTime,
+      }))
+      .filter(({ differenceMinutes }) => differenceMinutes <= MANUAL_PUNCH_NEARBY_MINUTES)
+      .sort((left, right) => left.differenceMinutes - right.differenceMinutes);
+    const exactMatch = matches.find(({ isSameMinute }) => isSameMinute);
+
+    if (exactMatch) {
+      exactMatches.push({
+        requestedTime: manualPunchTime,
+        existingPunch: serializeConflictPunch(exactMatch.punch),
+      });
+      return;
+    }
+
+    if (matches.length) {
+      nearbyConflicts.push({
+        requestedTime: manualPunchTime,
+        nearbyPunches: matches.map(({ punch, differenceMinutes }) => ({
+          ...serializeConflictPunch(punch),
+          differenceMinutes,
+        })),
+      });
+    }
+  });
+
+  return {
+    requested: requestedPunches.map(({ manualPunchTime }) => manualPunchTime),
+    exactMatches,
+    nearbyConflicts,
+    requiresDecision: nearbyConflicts.length > 0,
+  };
+}
+
 async function assertNoDuplicatePunch({ employeeId, punchedAt, allowedPunchIds = [] }) {
   const minuteRange = buildPunchMinuteRange(punchedAt);
 
@@ -131,6 +205,7 @@ async function assertNoDuplicatePunch({ employeeId, punchedAt, allowedPunchIds =
 
   const existingPunch = await AttendancePunch.findOne({
     employee: employeeId,
+    isIgnored: { $ne: true },
     ...(allowedPunchIds.length ? { _id: { $nin: allowedPunchIds } } : {}),
     punchedAt: {
       $gte: minuteRange.start,
@@ -143,7 +218,7 @@ async function assertNoDuplicatePunch({ employeeId, punchedAt, allowedPunchIds =
   }
 }
 
-export async function syncExceptionManualPunch(exception) {
+export async function syncExceptionManualPunch(exception, options = {}) {
   const punchDateTimes = buildManualPunchDateTimes(exception);
   const existingPunchIds = resolveManualPunchIds(exception);
 
@@ -164,7 +239,86 @@ export async function syncExceptionManualPunch(exception) {
     return [];
   }
 
-  await Promise.all(punchDateTimes.map(({ punchedAt }) =>
+  const conflictReview = await inspectExceptionManualPunchConflicts(exception);
+  const exactRequestedTimes = new Set(conflictReview.exactMatches.map((match) => match.requestedTime));
+  const choices = new Map(
+    (Array.isArray(options.manualPunchConflictChoices) ? options.manualPunchConflictChoices : [])
+      .map((choice) => [String(choice?.requestedTime || "").trim(), choice]),
+  );
+  const requestedPunchesToCreate = [];
+
+  conflictReview.nearbyConflicts.forEach((conflict) => {
+    const action = String(choices.get(conflict.requestedTime)?.action || "").trim();
+
+    if (!["existing", "requested", "both"].includes(action)) {
+      const error = new Error(`Debes decidir qué hacer con la picada solicitada a las ${conflict.requestedTime}.`);
+      error.code = "MANUAL_PUNCH_CONFLICT";
+      error.conflictReview = conflictReview;
+      throw error;
+    }
+  });
+
+  for (const requestedPunch of punchDateTimes) {
+    if (exactRequestedTimes.has(requestedPunch.manualPunchTime)) continue;
+
+    const nearbyConflict = conflictReview.nearbyConflicts.find(
+      (conflict) => conflict.requestedTime === requestedPunch.manualPunchTime,
+    );
+
+    if (!nearbyConflict) {
+      requestedPunchesToCreate.push(requestedPunch);
+      continue;
+    }
+
+    const choice = choices.get(requestedPunch.manualPunchTime);
+    const action = String(choice?.action || "").trim();
+
+    if (action === "existing") continue;
+
+    if (action === "requested") {
+      const selectedExistingId = String(choice?.existingPunchId || "").trim();
+      const selectedExisting = nearbyConflict.nearbyPunches.find((punch) => punch.id === selectedExistingId)
+        || nearbyConflict.nearbyPunches[0];
+      const existingPunch = selectedExisting
+        ? await AttendancePunch.findOne({
+            _id: selectedExisting.id,
+            employee: exception.employee,
+            isIgnored: { $ne: true },
+          })
+        : null;
+
+      if (existingPunch) {
+        const actor = await resolveAuditActor();
+        const before = serializeConflictPunch(existingPunch);
+        existingPunch.isIgnored = true;
+        existingPunch.ignoredAt = new Date();
+        existingPunch.ignoredBy = actor;
+        existingPunch.ignoredReason = `Reemplazada al aprobar la picada omitida ${requestedPunch.manualPunchTime}.`;
+        existingPunch.note = existingPunch.note
+          ? `${existingPunch.note} | ${existingPunch.ignoredReason}`
+          : existingPunch.ignoredReason;
+        await existingPunch.save();
+        await createAuditLog({
+          actor,
+          action: "attendancePunch.disable",
+          entityType: "attendancePunch",
+          entityId: existingPunch._id.toString(),
+          entityLabel: exception.employeeName,
+          route: "/api/planner/planning/exceptions",
+          details: {
+            reason: existingPunch.ignoredReason,
+            source: "operationalException",
+            exceptionId: exception._id.toString(),
+            before,
+          },
+        });
+      }
+    }
+
+    requestedPunchesToCreate.push(requestedPunch);
+  }
+
+  await Promise.all(requestedPunchesToCreate.map(({ punchedAt }) =>
     assertNoDuplicatePunch({
       employeeId: exception.employee,
       punchedAt,
@@ -174,7 +328,7 @@ export async function syncExceptionManualPunch(exception) {
   const reason = buildManualPunchReason(exception);
   const punches = [];
 
-  for (const [index, { punchedAt }] of punchDateTimes.entries()) {
+  for (const [index, { punchedAt }] of requestedPunchesToCreate.entries()) {
     const existingPunchId = existingPunchIds[index] || "";
     const payload = {
       employee: exception.employee,
@@ -201,7 +355,7 @@ export async function syncExceptionManualPunch(exception) {
     await AttendancePunch.deleteMany({ _id: { $in: obsoletePunchIds } });
   }
 
-  const manualPunchTimes = punchDateTimes.map(({ manualPunchTime }) => manualPunchTime);
+  const manualPunchTimes = requestedPunchesToCreate.map(({ manualPunchTime }) => manualPunchTime);
 
   await OperationalException.findByIdAndUpdate(exception._id, {
     $set: {

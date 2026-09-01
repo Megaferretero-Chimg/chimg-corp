@@ -501,6 +501,243 @@
   gap: 0.85rem;
 }
 
+.pendingExceptionPanel {
+  display: grid;
+  gap: 0.65rem;
+  border: 1px solid #f6c86f;
+  border-radius: 0.85rem;
+  background: #fffcf2;
+  padding: 0.78rem;
+}
+
+.pendingExceptionHeader,
+.pendingExceptionHeader > div,
+.pendingExceptionTitle,
+.pendingExceptionActions {
+  display: flex;
+  align-items: center;
+}
+
+.pendingExceptionHeader,
+.pendingExceptionTitle {
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.pendingExceptionHeader > div {
+  gap: 0.45rem;
+  color: #92400e;
+}
+
+.pendingExceptionHeader strong {
+  font-size: var(--font-size-sm);
+}
+
+.pendingExceptionHeader > span,
+.pendingExceptionTitle small {
+  border-radius: 999px;
+  background: #fef0c7;
+  color: #92400e;
+  font-size: 0.68rem;
+  font-weight: 850;
+  padding: 0.22rem 0.5rem;
+}
+
+.pendingExceptionList {
+  display: grid;
+  gap: 0.65rem;
+}
+
+.pendingExceptionCard {
+  display: grid;
+  gap: 0.62rem;
+  border: 1px solid #ead8ad;
+  border-radius: 0.75rem;
+  background: #fff;
+  padding: 0.72rem;
+}
+
+.pendingExceptionTitle > div {
+  display: grid;
+  gap: 0.15rem;
+}
+
+.pendingExceptionTitle strong {
+  color: #26364d;
+  font-size: 0.82rem;
+}
+
+.pendingExceptionTitle span {
+  color: #667085;
+  font-size: 0.7rem;
+  font-weight: 700;
+}
+
+.pendingExceptionDetails {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.5rem;
+  margin: 0;
+}
+
+.pendingExceptionDetails > div {
+  display: grid;
+  gap: 0.12rem;
+}
+
+.pendingExceptionDetails dt,
+.pendingExceptionDetails dd {
+  margin: 0;
+}
+
+.pendingExceptionDetails dt,
+.pendingExceptionNote span {
+  color: #8a6a2f;
+  font-size: 0.66rem;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.pendingExceptionDetails dd {
+  color: #344054;
+  font-size: 0.75rem;
+  font-weight: 650;
+}
+
+.pendingExceptionDescription,
+.pendingExceptionEmpty {
+  margin: 0;
+  color: #667085;
+  font-size: 0.75rem;
+  line-height: 1.42;
+}
+
+.pendingExceptionEmpty {
+  padding: 0.25rem 0;
+  text-align: center;
+}
+
+.exactPunchMatches,
+.nearbyPunchConflicts {
+  display: grid;
+  gap: 0.42rem;
+  border-radius: 0.65rem;
+  padding: 0.62rem;
+}
+
+.exactPunchMatches {
+  border: 1px solid #a6d8bd;
+  background: #f0fdf4;
+  color: #067647;
+}
+
+.nearbyPunchConflicts {
+  border: 1px solid #f6c86f;
+  background: #fffaeb;
+  color: #92400e;
+}
+
+.exactPunchMatches strong,
+.nearbyPunchConflicts > strong {
+  font-size: 0.73rem;
+}
+
+.exactPunchMatches span {
+  font-size: 0.71rem;
+  line-height: 1.4;
+}
+
+.nearbyPunchConflicts fieldset {
+  display: grid;
+  gap: 0.38rem;
+  min-width: 0;
+  margin: 0;
+  border: 1px solid #ead8ad;
+  border-radius: 0.58rem;
+  background: #fff;
+  padding: 0.55rem;
+}
+
+.nearbyPunchConflicts legend {
+  color: #7a5422;
+  font-size: 0.7rem;
+  font-weight: 850;
+  padding: 0 0.25rem;
+}
+
+.nearbyPunchConflicts label {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.42rem;
+  color: #475467;
+  font-size: 0.7rem;
+  font-weight: 650;
+  line-height: 1.35;
+  cursor: pointer;
+}
+
+.nearbyPunchConflicts input {
+  flex: 0 0 auto;
+  width: 0.95rem;
+  min-height: 0.95rem;
+  margin-top: 0.05rem;
+}
+
+.pendingExceptionNote {
+  display: grid;
+  gap: 0.28rem;
+}
+
+.pendingExceptionNote textarea {
+  width: 100%;
+  resize: vertical;
+  border: 1px solid #dfd3b8;
+  border-radius: 0.62rem;
+  background: #fff;
+  color: var(--text);
+  font: inherit;
+  padding: 0.55rem 0.65rem;
+}
+
+.pendingExceptionActions {
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 0.4rem;
+}
+
+.pendingExceptionActions button {
+  min-height: 2.15rem;
+  border-radius: 0.58rem;
+  font: inherit;
+  font-size: 0.7rem;
+  font-weight: 800;
+  padding: 0.4rem 0.62rem;
+  cursor: pointer;
+}
+
+.pendingExceptionActions button:disabled {
+  cursor: wait;
+  opacity: 0.55;
+}
+
+.pendingRejectButton {
+  border: 1px solid #fda29b;
+  background: #fff5f4;
+  color: #b42318;
+}
+
+.pendingDiscountButton {
+  border: 1px solid #f6c86f;
+  background: #fffaeb;
+  color: #b54708;
+}
+
+.pendingApproveButton {
+  border: 1px solid #75c69b;
+  background: #ecfdf3;
+  color: #067647;
+}
+
 .approvalModeGroup {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -1143,6 +1380,65 @@
   min-width: 0;
 }
 
+.workedValue {
+  display: grid;
+  gap: 0.38rem;
+  min-width: 7.5rem;
+}
+
+.workedBreakdown {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.28rem;
+}
+
+.workedBreakdown span {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.24rem;
+  width: fit-content;
+  border-radius: 999px;
+  background: #f1f5f9;
+  color: #475569;
+  font-size: 0.68rem;
+  font-weight: 800;
+  line-height: 1;
+  padding: 0.28rem 0.42rem;
+  white-space: nowrap;
+}
+
+.workedBreakdown small {
+  color: #1550a0;
+  font-size: 0.61rem;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.crossExplanation {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  border: 1px solid #bfdbfe;
+  border-radius: 0.8rem;
+  background: #eff6ff;
+  color: #1e3a5f;
+  padding: 0.65rem 0.8rem;
+}
+
+.crossExplanation strong {
+  flex: 0 0 auto;
+  font-size: 0.72rem;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.crossExplanation span {
+  font-size: 0.74rem;
+  font-weight: 650;
+  line-height: 1.35;
+}
+
 .scheduleLine,
 .punchLine {
   display: flex;
@@ -1594,6 +1890,10 @@
 .decisionSummary strong {
   color: var(--text);
   font-size: 1rem;
+}
+
+.decisionSummary .workedBreakdown {
+  margin-top: 0.2rem;
 }
 
 .previewBreakdown {

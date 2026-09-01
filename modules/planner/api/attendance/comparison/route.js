@@ -1239,6 +1239,15 @@ function buildDiscountedWorkIntervalMap(exceptions = []) {
   exceptions.forEach((exception) => {
     if (!isResolvedOperationalException(exception)) return;
 
+    const hasPermissionPunches = exception.type === "permission"
+      && exception.scope === "exit_return"
+      && Array.isArray(exception.permissionPunches)
+      && exception.permissionPunches.length === 2;
+
+    // Los permisos vinculados a dos picadas se descuentan del tiempo trabajado
+    // dentro de compareDay. No deben reducir también la planificación diaria.
+    if (hasPermissionPunches) return;
+
     const effect = resolveOperationalExceptionEffect(exception);
 
     if (effect !== "unpaid_absence" && exception.resolution !== "discount_day") return;
@@ -1326,9 +1335,14 @@ function applyPunchPermissions(day, permissionContext) {
     hasIssue: tags.some(isAttendanceIssueTag),
     punchPermissions: permissionContext.permissions,
     permissionPunchIds: [...permissionContext.punchIds],
-    permissionDiscountMinutes: permissionContext.permissions.reduce(
-      (total, permission) => total + Math.max(0, Number(permission.discountMinutes) || 0),
-      0,
+    permissionDiscountMinutes: Math.max(
+      Number(day.permissionDiscountMinutes) || 0,
+      permissionContext.permissions.reduce(
+        (total, permission) => permission.hasDiscount
+          ? total + Math.max(0, Number(permission.discountMinutes) || 0)
+          : total,
+        0,
+      ),
     ),
   };
 }
@@ -1873,11 +1887,25 @@ function applyDiscountedWorkIntervals(day, intervals = []) {
 
   if (!discountedMinutes) return day;
 
-  const plannedRegularMinutes = Math.max(0, (Number(day.plannedRegularMinutes) || 0) - discountedMinutes);
-  const scheduledWorkedMinutes = Math.max(0, (Number(day.scheduledWorkedMinutes) || 0) - discountedMinutes);
+  const plannedRegularMinutes = Math.max(0, Number(day.plannedRegularMinutes) || 0);
   const plannedSupplementaryMinutes = Number(day.plannedSupplementaryMinutes) || 0;
-  const workedMinutes = Number(day.workedMinutes) || 0;
-  const regularWorkedMinutes = Math.min(workedMinutes, plannedRegularMinutes);
+  const workedBeforeDiscountMinutes = Math.max(0, Number(day.workedMinutes) || 0);
+  const workedMinutes = Math.max(0, workedBeforeDiscountMinutes - discountedMinutes);
+  const dailyRegularLimitMinutes = Math.max(
+    0,
+    Math.min(plannedRegularMinutes || REGULAR_DAY_MINUTES, REGULAR_DAY_MINUTES),
+  );
+  const regularWorkedMinutes = Math.min(workedMinutes, dailyRegularLimitMinutes);
+  const detectedSupplementaryMinutes = isExtraordinaryAttendanceDay(day)
+    ? 0
+    : Math.max(0, workedMinutes - regularWorkedMinutes);
+  const supplementaryMinutes = day.payrollPolicy?.appliesSupplementaryHours === false
+    ? 0
+    : Math.min(detectedSupplementaryMinutes, plannedSupplementaryMinutes);
+  const additionalSupplementaryMinutes = Math.max(
+    0,
+    detectedSupplementaryMinutes - supplementaryMinutes,
+  );
   const nextTags = cleanPayrollTags(day.tags || [])
     .filter((tag) => !["Atraso", "Salida anticipada"].includes(tag));
   const hasIssue = nextTags.some(isAttendanceIssueTag);
@@ -1886,14 +1914,20 @@ function applyDiscountedWorkIntervals(day, intervals = []) {
     ...day,
     tags: [...new Set([...nextTags, "Horas descontadas"])],
     hasIssue,
-    scheduledWorkedMinutes,
-    scheduledWorkedLabel: scheduledWorkedMinutes ? minutesLabel(scheduledWorkedMinutes) : "--",
-    plannedRegularMinutes,
-    plannedRegularLabel: plannedRegularMinutes ? minutesLabel(plannedRegularMinutes) : "--",
-    plannedSupplementaryMinutes,
-    plannedSupplementaryLabel: plannedSupplementaryMinutes ? minutesLabel(plannedSupplementaryMinutes) : "--",
+    workedBeforeDiscountMinutes,
+    workedBeforeDiscountLabel: workedBeforeDiscountMinutes ? minutesLabel(workedBeforeDiscountMinutes) : "--",
+    workedMinutes,
+    workedLabel: workedMinutes ? minutesLabel(workedMinutes) : "--",
     regularWorkedMinutes,
     regularWorkedLabel: regularWorkedMinutes ? minutesLabel(regularWorkedMinutes) : "--",
+    detectedSupplementaryMinutes,
+    detectedSupplementaryLabel: detectedSupplementaryMinutes ? minutesLabel(detectedSupplementaryMinutes) : "--",
+    supplementaryMinutes,
+    supplementaryLabel: supplementaryMinutes ? minutesLabel(supplementaryMinutes) : "--",
+    additionalSupplementaryMinutes,
+    additionalSupplementaryLabel: additionalSupplementaryMinutes
+      ? minutesLabel(additionalSupplementaryMinutes)
+      : "--",
     lateMinutes: 0,
     entryLateMinutes: 0,
     earlyLeaveMinutes: 0,
@@ -2816,6 +2850,12 @@ function applyMonthlyHourTarget(days) {
 
 function compareDay(day, punches, employee = {}, scheduleRules = {}, permissionContext = null) {
   const permissionPunchIds = permissionContext?.punchIds || new Set();
+  const permissionDiscountMinutes = (permissionContext?.permissions || []).reduce(
+    (total, permission) => permission.hasDiscount
+      ? total + Math.max(0, Number(permission.discountMinutes) || 0)
+      : total,
+    0,
+  );
   const activeSortedPunches = dedupePunchesByMinute(punches.filter((punch) =>
     punch.isIgnored !== true && !permissionPunchIds.has(toId(punch)),
   ));
@@ -2924,6 +2964,9 @@ function compareDay(day, punches, employee = {}, scheduleRules = {}, permissionC
     lunchOverageRemainderMinutes = 0;
     lunchDiscountMinutes = 0;
   }
+
+  const workedBeforePermissionDiscountMinutes = workedMinutes;
+  workedMinutes = Math.max(0, workedMinutes - permissionDiscountMinutes);
 
   const hasWorkWithoutAssignedSchedule =
     !hasScheduledTimeRange &&
@@ -3152,6 +3195,12 @@ function compareDay(day, punches, employee = {}, scheduleRules = {}, permissionC
     }),
     workedMinutes,
     workedLabel: workedMinutes ? minutesLabel(workedMinutes) : "--",
+    workedBeforePermissionDiscountMinutes,
+    workedBeforePermissionDiscountLabel: workedBeforePermissionDiscountMinutes
+      ? minutesLabel(workedBeforePermissionDiscountMinutes)
+      : "--",
+    permissionDiscountMinutes,
+    permissionDiscountLabel: permissionDiscountMinutes ? minutesLabel(permissionDiscountMinutes) : "--",
     regularWorkedMinutes,
     regularWorkedLabel: regularWorkedMinutes ? minutesLabel(regularWorkedMinutes) : "--",
     lateMinutes: detectedLateMinutes,
@@ -3203,6 +3252,7 @@ function emptyEmployeeSummary() {
     additionalSupplementaryMinutes: 0,
     justifiedWorkMinutes: 0,
     discountedWorkMinutes: 0,
+    permissionDiscountMinutes: 0,
     issueDays: 0,
     operationalAlertDays: 0,
     pendingOperationalAlertDays: 0,
@@ -3677,7 +3727,9 @@ export async function GET(request) {
         totals.unplannedExtraMinutes += day.additionalSupplementaryMinutes;
         totals.additionalSupplementaryMinutes += day.additionalSupplementaryMinutes;
         totals.justifiedWorkMinutes += day.justifiedWorkMinutes || 0;
-        totals.discountedWorkMinutes += day.discountedWorkMinutes || 0;
+        totals.discountedWorkMinutes += (Number(day.discountedWorkMinutes) || 0)
+          + (Number(day.permissionDiscountMinutes) || 0);
+        totals.permissionDiscountMinutes += Number(day.permissionDiscountMinutes) || 0;
         return totals;
       }, emptyEmployeeSummary());
       // La meta laborable debe salir de la planificación efectiva que se muestra
@@ -3849,6 +3901,7 @@ export async function GET(request) {
         totals.additionalSupplementaryMinutes = (totals.additionalSupplementaryMinutes || 0) + row.summary.additionalSupplementaryMinutes;
         totals.justifiedWorkMinutes += row.summary.justifiedWorkMinutes || 0;
         totals.discountedWorkMinutes += row.summary.discountedWorkMinutes || 0;
+        totals.permissionDiscountMinutes += row.summary.permissionDiscountMinutes || 0;
         return totals;
       },
       {
@@ -3887,6 +3940,7 @@ export async function GET(request) {
         additionalSupplementaryMinutes: 0,
         justifiedWorkMinutes: 0,
         discountedWorkMinutes: 0,
+        permissionDiscountMinutes: 0,
       },
     );
 
@@ -3911,6 +3965,7 @@ export async function GET(request) {
         additionalSupplementaryLabel: minutesLabel(summary.additionalSupplementaryMinutes),
         justifiedWorkLabel: minutesLabel(summary.justifiedWorkMinutes),
         discountedWorkLabel: minutesLabel(summary.discountedWorkMinutes),
+        permissionDiscountLabel: minutesLabel(summary.permissionDiscountMinutes),
         lateLabel: minutesLabel(summary.lateMinutes),
         earlyLeaveLabel: minutesLabel(summary.earlyLeaveMinutes),
       },

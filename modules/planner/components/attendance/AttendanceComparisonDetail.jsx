@@ -430,6 +430,46 @@ function activePunchesForDisplay(day) {
   return (day?.punches || []).filter((punch) => punch?.isIgnored !== true);
 }
 
+function manualPunchDraftReview(draft, day) {
+  if (draft?.type !== "missing_punch" || draft?.missingPunchMode !== "manual") {
+    return { exactMatches: [], nearbyConflicts: [] };
+  }
+
+  const existingPunches = activePunchesForDisplay(day)
+    .map((punch) => ({ ...punch, normalizedTime: formatTime24(punch.time) }))
+    .filter((punch) => punch.normalizedTime);
+  const exactMatches = [];
+  const nearbyConflicts = [];
+
+  (draft.manualPunchTimes || []).forEach((value) => {
+    const requestedTime = formatTime24(value);
+    const requestedMinutes = scheduleTimeToMinutes(requestedTime);
+
+    if (!requestedTime || requestedMinutes === null) return;
+
+    const exactMatch = existingPunches.find((punch) => punch.normalizedTime === requestedTime);
+
+    if (exactMatch) {
+      exactMatches.push({ requestedTime, existingPunch: exactMatch });
+      return;
+    }
+
+    const nearbyPunches = existingPunches
+      .map((punch) => ({
+        ...punch,
+        differenceMinutes: Math.abs((scheduleTimeToMinutes(punch.normalizedTime) || 0) - requestedMinutes),
+      }))
+      .filter((punch) => punch.differenceMinutes <= 5)
+      .sort((left, right) => left.differenceMinutes - right.differenceMinutes);
+
+    if (nearbyPunches.length) {
+      nearbyConflicts.push({ requestedTime, nearbyPunches });
+    }
+  });
+
+  return { exactMatches, nearbyConflicts };
+}
+
 function punchDisplayLabelForDay(day, punch) {
   if (punch?.isIgnored) return "PIC";
   if (punch?.isPermissionPunch) return "PERM";
@@ -475,7 +515,6 @@ function dayHasPlannedLunch(day) {
 
 function hasInferredIncompletePunches(day) {
   if (!day || hasDayTag(day, "Picadas incompletas")) return false;
-  if (day.executionException?.type === "missing_punch") return false;
   if (
     day.authorization?.isSaved &&
     [
@@ -631,6 +670,45 @@ function registeredAdditionalMinutes(day) {
     : Number(day?.detectedSupplementaryMinutes) || 0;
 }
 
+function workedTimeBreakdown(day) {
+  const totalMinutes = Math.max(0, Number(day?.workedMinutes) || 0);
+
+  if (!totalMinutes) return [];
+
+  const directRegularMinutes = Math.min(
+    totalMinutes,
+    Math.max(0, Number(day?.regularWorkedMinutes) || 0),
+  );
+  let remainingMinutes = Math.max(0, totalMinutes - directRegularMinutes);
+  const supplementaryMinutes = isExtraordinaryDay(day)
+    ? 0
+    : Math.min(
+      remainingMinutes,
+      Math.max(
+        Number(day?.supplementaryMinutes) || 0,
+        Number(day?.detectedSupplementaryMinutes) || 0,
+      ),
+    );
+  remainingMinutes = Math.max(0, remainingMinutes - supplementaryMinutes);
+  const extraordinaryMinutes = isExtraordinaryDay(day)
+    ? Math.min(
+      remainingMinutes,
+      Math.max(
+        Number(day?.extraordinaryMinutes) || 0,
+        Number(day?.detectedExtraordinaryMinutes) || 0,
+      ),
+    )
+    : 0;
+  remainingMinutes = Math.max(0, remainingMinutes - extraordinaryMinutes);
+
+  return [
+    { label: "ORD", title: "Ordinario reconocido directamente", minutes: directRegularMinutes },
+    { label: "HS", title: "Suplementario detectado antes del cruce", minutes: supplementaryMinutes },
+    { label: "HE", title: "Extraordinario detectado antes del cruce", minutes: extraordinaryMinutes },
+    { label: "Pend.", title: "Tiempo pendiente de clasificar o revisar", minutes: remainingMinutes },
+  ].filter((item) => item.minutes > 0);
+}
+
 function additionalAmountValue(minutes, day, summary = {}) {
   const hourlyRate = Number(summary.hourlyRateRaw ?? summary.hourlyRate) || 0;
   const multiplier = isExtraordinaryDay(day)
@@ -743,11 +821,20 @@ function displayEarlyLeaveMinutes(day) {
   return currentEarlyLeaveMinutes;
 }
 
+function attendanceDiscountMinutes(day) {
+  if (!day || isIgnorableRestDay(day)) return 0;
+
+  return Math.max(0, Number(day.discountedWorkMinutes) || 0)
+    + Math.max(0, Number(day.permissionDiscountMinutes) || 0);
+}
+
 function attendanceDelayMinutes(day) {
   if (!day || isIgnorableRestDay(day)) return 0;
   if (isExtraordinaryDay(day) && !isScheduledExtraDay(day)) return 0;
 
-  return displayLateMinutes(day) + displayEarlyLeaveMinutes(day);
+  return displayLateMinutes(day)
+    + displayEarlyLeaveMinutes(day)
+    + attendanceDiscountMinutes(day);
 }
 
 function attendanceEntryLateMinutes(day) {
@@ -780,6 +867,7 @@ function attendanceDelayParts(day) {
     { label: "Entrada", minutes: attendanceEntryLateMinutes(day) },
     { label: "Almuerzo", minutes: attendanceLunchLateMinutes(day) },
     { label: "Salida", minutes: attendanceEarlyLeaveMinutes(day) },
+    { label: "Permiso", minutes: attendanceDiscountMinutes(day) },
   ].filter((part) => part.minutes > 0);
 }
 
@@ -1550,6 +1638,7 @@ function buildInlineExceptionDraft(row, day, nextType = "", templates = []) {
     templateId: recommendedTemplate?.id || "",
     missingPunchMode: "manual",
     manualPunchTimes: Array.from({ length: missingPunchCount }, () => ""),
+    manualPunchConflictChoices: {},
     allowSupplementaryTime: type === "outside_work",
     permissionPayTreatment: "without_discount",
     permissionPunchIds: [],
@@ -1629,6 +1718,7 @@ function inlineExceptionPayload(employeeId, draft) {
         attendanceMode: "add_manual_punch",
         payMode: "no_pay_change",
         manualPunchTime: draft.manualPunchTime,
+        manualPunchConflictChoices: Object.values(draft.manualPunchConflictChoices || {}),
         countsAsWorkedTime: true,
         allowSupplementaryTime: true,
       };
@@ -1693,6 +1783,62 @@ function inlineExceptionPayload(employeeId, draft) {
   };
 }
 
+function pendingExceptionInlineType(exception = {}) {
+  if (exception.isExtraDay) return "extra_day";
+  if (exception.type === "schedule_change" || exception.effect === "planning_change") return "schedule_change";
+  if (exception.type === "absence") return "absence";
+  if (exception.type === "missing_punch" || exception.effect === "manual_punch") return "missing_punch";
+  if (exception.type === "permission" && exception.scope === "exit_return") return "permission_punches";
+  if (exception.type === "permission") return "permission";
+  return "outside_work";
+}
+
+function pendingExceptionNeedsDiscountDecision(exception = {}) {
+  return ["absence", "permission"].includes(exception.type)
+    && exception.effect !== "authorized_overtime";
+}
+
+function pendingExceptionRangeLabel(exception = {}) {
+  if (exception.startTime || exception.endTime) {
+    return [exception.startTime, exception.endTime]
+      .filter(Boolean)
+      .map(formatScheduleHour)
+      .join(" - ");
+  }
+
+  if (exception.endDateKey && exception.endDateKey !== exception.dateKey) {
+    return `${exception.dateKey} a ${exception.endDateKey}`;
+  }
+
+  return "Día completo";
+}
+
+function buildDraftFromPendingException(row, day, exception, templates = []) {
+  const type = pendingExceptionInlineType(exception);
+  const draft = buildInlineExceptionDraft(row, day, type, templates);
+
+  return {
+    ...draft,
+    type,
+    startTime: exception.startTime || draft.startTime,
+    endTime: exception.endTime || draft.endTime,
+    plannedStartTime: exception.plannedStartTime || draft.plannedStartTime,
+    plannedLunchStartTime: exception.plannedLunchStartTime || draft.plannedLunchStartTime,
+    plannedLunchEndTime: exception.plannedLunchEndTime || draft.plannedLunchEndTime,
+    plannedEndTime: exception.plannedEndTime || draft.plannedEndTime,
+    plannedDayType: exception.plannedDayType === "off_day" ? "off_day" : draft.plannedDayType,
+    manualPunchTimes: exception.manualPunchTimes?.length
+      ? exception.manualPunchTimes
+      : draft.manualPunchTimes,
+    allowSupplementaryTime: Boolean(exception.allowSupplementaryTime),
+    permissionPayTreatment: exception.payMode === "discount" ? "with_discount" : "without_discount",
+    permissionPunchIds: exception.permissionPunchIds || [],
+    permissionPunchTimes: exception.permissionPunchTimes || [],
+    discountMinutes: Number(exception.discountMinutes) || 0,
+    notes: exception.notes || draft.notes,
+  };
+}
+
 function quickActionNote(decision) {
   const notes = {
     discount_day: "Decisión: día sin tiempo trabajado validado para pago.",
@@ -1752,6 +1898,12 @@ export default function AttendanceComparisonDetail({ employeeId, initialFilters 
   const [selectedAdditionalApprovalMax, setSelectedAdditionalApprovalMax] = useState("");
   const [exceptionDraft, setExceptionDraft] = useState(null);
   const [isSavingException, setIsSavingException] = useState(false);
+  const [pendingDayExceptions, setPendingDayExceptions] = useState([]);
+  const [isLoadingPendingDayExceptions, setIsLoadingPendingDayExceptions] = useState(false);
+  const [canApprovePendingExceptions, setCanApprovePendingExceptions] = useState(false);
+  const [reviewingPendingExceptionId, setReviewingPendingExceptionId] = useState("");
+  const [pendingExceptionReviewNotes, setPendingExceptionReviewNotes] = useState({});
+  const [pendingPunchConflictChoices, setPendingPunchConflictChoices] = useState({});
   const [pendingAdditionalApproval, setPendingAdditionalApproval] = useState(null);
   const [pendingManualAdditionalApproval, setPendingManualAdditionalApproval] = useState(null);
   const [isSavingManualAdditional, setIsSavingManualAdditional] = useState(false);
@@ -1760,6 +1912,7 @@ export default function AttendanceComparisonDetail({ employeeId, initialFilters 
   const [pendingHistoryDelete, setPendingHistoryDelete] = useState(null);
   const [deletingHistoryId, setDeletingHistoryId] = useState("");
   const decisionHistoryRequestRef = useRef(0);
+  const pendingExceptionRequestRef = useRef(0);
   const noticeExitTimeoutRef = useRef(null);
   const noticeRemoveTimeoutRef = useRef(null);
 
@@ -1813,6 +1966,7 @@ export default function AttendanceComparisonDetail({ employeeId, initialFilters 
     (day) => attendanceDelayMinutes(day) > 0,
   ).length;
   const exceptionOptions = exceptionDraft ? inlineExceptionOptionsForDay(selectedDay) : [];
+  const exceptionDraftPunchReview = manualPunchDraftReview(exceptionDraft, selectedDay);
   const exceptionTemplateOptions = exceptionDraft?.type === "schedule_change"
     && exceptionDraft?.plannedDayType !== "off_day"
     ? scheduleTemplateOptionsForDay(row?.employee, templates, selectedDay)
@@ -2094,13 +2248,139 @@ export default function AttendanceComparisonDetail({ employeeId, initialFilters 
     }
   }
 
+  async function loadPendingDayExceptions(day) {
+    if (!day?.dateKey) return;
+
+    const requestId = pendingExceptionRequestRef.current + 1;
+    pendingExceptionRequestRef.current = requestId;
+    setIsLoadingPendingDayExceptions(true);
+
+    try {
+      const query = new URLSearchParams({
+        context: "attendance_review",
+        month,
+        employeeId,
+        dateKey: day.dateKey,
+      });
+      const response = await fetch(`/api/planner/planning/exceptions?${query.toString()}`);
+      const payload = await response.json();
+
+      if (!response.ok) {
+        throw new Error(payload.error || "No se pudieron consultar las excepciones pendientes.");
+      }
+
+      if (pendingExceptionRequestRef.current !== requestId) return;
+      setPendingDayExceptions(payload.exceptions || []);
+      setCanApprovePendingExceptions(Boolean(payload.options?.canApproveExceptions));
+    } catch (requestError) {
+      if (pendingExceptionRequestRef.current !== requestId) return;
+      setPendingDayExceptions([]);
+      setCanApprovePendingExceptions(false);
+      setError(requestError.message);
+    } finally {
+      if (pendingExceptionRequestRef.current === requestId) {
+        setIsLoadingPendingDayExceptions(false);
+      }
+    }
+  }
+
   function openInlineException(day, type = "") {
+    setPendingDayExceptions([]);
+    setPendingExceptionReviewNotes({});
+    setPendingPunchConflictChoices({});
     setExceptionDraft(buildInlineExceptionDraft(row, day, type, templates));
+    loadPendingDayExceptions(day);
   }
 
   function closeInlineException() {
-    if (!isSavingException) {
+    if (!isSavingException && !reviewingPendingExceptionId) {
+      pendingExceptionRequestRef.current += 1;
       setExceptionDraft(null);
+      setPendingDayExceptions([]);
+      setPendingExceptionReviewNotes({});
+      setPendingPunchConflictChoices({});
+    }
+  }
+
+  function applyPendingExceptionAsDraft(exception) {
+    if (!selectedDay) return;
+    setExceptionDraft(buildDraftFromPendingException(row, selectedDay, exception, templates));
+  }
+
+  function updatePendingExceptionReviewNote(exceptionId, value) {
+    setPendingExceptionReviewNotes((current) => ({ ...current, [exceptionId]: value }));
+  }
+
+  function updatePendingPunchConflictChoice(exceptionId, requestedTime, action, existingPunchId = "") {
+    setPendingPunchConflictChoices((current) => ({
+      ...current,
+      [exceptionId]: {
+        ...(current[exceptionId] || {}),
+        [requestedTime]: { requestedTime, action, existingPunchId },
+      },
+    }));
+  }
+
+  function hasUnresolvedPendingPunchConflicts(exception) {
+    const conflicts = exception?.manualPunchReview?.nearbyConflicts || [];
+    const choices = pendingPunchConflictChoices[exception?.id] || {};
+
+    return conflicts.some((conflict) => !choices[conflict.requestedTime]?.action);
+  }
+
+  async function reviewPendingDayException(exception, action) {
+    if (!exception?.id || !canApprovePendingExceptions) return;
+
+    if (action === "approve" && hasUnresolvedPendingPunchConflicts(exception)) {
+      setError("Antes de aprobar, elige cuál picada conservar en cada coincidencia cercana.");
+      return;
+    }
+
+    try {
+      setReviewingPendingExceptionId(exception.id);
+      setError("");
+      clearNotice();
+
+      const response = await fetch(`/api/planner/planning/exceptions/${exception.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action,
+          resolutionNotes: String(pendingExceptionReviewNotes[exception.id] || "").trim(),
+          manualPunchConflictChoices: Object.values(pendingPunchConflictChoices[exception.id] || {}),
+        }),
+      });
+      const payload = await response.json();
+
+      if (!response.ok) {
+        throw new Error(payload.error || "No se pudo revisar la excepción pendiente.");
+      }
+
+      await loadReport(month, { background: true });
+      await loadDecisionHistory(selectedDay?.dateKey);
+
+      if (action === "reject") {
+        await loadPendingDayExceptions(selectedDay);
+      } else {
+        pendingExceptionRequestRef.current += 1;
+        setExceptionDraft(null);
+        setPendingDayExceptions([]);
+        setPendingExceptionReviewNotes({});
+        setPendingPunchConflictChoices({});
+      }
+
+      showNotice(
+        "success",
+        action === "reject"
+          ? "Excepción pendiente rechazada. Puedes usarla como base para crear una corrección."
+          : action === "discount"
+            ? "Excepción aprobada con descuento de horas."
+            : "Excepción pendiente aprobada y aplicada al día.",
+      );
+    } catch (requestError) {
+      setError(requestError.message);
+    } finally {
+      setReviewingPendingExceptionId("");
     }
   }
 
@@ -2170,10 +2450,23 @@ export default function AttendanceComparisonDetail({ employeeId, initialFilters 
       if (!current) return current;
 
       const manualPunchTimes = [...(current.manualPunchTimes || [""])];
+      const previousTime = formatTime24(manualPunchTimes[index]);
       manualPunchTimes[index] = value;
+      const manualPunchConflictChoices = { ...(current.manualPunchConflictChoices || {}) };
+      if (previousTime) delete manualPunchConflictChoices[previousTime];
 
-      return { ...current, manualPunchTimes };
+      return { ...current, manualPunchTimes, manualPunchConflictChoices };
     });
+  }
+
+  function updateDraftPunchConflictChoice(requestedTime, action, existingPunchId = "") {
+    setExceptionDraft((current) => current ? {
+      ...current,
+      manualPunchConflictChoices: {
+        ...(current.manualPunchConflictChoices || {}),
+        [requestedTime]: { requestedTime, action, existingPunchId },
+      },
+    } : current);
   }
 
   function addManualPunchTime() {
@@ -2241,13 +2534,14 @@ export default function AttendanceComparisonDetail({ employeeId, initialFilters 
         .map((time) => formatTime24(time))
         .filter(Boolean);
       const uniqueManualTimes = new Set(manualPunchTimes);
-      const existingPunchTimes = new Set(activePunchesForDisplay(selectedDay).map((punch) => punch.time));
+      const conflictReview = manualPunchDraftReview(draft, selectedDay);
+      const conflictChoices = draft.manualPunchConflictChoices || {};
 
       return Boolean(
         manualPunchTimes.length &&
         manualPunchTimes.length === (draft.manualPunchTimes || []).length &&
         uniqueManualTimes.size === manualPunchTimes.length &&
-        manualPunchTimes.every((time) => !existingPunchTimes.has(time))
+        conflictReview.nearbyConflicts.every((conflict) => conflictChoices[conflict.requestedTime]?.action)
       );
     }
 
@@ -2967,6 +3261,11 @@ export default function AttendanceComparisonDetail({ employeeId, initialFilters 
             </div>
           </div>
 
+          <div className={styles.crossExplanation}>
+            <strong>Lectura previa al cruce</strong>
+            <span>ORD es el tiempo ordinario reconocido directamente. Al guardar el cruce mensual, las HS y luego las HE aprobadas completan el faltante ordinario; solo el saldo permanece como adicional.</span>
+          </div>
+
           {showOnlyLateDays || showOnlyAdditionalDays ? (
             <div className={styles.selectionActions}>
               <div className={styles.selectionSummaryGroup}>
@@ -3041,7 +3340,7 @@ export default function AttendanceComparisonDetail({ employeeId, initialFilters 
                           <th>Día</th>
                           <th>Horario y picadas</th>
                           <th>Planificado</th>
-                          <th>Trabajado</th>
+                          <th>Trabajado total</th>
                           <th>Tiempo no cumplido</th>
                           <th>Adicional / valor</th>
                           <th>Avisos</th>
@@ -3128,7 +3427,21 @@ export default function AttendanceComparisonDetail({ employeeId, initialFilters 
                                 <strong>{plannedColumnLabel(day, templates)}</strong>
                               </td>
                               <td>
-                                <strong>{isIgnorableRestDay(day) ? "--" : day.workedLabel}</strong>
+                                {isIgnorableRestDay(day) ? (
+                                  <strong>--</strong>
+                                ) : (
+                                  <div className={styles.workedValue}>
+                                    <strong>{day.workedLabel}</strong>
+                                    <div className={styles.workedBreakdown}>
+                                      {workedTimeBreakdown(day).map((item) => (
+                                        <span key={item.label} title={item.title}>
+                                          <small>{item.label}</small>
+                                          {formatMinutes(item.minutes)}
+                                        </span>
+                                      ))}
+                                    </div>
+                                  </div>
+                                )}
                               </td>
                               <td>
                                 {hasPlannedStart(day) ? (
@@ -3294,8 +3607,16 @@ export default function AttendanceComparisonDetail({ employeeId, initialFilters 
                 ) : null}
                 <div className={styles.decisionSummary}>
                   <article>
-                    <span>Trabajado</span>
+                    <span>Trabajado total</span>
                     <strong>{selectedDay.workedLabel}</strong>
+                    <div className={styles.workedBreakdown}>
+                      {workedTimeBreakdown(selectedDay).map((item) => (
+                        <span key={item.label} title={item.title}>
+                          <small>{item.label}</small>
+                          {formatMinutes(item.minutes)}
+                        </span>
+                      ))}
+                    </div>
                   </article>
                   <article>
                     <span>{selectedPreview?.additionalKindLabel || "HS"} planificadas</span>
@@ -3802,13 +4123,201 @@ export default function AttendanceComparisonDetail({ employeeId, initialFilters 
               : "Guardar excepción"}
             cancelLabel="Cancelar"
             tone="default"
-            isPending={isSavingException}
-            confirmDisabled={!isExceptionDraftValid(exceptionDraft)}
+            isPending={isSavingException || Boolean(reviewingPendingExceptionId)}
+            confirmDisabled={!isExceptionDraftValid(exceptionDraft) || Boolean(reviewingPendingExceptionId)}
             onCancel={closeInlineException}
             onConfirm={saveInlineException}
           >
             {exceptionDraft ? (
               <div className={styles.inlineExceptionForm}>
+                <section className={styles.pendingExceptionPanel} aria-label="Excepciones pendientes para este día">
+                  <div className={styles.pendingExceptionHeader}>
+                    <div>
+                      <AlertTriangle size={17} aria-hidden="true" />
+                      <strong>Pendientes que pueden cubrir este día</strong>
+                    </div>
+                    {pendingDayExceptions.length ? <span>{pendingDayExceptions.length}</span> : null}
+                  </div>
+
+                  {isLoadingPendingDayExceptions ? (
+                    <p className={styles.pendingExceptionEmpty}>Buscando solicitudes pendientes...</p>
+                  ) : pendingDayExceptions.length ? (
+                    <div className={styles.pendingExceptionList}>
+                      {pendingDayExceptions.map((exception) => {
+                        const isReviewing = reviewingPendingExceptionId === exception.id;
+                        const needsDiscountDecision = pendingExceptionNeedsDiscountDecision(exception);
+
+                        return (
+                          <article key={exception.id} className={styles.pendingExceptionCard}>
+                            <div className={styles.pendingExceptionTitle}>
+                              <div>
+                                <strong>{exception.typeLabel || "Excepción pendiente"}</strong>
+                                <span>{pendingExceptionRangeLabel(exception)}</span>
+                              </div>
+                              <small>Pendiente</small>
+                            </div>
+                            <dl className={styles.pendingExceptionDetails}>
+                              <div>
+                                <dt>Solicitado por</dt>
+                                <dd>{exception.registeredBy || "Sin registro"}</dd>
+                              </div>
+                              <div>
+                                <dt>Tratamiento solicitado</dt>
+                                <dd>{exception.payModeLabel || exception.effectLabel || "Por revisar"}</dd>
+                              </div>
+                            </dl>
+                            <p className={styles.pendingExceptionDescription}>
+                              {exception.notes || "Sin descripción."}
+                            </p>
+                            {exception.manualPunchReview?.exactMatches?.length ? (
+                              <div className={styles.exactPunchMatches}>
+                                <strong>Picadas que ya existen</strong>
+                                {exception.manualPunchReview.exactMatches.map((match) => (
+                                  <span key={`${exception.id}-${match.requestedTime}`}>
+                                    {formatScheduleHour(match.requestedTime)} ya está registrada; se omitirá automáticamente.
+                                  </span>
+                                ))}
+                              </div>
+                            ) : null}
+                            {exception.manualPunchReview?.nearbyConflicts?.length ? (
+                              <div className={styles.nearbyPunchConflicts}>
+                                <strong>Coincidencias cercanas: elige antes de aprobar</strong>
+                                {exception.manualPunchReview.nearbyConflicts.map((conflict) => {
+                                  const closestPunch = conflict.nearbyPunches[0];
+                                  const selectedAction = pendingPunchConflictChoices[exception.id]?.[conflict.requestedTime]?.action || "";
+
+                                  return (
+                                    <fieldset key={`${exception.id}-${conflict.requestedTime}`}>
+                                      <legend>
+                                        Solicitada {formatScheduleHour(conflict.requestedTime)} · existente {formatScheduleHour(closestPunch?.time)}
+                                      </legend>
+                                      <label>
+                                        <input
+                                          type="radio"
+                                          name={`punch-conflict-${exception.id}-${conflict.requestedTime}`}
+                                          checked={selectedAction === "existing"}
+                                          onChange={() => updatePendingPunchConflictChoice(
+                                            exception.id,
+                                            conflict.requestedTime,
+                                            "existing",
+                                            closestPunch?.id,
+                                          )}
+                                          disabled={Boolean(reviewingPendingExceptionId)}
+                                        />
+                                        <span>Conservar solamente la existente ({formatScheduleHour(closestPunch?.time)})</span>
+                                      </label>
+                                      <label>
+                                        <input
+                                          type="radio"
+                                          name={`punch-conflict-${exception.id}-${conflict.requestedTime}`}
+                                          checked={selectedAction === "requested"}
+                                          onChange={() => updatePendingPunchConflictChoice(
+                                            exception.id,
+                                            conflict.requestedTime,
+                                            "requested",
+                                            closestPunch?.id,
+                                          )}
+                                          disabled={Boolean(reviewingPendingExceptionId)}
+                                        />
+                                        <span>Reemplazarla por la solicitada ({formatScheduleHour(conflict.requestedTime)})</span>
+                                      </label>
+                                      <label>
+                                        <input
+                                          type="radio"
+                                          name={`punch-conflict-${exception.id}-${conflict.requestedTime}`}
+                                          checked={selectedAction === "both"}
+                                          onChange={() => updatePendingPunchConflictChoice(
+                                            exception.id,
+                                            conflict.requestedTime,
+                                            "both",
+                                            closestPunch?.id,
+                                          )}
+                                          disabled={Boolean(reviewingPendingExceptionId)}
+                                        />
+                                        <span>Mantener las dos picadas</span>
+                                      </label>
+                                    </fieldset>
+                                  );
+                                })}
+                              </div>
+                            ) : null}
+                            {canApprovePendingExceptions ? (
+                              <label className={styles.pendingExceptionNote}>
+                                <span>Nota de revisión</span>
+                                <textarea
+                                  rows={2}
+                                  value={pendingExceptionReviewNotes[exception.id] || ""}
+                                  onChange={(event) => updatePendingExceptionReviewNote(exception.id, event.target.value)}
+                                  disabled={Boolean(reviewingPendingExceptionId)}
+                                  placeholder="Opcional"
+                                />
+                              </label>
+                            ) : null}
+                            <div className={styles.pendingExceptionActions}>
+                              <button
+                                type="button"
+                                className="catalog-button-ghost"
+                                onClick={() => applyPendingExceptionAsDraft(exception)}
+                                disabled={Boolean(reviewingPendingExceptionId)}
+                              >
+                                Usar como base
+                              </button>
+                              {canApprovePendingExceptions ? (
+                                <>
+                                  <button
+                                    type="button"
+                                    className={styles.pendingRejectButton}
+                                    onClick={() => {
+                                      applyPendingExceptionAsDraft(exception);
+                                      reviewPendingDayException(exception, "reject");
+                                    }}
+                                    disabled={Boolean(reviewingPendingExceptionId)}
+                                  >
+                                    {isReviewing ? "Procesando..." : "Rechazar y corregir"}
+                                  </button>
+                                  {needsDiscountDecision ? (
+                                    <>
+                                      <button
+                                        type="button"
+                                        className={styles.pendingDiscountButton}
+                                        onClick={() => reviewPendingDayException(exception, "discount")}
+                                        disabled={Boolean(reviewingPendingExceptionId)}
+                                      >
+                                        Aprobar con descuento
+                                      </button>
+                                      <button
+                                        type="button"
+                                        className={styles.pendingApproveButton}
+                                        onClick={() => reviewPendingDayException(exception, "approve")}
+                                        disabled={Boolean(reviewingPendingExceptionId) || hasUnresolvedPendingPunchConflicts(exception)}
+                                      >
+                                        Aprobar sin descuento
+                                      </button>
+                                    </>
+                                  ) : (
+                                    <button
+                                      type="button"
+                                      className={styles.pendingApproveButton}
+                                      onClick={() => reviewPendingDayException(exception, "approve")}
+                                      disabled={Boolean(reviewingPendingExceptionId) || hasUnresolvedPendingPunchConflicts(exception)}
+                                    >
+                                      Aprobar
+                                    </button>
+                                  )}
+                                </>
+                              ) : null}
+                            </div>
+                          </article>
+                        );
+                      })}
+                    </div>
+                  ) : (
+                    <p className={styles.pendingExceptionEmpty}>
+                      No hay solicitudes pendientes para este empleado y fecha.
+                    </p>
+                  )}
+                </section>
+
                 <SelectInput
                   label="Tipo de excepción"
                   value={exceptionDraft.type}
@@ -3958,6 +4467,60 @@ export default function AttendanceComparisonDetail({ employeeId, initialFilters 
                             </label>
                           ))}
                         </div>
+                        {exceptionDraftPunchReview.exactMatches.length ? (
+                          <div className={styles.exactPunchMatches}>
+                            <strong>Ya registradas</strong>
+                            {exceptionDraftPunchReview.exactMatches.map((match) => (
+                              <span key={match.requestedTime}>
+                                {formatScheduleHour(match.requestedTime)} ya existe y se omitirá; las otras picadas sí se agregarán.
+                              </span>
+                            ))}
+                          </div>
+                        ) : null}
+                        {exceptionDraftPunchReview.nearbyConflicts.length ? (
+                          <div className={styles.nearbyPunchConflicts}>
+                            <strong>Elige qué picada debe quedar</strong>
+                            {exceptionDraftPunchReview.nearbyConflicts.map((conflict) => {
+                              const closestPunch = conflict.nearbyPunches[0];
+                              const selectedAction = exceptionDraft.manualPunchConflictChoices?.[conflict.requestedTime]?.action || "";
+
+                              return (
+                                <fieldset key={conflict.requestedTime}>
+                                  <legend>
+                                    Solicitada {formatScheduleHour(conflict.requestedTime)} · existente {formatScheduleHour(closestPunch.time)}
+                                  </legend>
+                                  <label>
+                                    <input
+                                      type="radio"
+                                      name={`draft-punch-conflict-${conflict.requestedTime}`}
+                                      checked={selectedAction === "existing"}
+                                      onChange={() => updateDraftPunchConflictChoice(conflict.requestedTime, "existing", closestPunch.id)}
+                                    />
+                                    <span>Conservar solamente la existente</span>
+                                  </label>
+                                  <label>
+                                    <input
+                                      type="radio"
+                                      name={`draft-punch-conflict-${conflict.requestedTime}`}
+                                      checked={selectedAction === "requested"}
+                                      onChange={() => updateDraftPunchConflictChoice(conflict.requestedTime, "requested", closestPunch.id)}
+                                    />
+                                    <span>Reemplazarla por la solicitada</span>
+                                  </label>
+                                  <label>
+                                    <input
+                                      type="radio"
+                                      name={`draft-punch-conflict-${conflict.requestedTime}`}
+                                      checked={selectedAction === "both"}
+                                      onChange={() => updateDraftPunchConflictChoice(conflict.requestedTime, "both", closestPunch.id)}
+                                    />
+                                    <span>Mantener las dos</span>
+                                  </label>
+                                </fieldset>
+                              );
+                            })}
+                          </div>
+                        ) : null}
                         <button
                           type="button"
                           className={styles.addManualPunchButton}
