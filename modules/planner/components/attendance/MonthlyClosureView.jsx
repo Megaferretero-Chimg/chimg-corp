@@ -53,6 +53,12 @@ function moneyLabel(value) {
   }).format(Number(value) || 0);
 }
 
+function lateCountLabel(value) {
+  const count = Math.max(0, Math.round(Number(value) || 0));
+
+  return `${count} ${count === 1 ? "atraso" : "atrasos"}`;
+}
+
 function minutesLabel(minutes) {
   const value = Math.max(0, Math.round(Number(minutes) || 0));
   const hours = Math.floor(value / 60);
@@ -784,6 +790,7 @@ export default function MonthlyClosureView({ view = "summary", fixedMonth = "" }
                           </td>
                           <td>
                             <span className={styles.metricValue}>{metricValue(row.lateLabel)}</span>
+                            <span>{lateCountLabel(row.lateDays)}</span>
                           </td>
                           <td>
                             <strong className={styles.salaryValue}>{row.salaryTotalLabel || "$0.00"}</strong>

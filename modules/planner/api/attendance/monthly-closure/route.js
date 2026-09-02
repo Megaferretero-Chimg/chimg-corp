@@ -765,17 +765,17 @@ async function buildDetailedExcel(rows, monthKey, closure = null) {
     ["Copia", closure ? `v${Number(closure.version) || 1}` : "Cálculo actual"],
     ["Fecha de cierre", closure?.closedAt ? formatEcuadorDateTimeLabel(closure.closedAt) : ""],
     [],
-    ["Métrica", "Horas", "Valor"],
-    ["Laborables", decimalHours(totals.regularWorkedMinutes), ""],
-    ["Laborables del mes", decimalHours(totals.regularTargetMinutes), ""],
-    ["Suplementarias cierre", decimalHours(totals.supplementaryMinutes), roundMoney(totals.supplementaryAmount)],
-    ["Extraordinarias cierre", decimalHours(totals.extraordinaryMinutes), roundMoney(totals.extraordinaryAmount)],
-    ["Atrasos", decimalHours(totals.lateMinutes), ""],
-    ["Sueldos total", "", roundMoney(totals.salaryTotal)],
-    ["Empleados", totals.employees, ""],
+    ["Métrica", "Horas", "Cantidad", "Valor"],
+    ["Laborables", decimalHours(totals.regularWorkedMinutes), "", ""],
+    ["Laborables del mes", decimalHours(totals.regularTargetMinutes), "", ""],
+    ["Suplementarias cierre", decimalHours(totals.supplementaryMinutes), "", roundMoney(totals.supplementaryAmount)],
+    ["Extraordinarias cierre", decimalHours(totals.extraordinaryMinutes), "", roundMoney(totals.extraordinaryAmount)],
+    ["Atrasos", decimalHours(totals.lateMinutes), totals.lateDays, ""],
+    ["Sueldos total", "", "", roundMoney(totals.salaryTotal)],
+    ["Empleados", "", totals.employees, ""],
   ];
   const summarySheet = XLSX.utils.aoa_to_sheet(summaryRows);
-  summarySheet["!cols"] = [{ wch: 30 }, { wch: 18 }, { wch: 18 }];
+  summarySheet["!cols"] = [{ wch: 30 }, { wch: 18 }, { wch: 14 }, { wch: 18 }];
   XLSX.utils.book_append_sheet(workbook, summarySheet, "Resumen");
 
   const detailRows = sortedRows.map((row) => {
@@ -797,8 +797,8 @@ async function buildDetailedExcel(rows, monthKey, closure = null) {
       "HE planificadas": decimalHours(row.plannedExtraordinaryMinutes),
       "HE registradas": decimalHours(row.detectedExtraordinaryMinutes),
       "HE cierre": decimalHours(row.extraordinaryMinutes),
-      "Cantidad atrasos": Number(row.lateDays) || 0,
       "Tiempo atraso": decimalHours(payrollLateMinutes(row)),
+      "Cantidad de atrasos": Number(row.lateDays) || 0,
       "Sueldo base": roundMoney(row.salaryBase),
       "Valor hora": roundMoney(row.hourlyRate),
       "Sueldo suplementarias": roundMoney(supplementaryAmount(row)),
