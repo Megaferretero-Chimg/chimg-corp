@@ -858,7 +858,7 @@ function buildDraftDayNotes(assignments) {
 const PLANNED_ADJUSTMENT_TYPES = [
   {
     value: "permission_partial",
-    label: "Permiso por horas",
+    label: "Solicitud anticipada por horas",
     type: "permission",
     scope: "partial_day",
     effect: "paid_partial_leave",
@@ -3302,10 +3302,17 @@ export default function SchedulePlanner({ initialFilters = {}, basePath = "/sche
               />
             ) : null}
             {selectedAdjustmentType?.requiresTimeRange ? (
-              <div className={styles.adjustmentGrid}>
-                <TextInput className={styles.adjustmentTimeField} label="Desde" type="time" separator="H" value={adjustmentForm.startTime} onChange={(event) => updateAdjustmentField("startTime", event.target.value)} />
-                <TextInput className={styles.adjustmentTimeField} label="Hasta" type="time" separator="H" value={adjustmentForm.endTime} onChange={(event) => updateAdjustmentField("endTime", event.target.value)} />
-              </div>
+              <>
+                <div className={styles.adjustmentGrid}>
+                  <TextInput className={styles.adjustmentTimeField} label="Desde" type="time" separator="H" value={adjustmentForm.startTime} onChange={(event) => updateAdjustmentField("startTime", event.target.value)} />
+                  <TextInput className={styles.adjustmentTimeField} label="Hasta" type="time" separator="H" value={adjustmentForm.endTime} onChange={(event) => updateAdjustmentField("endTime", event.target.value)} />
+                </div>
+                {selectedAdjustmentType.value === "permission_partial" ? (
+                  <p className={styles.permissionPlanningHint}>
+                    Esta es una solicitud anticipada. Cuando existan marcaciones, debe resolverse en Comparación vinculando la picada de salida y la de retorno.
+                  </p>
+                ) : null}
+              </>
             ) : null}
             {supportsCustomSchedule ? (
               <label className={styles.customScheduleToggle}>

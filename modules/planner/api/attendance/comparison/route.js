@@ -3073,7 +3073,14 @@ function compareDay(day, punches, employee = {}, scheduleRules = {}, permissionC
       rawAdditionalSupplementaryMinutes > lateDepartureToleranceMinutes
         ? rawAdditionalSupplementaryMinutes
         : 0;
-    const workedSurplusOverPlan = Math.max(0, workedMinutes - plannedMinutes.scheduledWorkedMinutes);
+    // El permiso con descuento reduce las horas laborables, pero no borra el
+    // tiempo que la persona realmente trabajó después de su salida planificada.
+    // Ese excedente debe permanecer pendiente para que Nómina decida si lo
+    // aprueba y el cierre mensual pueda usarlo para completar la base.
+    const workedSurplusOverPlan = Math.max(
+      0,
+      workedBeforePermissionDiscountMinutes - plannedMinutes.scheduledWorkedMinutes,
+    );
     additionalSupplementaryMinutes = Math.min(reviewableAdditionalSupplementaryMinutes, workedSurplusOverPlan);
     lunchOverageRemainderMinutes = Math.max(0, lunchOverageMinutes - rawAdditionalSupplementaryMinutes);
   } else {

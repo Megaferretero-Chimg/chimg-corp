@@ -38,8 +38,8 @@ const EXCEPTION_FLOWS = [
   {
     category: "planning",
     value: "hourly_permission",
-    label: "Permiso de salida",
-    description: "Registra la hora de salida para que Talento Humano decida si el tiempo restante de la jornada se descuenta.",
+    label: "Solicitud anticipada de permiso",
+    description: "Registra el permiso previsto antes de contar con las marcaciones. La aprobación final se realiza en Comparación, vinculando las picadas reales de salida y retorno.",
     type: "permission",
     scope: "partial_day",
     resolution: "approved_work_time",
@@ -1260,7 +1260,14 @@ export default function ExceptionManager({
               </div>
             ) : null}
 
-            {canResolveExceptions && reviewException.resolution === "pending" ? (
+            {canResolveExceptions && reviewException.resolution === "pending" && inferFlowType(reviewException) === "hourly_permission" ? (
+              <div className={styles.presetPanel}>
+                <span>Requiere conciliación</span>
+                <p>Este permiso por horas debe resolverse desde Comparación, seleccionando las picadas reales de salida y retorno.</p>
+              </div>
+            ) : null}
+
+            {canResolveExceptions && reviewException.resolution === "pending" && inferFlowType(reviewException) !== "hourly_permission" ? (
               getFlowDefinition(inferFlowType(reviewException)).reviewMode === "deduction" ? (
                 <div className={styles.reviewActions}>
                   <button

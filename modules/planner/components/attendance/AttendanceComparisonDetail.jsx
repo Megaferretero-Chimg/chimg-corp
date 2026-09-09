@@ -99,13 +99,13 @@ const INLINE_EXCEPTION_OPTIONS = [
   },
   {
     value: "permission",
-    label: "Permiso",
-    description: "Justifica ausencia o salida por horas.",
+    label: "Permiso sin picadas",
+    description: "Justifica un rango sin marcaciones de salida y retorno. Si existen picadas adicionales, usa Permiso con picadas.",
   },
   {
     value: "permission_punches",
     label: "Permiso con picadas",
-    description: "Vincula una picada de salida y otra de retorno para que no se consideren marcaciones en exceso.",
+    description: "Vincula las marcaciones reales de salida y retorno, elimina la alerta de picadas de más y conserva por separado cualquier tiempo adicional.",
   },
 ];
 
@@ -1248,6 +1248,12 @@ function inlineExceptionOptionsForDay(day) {
     ].includes(option.value));
   }
 
+  if (hasDayTag(day, "Picadas de más")) {
+    return ["permission_punches", "schedule_change", "outside_work"]
+      .map((value) => INLINE_EXCEPTION_OPTIONS.find((option) => option.value === value))
+      .filter(Boolean);
+  }
+
   if (displayLateMinutes(day) > 0 || (Number(day?.earlyLeaveMinutes) || 0) > 0) {
     return INLINE_EXCEPTION_OPTIONS.filter((option) =>
       ["permission", "schedule_change"].includes(option.value),
@@ -1582,6 +1588,7 @@ function lastPunchTime(day) {
 
 function defaultInlineExceptionType(day) {
   if (hasDayTag(day, "Sin picadas")) return "missing_punch";
+  if (hasDayTag(day, "Picadas de más")) return "permission_punches";
 
   const options = inlineExceptionOptionsForDay(day);
 
@@ -1818,11 +1825,17 @@ function pendingExceptionRangeLabel(exception = {}) {
 }
 
 function buildDraftFromPendingException(row, day, exception, templates = []) {
-  const type = pendingExceptionInlineType(exception);
+  const requiresPunchReconciliation = exception.type === "permission"
+    && exception.scope === "partial_day"
+    && hasDayTag(day, "Picadas de más");
+  const type = requiresPunchReconciliation
+    ? "permission_punches"
+    : pendingExceptionInlineType(exception);
   const draft = buildInlineExceptionDraft(row, day, type, templates);
 
   return {
     ...draft,
+    pendingExceptionId: exception.id || "",
     type,
     startTime: exception.startTime || draft.startTime,
     endTime: exception.endTime || draft.endTime,
@@ -2492,7 +2505,11 @@ export default function AttendanceComparisonDetail({ employeeId, initialFilters 
 
   function selectExceptionType(type) {
     if (!selectedDay) return;
-    setExceptionDraft(buildInlineExceptionDraft(row, selectedDay, type, templates));
+    setExceptionDraft((current) => ({
+      ...buildInlineExceptionDraft(row, selectedDay, type, templates),
+      pendingExceptionId: current?.pendingExceptionId || "",
+      notes: current?.notes || exceptionNoteForDay(selectedDay),
+    }));
   }
 
   function selectExceptionTemplate(templateId) {
@@ -2610,13 +2627,19 @@ export default function AttendanceComparisonDetail({ employeeId, initialFilters 
         return;
       }
 
-      const response = await fetch("/api/planner/planning/exceptions", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
+      const pendingExceptionId = String(exceptionDraft.pendingExceptionId || "").trim();
+      const response = await fetch(
+        pendingExceptionId
+          ? `/api/planner/planning/exceptions/${pendingExceptionId}`
+          : "/api/planner/planning/exceptions",
+        {
+          method: pendingExceptionId ? "PATCH" : "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify(inlineExceptionPayload(employeeId, exceptionDraft)),
         },
-        body: JSON.stringify(inlineExceptionPayload(employeeId, exceptionDraft)),
-      });
+      );
       const payload = await response.json();
 
       if (!response.ok) {
@@ -4150,6 +4173,9 @@ export default function AttendanceComparisonDetail({ employeeId, initialFilters 
                       {pendingDayExceptions.map((exception) => {
                         const isReviewing = reviewingPendingExceptionId === exception.id;
                         const needsDiscountDecision = pendingExceptionNeedsDiscountDecision(exception);
+                        const requiresPunchReconciliation = exception.type === "permission"
+                          && exception.scope === "partial_day"
+                          && hasDayTag(selectedDay, "Picadas de más");
 
                         return (
                           <article key={exception.id} className={styles.pendingExceptionCard}>
@@ -4173,6 +4199,12 @@ export default function AttendanceComparisonDetail({ employeeId, initialFilters 
                             <p className={styles.pendingExceptionDescription}>
                               {exception.notes || "Sin descripción."}
                             </p>
+                            {requiresPunchReconciliation ? (
+                              <div className={styles.exceptionWarning}>
+                                <AlertTriangle size={16} aria-hidden="true" />
+                                <span>Esta solicitud se registró antes de las marcaciones. Vincula ahora la salida y el retorno para resolver las picadas de más.</span>
+                              </div>
+                            ) : null}
                             {exception.manualPunchReview?.exactMatches?.length ? (
                               <div className={styles.exactPunchMatches}>
                                 <strong>Picadas que ya existen</strong>
@@ -4264,9 +4296,9 @@ export default function AttendanceComparisonDetail({ employeeId, initialFilters 
                                 onClick={() => applyPendingExceptionAsDraft(exception)}
                                 disabled={Boolean(reviewingPendingExceptionId)}
                               >
-                                Usar como base
+                                {requiresPunchReconciliation ? "Vincular picadas y resolver" : "Usar como base"}
                               </button>
-                              {canApprovePendingExceptions ? (
+                              {canApprovePendingExceptions && !requiresPunchReconciliation ? (
                                 <>
                                   <button
                                     type="button"
