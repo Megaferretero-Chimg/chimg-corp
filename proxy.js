@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import crypto from "node:crypto";
+import { getAuthenticatedUser } from "@/lib/auth";
 
 const SESSION_COOKIE_NAME = "control_asistencia_session";
 const PLANNING_EXCEPTIONS_ACCESS_ROLE = "planning_exceptions";
@@ -121,6 +122,7 @@ function canAccessApi(pathname, method, permissionSet) {
 
   if (pathname === "/api/company/branches" && method === "GET") {
     return hasAnyPermission(permissionSet, [
+      "company.employees.view",
       "company.branches.view",
       "planner.schedules.weekly.view",
       "planner.attendance.view",
@@ -130,11 +132,14 @@ function canAccessApi(pathname, method, permissionSet) {
   }
 
   if (pathname.startsWith("/api/company/employees/")) {
-    return hasAnyPermission(permissionSet, ["company.employees.update", "company.employees.delete"]);
+    if (method === "GET") return permissionSet.has("company.employees.view");
+    if (method === "DELETE") return permissionSet.has("company.employees.delete");
+    return permissionSet.has("company.employees.update");
   }
 
   if (pathname === "/api/company/roles" && method === "GET") {
     return hasAnyPermission(permissionSet, [
+      "company.employees.view",
       "company.roles.view",
       "planner.schedules.weekly.view",
       "planner.settings.view",
@@ -219,7 +224,24 @@ function canLimitedUserAccessApi(pathname) {
 export async function proxy(request) {
   const pathname = request.nextUrl.pathname;
   const sessionCookie = request.cookies.get(SESSION_COOKIE_NAME)?.value || "";
-  const session = getSignedSession(sessionCookie);
+  let session = getSignedSession(sessionCookie);
+  const isEmployeeResource = pathname === "/api/company/employees"
+    || pathname.startsWith("/api/company/employees/")
+    || (request.method === "GET" && ["/api/company/branches", "/api/company/roles"].includes(pathname));
+
+  // Los permisos de empleados pueden cambiar mientras la sesión sigue abierta.
+  // Valida el usuario y su perfil actuales, no la copia incluida en la cookie.
+  if (isEmployeeResource) {
+    try {
+      session = await getAuthenticatedUser(sessionCookie);
+
+      if (!session) {
+        return NextResponse.json({ error: "Sesión inválida o expirada." }, { status: 401 });
+      }
+    } catch {
+      return NextResponse.json({ error: "No se pudo validar el acceso a este recurso." }, { status: 503 });
+    }
+  }
   const accessRole = session?.accessRole || "";
   const isDeviceApi = pathname.startsWith("/api/v1/");
 
