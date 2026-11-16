@@ -1,0 +1,247 @@
+.sections {
+  display: grid;
+  gap: 1.25rem;
+}
+
+.panel {
+  min-width: 0;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: 1rem;
+  background: #fff;
+}
+
+.header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem 1.5rem;
+  padding: clamp(1rem, 2.5vw, 1.5rem);
+}
+
+.heading {
+  display: flex;
+  flex: 1 1 22rem;
+  align-items: flex-start;
+  gap: 0.85rem;
+
+  h2 {
+    margin: 0;
+    font-size: 1.25rem;
+  }
+
+  p {
+    margin: 0.35rem 0 0;
+    color: var(--text-muted);
+    line-height: 1.5;
+  }
+}
+
+.icon {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 2.75rem;
+  height: 2.75rem;
+  border-radius: 0.75rem;
+  background: #edf3ff;
+  color: #18458e;
+}
+
+.create {
+  gap: 0.4rem;
+  min-height: 2.75rem;
+}
+
+.tableWrap {
+  overflow-x: auto;
+}
+
+.table {
+  width: 100%;
+  border-collapse: collapse;
+  text-align: left;
+
+  th,
+  td {
+    padding: 0.85rem clamp(0.85rem, 2.5vw, 1.5rem);
+    border-top: 1px solid var(--border);
+  }
+
+  thead {
+    background: #f5f8fc;
+    color: var(--text-muted);
+    font-size: 0.85rem;
+  }
+
+  tbody th {
+    width: 50%;
+    font-weight: 600;
+    overflow-wrap: anywhere;
+  }
+}
+
+.badge {
+  display: inline-block;
+  border-radius: 999px;
+  padding: 0.25rem 0.65rem;
+  background: #eaf2ff;
+  color: #18458e;
+  font-size: 0.8rem;
+  font-weight: 600;
+
+  &[data-built-in="true"] {
+    background: #eef2f7;
+    color: #40516b;
+  }
+}
+
+.footer {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 0.5rem 1rem;
+  padding: 0.85rem clamp(0.85rem, 2.5vw, 1.5rem);
+  border-top: 1px solid var(--border);
+  color: var(--text-muted);
+  font-size: 0.85rem;
+
+  [role="status"] {
+    color: #166246;
+    font-weight: 600;
+  }
+}
+
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+
+  button {
+    display: inline-grid;
+    place-items: center;
+    width: 2.5rem;
+    height: 2.5rem;
+    padding: 0;
+    border: 1px solid var(--border);
+    border-radius: 0.5rem;
+    background: #fff;
+    color: #18458e;
+    font: inherit;
+    font-weight: 600;
+    cursor: pointer;
+    transition:
+      background-color 160ms ease,
+      border-color 160ms ease,
+      color 160ms ease,
+      transform 160ms ease;
+
+    &:hover {
+      background: #eaf2ff;
+      border-color: #aac7f5;
+      color: #124bb0;
+      transform: translateY(-1px);
+    }
+
+    &:focus-visible {
+      outline: 2px solid #2463ca;
+      outline-offset: 2px;
+    }
+
+    &:active {
+      transform: translateY(0);
+    }
+  }
+
+  .delete {
+    color: #a41e25;
+
+    &:hover {
+      background: #fff0f1;
+      border-color: #efb2b7;
+      color: #951b24;
+    }
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .actions button {
+    transition: none;
+
+    &:hover {
+      transform: none;
+    }
+  }
+}
+
+
+.categoryName {
+  margin: 0;
+  font-weight: 700;
+  overflow-wrap: anywhere;
+}
+
+.deleteHint {
+  margin: 0.4rem 0 0;
+  color: var(--text-muted);
+  line-height: 1.5;
+}
+
+button.dangerButton {
+  background: #a41e25;
+  border-color: #a41e25;
+  color: #fff;
+
+  &:hover {
+    background: #85171d;
+    border-color: #85171d;
+  }
+}
+
+
+.modalActions button {
+  transition:
+    background-color 160ms ease,
+    border-color 160ms ease,
+    box-shadow 160ms ease,
+    transform 160ms ease;
+
+  &:hover:not(:disabled) {
+    transform: translateY(-1px);
+    box-shadow: 0 3px 8px rgba(16, 33, 62, 0.12);
+  }
+
+  &:focus-visible {
+    outline: 2px solid #2463ca;
+    outline-offset: 2px;
+  }
+
+  &:active:not(:disabled) {
+    transform: translateY(0);
+    box-shadow: none;
+  }
+
+  &[type="button"]:hover:not(:disabled) {
+    background: #edf3fb;
+    border-color: #a9bdd9;
+    color: #18458e;
+  }
+
+  &.dangerButton:hover:not(:disabled) {
+    background: #85171d;
+    border-color: #85171d;
+    color: #fff;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .modalActions button {
+    transition: none;
+
+    &:hover:not(:disabled) {
+      transform: none;
+    }
+  }
+}

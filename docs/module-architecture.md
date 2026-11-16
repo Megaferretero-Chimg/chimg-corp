@@ -128,3 +128,44 @@ por usuario. Nuevos modulos deben registrarse ahi y exponer al menos:
 - Si pertenece a asistencia operativa, va dentro de `modules/planner`.
 - Si pertenece a pagos, calculos o cierres de nomina operativa, va dentro de `modules/planner`.
 - Si es UI generica, va en `components/ui`.
+
+### Academia
+
+Academia es el módulo administrativo de capacitación del portal corporativo.
+Su entrada `/modules/academy` abre el resumen en `/modules/academy/admin`.
+Incluye Resumen, Cursos y Configuración. El permiso `academy.admin.view`
+habilita la entrada y todas las pantallas administrativas. Los permisos
+anteriores `academy.home.view` y `academy.learning.view` dejan de otorgar
+acceso al módulo. Los administradores conservan el acceso por su perfil.
+
+La experiencia de aprendizaje de los empleados se desarrollará en un espacio
+independiente del selector de módulos administrativos. Su navegación y acceso
+se definirán al implementar ese espacio.
+
+Cada curso contiene capítulos ordenados con lecciones obligatorias y una
+evaluación de opción múltiple por capítulo. Cada pregunta tiene una respuesta
+correcta. La evaluación se habilitará al completar las lecciones del capítulo.
+El servidor corregirá las respuestas sin entregar la clave de corrección.
+Las evaluaciones finales de cursos anteriores se conservan como datos históricos.
+
+El curso referencia uno o varios cargos operativos del catálogo de Empresa.
+El servidor resolverá los cargos del empleado a partir de su sesión y sus
+datos en Empresa. Si coinciden varios cargos, el curso aparecerá una sola vez.
+El progreso y los intentos de evaluación se guardarán por empleado y curso.
+
+#### Contenido y archivos multimedia
+
+- **MongoDB.** Guarda el curso, sus capítulos, lecciones de texto y referencias
+  a imágenes y videos con su identificador, tipo y formato.
+- **Cloudinary.** El navegador carga los archivos directamente con una firma
+  emitida por el servidor para administradores de Academia. El servidor
+  verifica los archivos autenticados antes de guardar sus referencias.
+- **Entrega al estudiante.** Queda pendiente la reproducción protegida y el
+  procesamiento para HLS. El servidor deberá comprobar la sesión, el cargo
+  asignado y el estado publicado antes de autorizar la entrega.
+
+En `/modules/academy/admin/courses` se crea el borrador con su información
+básica. Desde el detalle del curso se crean capítulos, se editan sus lecciones
+y evaluaciones y se asignan cargos en la pantalla de publicación. Los cursos
+nuevos requieren capítulos con lecciones y evaluación, y al menos un cargo
+para publicarse. El progreso y la corrección quedan para la vista del estudiante.

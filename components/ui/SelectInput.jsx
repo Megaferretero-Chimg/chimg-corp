@@ -118,29 +118,35 @@ const SelectInput = forwardRef(function SelectInput(
           <ChevronDown size={16} className={styles.chevron} aria-hidden="true" />
         </button>
         {name ? <input type="hidden" name={name} value={value} /> : null}
-        {isOpen ? (
-          <span id={listboxId} className={`${styles.menu} ${menuClassName}`} role="listbox" aria-labelledby={selectId}>
-            {options.map((option) => {
-              const isSelected = String(option.value) === String(value);
+        <span
+          id={listboxId}
+          className={`${styles.menu} ${menuClassName}`}
+          role="listbox"
+          aria-labelledby={selectId}
+          aria-hidden={!isOpen}
+          inert={!isOpen}
+          data-open={isOpen}
+        >
+          {options.map((option) => {
+            const isSelected = String(option.value) === String(value);
 
-              return (
-                <button
-                  key={`${option.value}-${option.label}`}
-                  type="button"
-                  role="option"
-                  aria-selected={isSelected}
-                  className={`${styles.option} ${isSelected ? styles.optionSelected : ""}`}
-                  disabled={option.disabled}
-                  onMouseDown={(event) => event.preventDefault()}
-                  onClick={() => selectOption(option)}
-                >
-                  <span>{option.label}</span>
-                  {isSelected ? <Check size={15} aria-hidden="true" /> : null}
-                </button>
-              );
-            })}
-          </span>
-        ) : null}
+            return (
+              <button
+                key={`${option.value}-${option.label}`}
+                type="button"
+                role="option"
+                aria-selected={isSelected}
+                className={`${styles.option} ${isSelected ? styles.optionSelected : ""}`}
+                disabled={option.disabled}
+                onMouseDown={(event) => event.preventDefault()}
+                onClick={() => selectOption(option)}
+              >
+                <span>{option.label}</span>
+                {isSelected ? <Check size={15} aria-hidden="true" /> : null}
+              </button>
+            );
+          })}
+        </span>
       </span>
       {hint ? <small id={`${selectId}-hint`} className={styles.hint}>{hint}</small> : null}
       {error ? <small id={`${selectId}-error`} className={styles.error}>{error}</small> : null}

@@ -1,0 +1,295 @@
+.page {
+  display: grid;
+  gap: 1.5rem;
+  min-width: 0;
+}
+
+.back {
+  display: inline-flex;
+  align-items: center;
+  justify-self: start;
+  gap: 0.45rem;
+  text-decoration: none;
+  color: var(--text-muted);
+
+  &:hover {
+    color: var(--primary-strong);
+  }
+}
+
+.hero,
+.chapter,
+.empty {
+  border: 1px solid var(--border);
+  border-radius: 1rem;
+  background: #fff;
+}
+
+.hero {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: clamp(1.25rem, 3vw, 2rem);
+}
+
+.heading {
+  min-width: 0;
+
+  h1 {
+    margin: 0.65rem 0 0;
+    font-size: clamp(1.5rem, 3vw, 2rem);
+    line-height: 1.2;
+    overflow-wrap: anywhere;
+  }
+}
+
+.metadata {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.75rem;
+  font-size: 0.85rem;
+  color: var(--text-muted);
+}
+
+.status {
+  padding: 0.25rem 0.6rem;
+  border-radius: 999px;
+  color: #715019;
+  background: #f4efe4;
+  font-weight: 600;
+
+  &[data-published="true"] {
+    color: #166246;
+    background: #e6f6ee;
+  }
+}
+
+.description {
+  margin: 0.75rem 0 0;
+  max-width: 65ch;
+  color: var(--text-muted);
+  line-height: 1.6;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.actions {
+  display: flex;
+  flex-shrink: 0;
+  gap: 0.5rem;
+
+  a {
+    display: grid;
+    place-items: center;
+    width: 2.65rem;
+    height: 2.65rem;
+    border: 1px solid var(--border);
+    border-radius: 0.65rem;
+    color: #18458e;
+
+    &:hover {
+      background: #eaf2ff;
+      border-color: #acc6ed;
+    }
+  }
+}
+
+.sectionHeader {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-bottom: 1rem;
+
+  h2 {
+    margin: 0;
+    font-size: 1.25rem;
+  }
+
+  h2 span {
+    margin-left: 0.4rem;
+    color: var(--text-muted);
+    font-size: 0.9rem;
+    font-weight: 400;
+  }
+}
+
+.create {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  min-height: 2.65rem;
+  padding: 0.5rem 0.9rem;
+  border-radius: 0.65rem;
+  background: var(--primary-strong);
+  color: #fff;
+  text-decoration: none;
+  font-weight: 600;
+
+  &:hover {
+    filter: brightness(0.92);
+  }
+}
+
+.chapters {
+  display: grid;
+  gap: 0.85rem;
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+.chapter {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  padding: 1.2rem;
+  text-decoration: none;
+  color: var(--text);
+
+  &:hover {
+    background: #f6f9ff;
+    border-color: #acc6ed;
+    box-shadow: 0 5px 16px rgba(16, 33, 62, 0.07);
+    transform: translateY(-2px);
+  }
+}
+
+.number {
+  display: grid;
+  flex-shrink: 0;
+  place-items: center;
+  width: 2.65rem;
+  height: 2.65rem;
+  border-radius: 0.7rem;
+  background: #edf3ff;
+  color: #18458e;
+  font-weight: 700;
+}
+
+.chapterCopy {
+  flex: 1;
+  min-width: 0;
+
+  h3 {
+    margin: 0;
+    font-size: 1rem;
+    overflow-wrap: anywhere;
+  }
+
+  p {
+    margin: 0.3rem 0 0;
+    font-size: 0.85rem;
+    color: var(--text-muted);
+  }
+}
+
+.empty {
+  padding: 1.5rem;
+
+  h3 {
+    margin: 0;
+    font-size: 1rem;
+  }
+
+  p {
+    margin: 0.5rem 0 0;
+    color: var(--text-muted);
+  }
+}
+
+.legacy {
+  margin: 0;
+  color: var(--text-muted);
+}
+
+.page a {
+  transition: background-color 160ms ease, border-color 160ms ease, box-shadow 160ms ease, transform 160ms ease;
+
+  &:focus-visible {
+    outline: 2px solid #2463ca;
+    outline-offset: 3px;
+  }
+}
+
+@media (max-width: 480px) {
+  .hero {
+    flex-wrap: wrap;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .page a {
+    transition: none;
+    transform: none;
+  }
+}
+
+.lessonGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 16rem), 1fr));
+  gap: 1rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.lessonCard {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  height: 100%;
+  padding: 1.25rem;
+  border: 1px solid var(--border);
+  border-radius: 1rem;
+  background: #fff;
+  color: var(--text);
+  text-decoration: none;
+
+  h3,
+  .evaluationCardTitle {
+    margin: 0;
+    font-size: 1.1rem;
+    overflow-wrap: anywhere;
+  }
+
+  &:hover {
+    background: #f6f9ff;
+    border-color: #acc6ed;
+    box-shadow: 0 5px 16px rgba(16, 33, 62, 0.07);
+    transform: translateY(-2px);
+  }
+}
+
+.lessonNumber {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  color: #18458e;
+  font-size: 0.85rem;
+}
+
+.evaluationCard {
+  border-color: #d8c9f5;
+  background: #f7f2ff;
+  color: #39246a;
+
+  .lessonNumber {
+    color: #65449b;
+  }
+
+  &:hover {
+    border-color: #ad91dd;
+    background: #f0e7ff;
+    box-shadow: 0 5px 16px rgba(86, 54, 143, 0.12);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .lessonCard:hover {
+    transform: none;
+  }
+}

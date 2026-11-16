@@ -99,3 +99,37 @@
     transform: translateY(0) scale(1);
   }
 }
+
+
+.overlay[data-closing="true"] {
+  animation: overlay-out 180ms ease both;
+
+  .modal {
+    animation: modal-out 180ms ease both;
+  }
+}
+
+@keyframes overlay-out {
+  to {
+    opacity: 0;
+  }
+}
+
+@keyframes modal-out {
+  to {
+    opacity: 0;
+    transform: translateY(8px) scale(0.985);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .overlay,
+  .modal {
+    animation: none;
+  }
+
+  .overlay[data-closing="true"],
+  .overlay[data-closing="true"] .modal {
+    animation-duration: 1ms;
+  }
+}

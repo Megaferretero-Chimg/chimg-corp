@@ -1,5 +1,5 @@
 import Image from "next/image";
-import { Building2, CalendarRange, PackageSearch } from "lucide-react";
+import { Building2, CalendarRange, GraduationCap, PackageSearch } from "lucide-react";
 
 import LogoutButton from "@/components/auth/LogoutButton";
 import TransitionLink from "@/components/navigation/TransitionLink";
@@ -10,6 +10,7 @@ import styles from "./page.module.scss";
 const moduleIcons = {
   "building-2": Building2,
   "calendar-range": CalendarRange,
+  "graduation-cap": GraduationCap,
   "package-search": PackageSearch,
 };
 
@@ -39,31 +40,30 @@ export default async function ModulesPage() {
 
             <div>
               <p className={styles.eyebrow}>Portal interno</p>
-              <p className={styles.brandName}>Selección de módulo</p>
+              <h1 className={styles.title}>Elige un módulo</h1>
+              <p className={styles.subtitle}>Accede a las herramientas disponibles para tu perfil.</p>
             </div>
           </div>
 
-          <h1 className={styles.title}>Elige el módulo con el que quieres trabajar</h1>
-          <p className={styles.description}>
-            La plataforma está preparada para crecer por módulos. Por ahora ya puedes ingresar al módulo principal de planificación y control operativo.
-          </p>
+          <LogoutButton className={styles.logout} />
         </header>
 
-        <section className={styles.grid}>
+        <section className={styles.grid} aria-label="Módulos disponibles">
+          {visibleModules.length === 0 && (
+            <p className={styles.empty}>Tu perfil aún no tiene módulos habilitados.</p>
+          )}
           {visibleModules.map((module) => (
             <article key={module.key} className={styles.card}>
-              <div className={styles.cardGlow} />
               <div className={styles.cardTop}>
                 <div className={styles.iconWrap}>
                   {(() => {
                     const ModuleIcon = moduleIcons[module.icon] || CalendarRange;
 
-                    return <ModuleIcon size={46} strokeWidth={1.8} />;
+                    return <ModuleIcon size={30} strokeWidth={1.8} aria-hidden="true" />;
                   })()}
                 </div>
 
                 <div className={styles.cardCopy}>
-                  <span className={styles.status}>{module.status}</span>
                   <h2 className={styles.cardTitle}>{module.title}</h2>
                   <p className={styles.cardDescription}>{module.description}</p>
                 </div>
@@ -77,15 +77,18 @@ export default async function ModulesPage() {
                 ))}
               </ul>
 
-              <TransitionLink href={module.href} className={styles.enterLink} transitionMs={180}>
+              <TransitionLink
+                href={module.href}
+                className={styles.enterLink}
+                aria-label={`Entrar al módulo ${module.title}`}
+                transitionMs={180}
+              >
                 Entrar al módulo
               </TransitionLink>
             </article>
           ))}
         </section>
       </section>
-
-      <LogoutButton className={styles.floatingLogout} />
     </main>
   );
 }

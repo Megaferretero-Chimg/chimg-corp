@@ -1,9 +1,11 @@
 import {
+  canAccessRequestPath,
   COMPANY_EMPLOYEES_PATH,
   PLANNING_EXCEPTIONS_PATH,
   isCompanyEmployeeOnlyUser,
   isPlanningExceptionsUser,
 } from "@/lib/access-control";
+import { ACADEMY_MODULE } from "@/modules/academy/module";
 import { COMPANY_MODULE } from "@/modules/company/module";
 import { PLANNING_MODULE } from "@/modules/planner/module";
 import { BUSINESS_MODULE } from "@/modules/business/module";
@@ -34,6 +36,13 @@ export const MODULE_DEFINITIONS = [
     bullets: ["Áreas", "Cargos", "Sucursales", "Empleados"],
     icon: "building-2",
   },
+  {
+    ...ACADEMY_MODULE,
+    status: "Disponible",
+    description: "Administración de cursos, contenidos y capacitación interna.",
+    bullets: ["Cursos", "Capítulos y lecciones", "Evaluaciones", "Configuración"],
+    icon: "graduation-cap",
+  },
 ];
 
 function asModuleCard(module) {
@@ -57,7 +66,7 @@ export function getModuleCardsForUser(user) {
 
   if (isCompanyEmployeeOnlyUser(user)) {
     return MODULE_DEFINITIONS
-      .filter((module) => module.key !== BUSINESS_MODULE.key || isAdminAccessUser(user))
+      .filter((module) => module.key !== BUSINESS_MODULE.key && module.key !== ACADEMY_MODULE.key)
       .map((module) => {
         if (module.key !== COMPANY_MODULE.key) {
           return asModuleCard(module);
@@ -91,6 +100,10 @@ export function getModuleCardsForUser(user) {
 
     if (module.key === BUSINESS_MODULE.key) {
       return isAdminAccessUser(user);
+    }
+
+    if (module.key === ACADEMY_MODULE.key) {
+      return canAccessRequestPath(user, module.homeHref);
     }
 
     return true;

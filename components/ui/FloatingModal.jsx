@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useId } from "react";
+import { useCallback, useEffect, useId, useState } from "react";
 import { createPortal } from "react-dom";
 import { X } from "lucide-react";
 
@@ -14,10 +14,21 @@ export default function FloatingModal({
   children,
   isPending = false,
   isFullscreen = false,
+  showCloseButton = true,
   onClose,
 }) {
   const canRenderPortal = useClientReady();
   const titleId = useId();
+  const [isClosing, setIsClosing] = useState(false);
+
+  const requestClose = useCallback(() => {
+    if (isPending || isClosing) return;
+    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
+      onClose();
+      return;
+    }
+    setIsClosing(true);
+  }, [isClosing, isPending, onClose]);
 
   useEffect(() => {
     if (!isOpen) {
@@ -27,8 +38,8 @@ export default function FloatingModal({
     const previousOverflow = document.body.style.overflow;
 
     function handleKeyDown(event) {
-      if (event.key === "Escape" && !isPending) {
-        onClose();
+      if (event.key === "Escape" && !event.defaultPrevented) {
+        requestClose();
       }
     }
 
@@ -39,7 +50,7 @@ export default function FloatingModal({
       document.body.style.overflow = previousOverflow;
       window.removeEventListener("keydown", handleKeyDown);
     };
-  }, [isOpen, isPending, onClose]);
+  }, [isOpen, requestClose]);
 
   if (!canRenderPortal || !isOpen) {
     return null;
@@ -48,13 +59,20 @@ export default function FloatingModal({
   return createPortal(
     <div
       className={styles.overlay}
-      onMouseDown={(event) => {
-        if (event.target === event.currentTarget && !isPending) {
+      data-closing={isClosing}
+      onAnimationEnd={(event) => {
+        if (isClosing && event.target === event.currentTarget) {
+          setIsClosing(false);
           onClose();
         }
       }}
+      onMouseDown={(event) => {
+        if (event.target === event.currentTarget) {
+          requestClose();
+        }
+      }}
     >
-      <section className={`${styles.modal} ${isFullscreen ? styles.fullscreenModal : ""}`} role="dialog" aria-modal="true" aria-labelledby={titleId}>
+      <section className={`${styles.modal} ${isFullscreen ? styles.fullscreenModal : ""}`} role="dialog" aria-modal="true" aria-labelledby={titleId} inert={isClosing}>
         <div className={styles.header}>
           <div>
             {eyebrow ? <p className={styles.eyebrow}>{eyebrow}</p> : null}
@@ -62,18 +80,20 @@ export default function FloatingModal({
               {title}
             </h3>
           </div>
-          <button
-            type="button"
-            className={styles.closeButton}
-            onClick={onClose}
-            disabled={isPending}
-            aria-label="Cerrar modal"
-          >
-            <X size={16} />
-          </button>
+          {showCloseButton && (
+            <button
+              type="button"
+              className={styles.closeButton}
+              onClick={requestClose}
+              disabled={isPending}
+              aria-label="Cerrar modal"
+            >
+              <X size={16} />
+            </button>
+          )}
         </div>
 
-        <div className={styles.body}>{children}</div>
+        <div className={styles.body}>{typeof children === "function" ? children(requestClose) : children}</div>
       </section>
     </div>,
     document.body,

@@ -200,6 +200,20 @@ export const ACCESS_PERMISSION_CATALOG = [
       },
     ],
   },
+  {
+    moduleKey: "academy",
+    moduleLabel: "Academia",
+    groups: [
+      {
+        key: "academy.admin",
+        label: "Administración",
+        description: "Acceso al área administrativa de Academia.",
+        permissions: [
+          { key: "academy.admin.view", label: "Ver Administración de Academia", type: "page", path: "/modules/academy/admin" },
+        ],
+      },
+    ],
+  },
 ];
 
 export const ALL_ACCESS_PERMISSIONS = ACCESS_PERMISSION_CATALOG.flatMap((module) =>
@@ -311,6 +325,14 @@ export const ACCESS_PAGE_CATALOG = [
       ["Bodegas", "/modules/business/warehouses", "business.warehouses.view"],
       ["Dispositivos", "/modules/business/devices", "business.devices.view"],
       ["Documentos sincronizados", "/modules/business/sync", "business.syncDocuments.view"],
+    ],
+  },
+  {
+    moduleKey: "academy",
+    moduleLabel: "Academia",
+    pages: [
+      ["Entrada a Academia", "/modules/academy", "academy.admin.view"],
+      ["Administración", "/modules/academy/admin", "academy.admin.view"],
     ],
   },
 ].map((module) => ({

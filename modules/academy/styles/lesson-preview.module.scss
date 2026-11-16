@@ -1,0 +1,63 @@
+.lesson {
+  display: grid;
+  gap: 1.5rem;
+  width: min(100%, 52rem);
+  margin-inline: auto;
+  padding: 0.75rem 0.5rem 2rem;
+  color: var(--text);
+  overflow-wrap: anywhere;
+}
+
+.text {
+  display: grid;
+  gap: 0.8rem;
+  line-height: 1.65;
+  white-space: pre-wrap;
+
+  h2,
+  h3,
+  p,
+  ul,
+  ol {
+    margin: 0;
+  }
+
+  h2 {
+    font-size: clamp(1.35rem, 3vw, 1.8rem);
+    line-height: 1.25;
+  }
+
+  h3 {
+    font-size: 1.2rem;
+    line-height: 1.35;
+  }
+
+  ul,
+  ol {
+    padding-inline-start: 1.5rem;
+  }
+}
+
+.images,
+.videos {
+  display: grid;
+  gap: 0.85rem;
+  align-items: start;
+}
+
+.images {
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 15rem), 1fr));
+  justify-items: center;
+}
+
+.divider {
+  width: 100%;
+  margin: 0;
+  border: 0;
+  border-top: 1px solid var(--border);
+}
+
+.empty {
+  margin: 0;
+  color: var(--text-muted);
+}

@@ -18,7 +18,7 @@ const EMPTY_MODULE_CONFIG = Object.freeze({
   navigation: [],
 });
 
-export default function ModuleShell({ title, description, actions = null, children, moduleConfig = null }) {
+export default function ModuleShell({ title, description, showHeader = true, actions = null, children, moduleConfig = null }) {
   const pathname = usePathname();
   const layoutModuleConfig = useModuleConfig();
   const resolvedModuleConfig = layoutModuleConfig || moduleConfig || EMPTY_MODULE_CONFIG;
@@ -101,13 +101,11 @@ export default function ModuleShell({ title, description, actions = null, childr
         />
       </div>
 
-      {isMobileNavOpen ? (
-        <div
-          className={styles.mobileNavBackdrop}
-          onMouseDown={closeMobileNavigation}
-          aria-hidden="true"
-        />
-      ) : null}
+      <div
+        className={`${styles.mobileNavBackdrop} ${isMobileNavOpen ? styles.mobileNavBackdropOpen : ""}`}
+        onMouseDown={closeMobileNavigation}
+        aria-hidden="true"
+      />
 
       <aside
         id="module-sidebar"
@@ -237,14 +235,15 @@ export default function ModuleShell({ title, description, actions = null, childr
       </aside>
 
       <main className={styles.content}>
+        {showHeader && (
         <header className={`${styles.header} page-entrance`}>
           <div>
-            <p className={styles.eyebrow}>Dashboard</p>
             <h1 className={styles.title}>{title}</h1>
             {description ? <p className={styles.description}>{description}</p> : null}
           </div>
           {actions ? <div className={styles.headerActions}>{actions}</div> : null}
         </header>
+        )}
 
         <section className="page-entrance page-entrance-delay-sm">{children}</section>
       </main>
