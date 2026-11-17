@@ -212,6 +212,14 @@ export const ACCESS_PERMISSION_CATALOG = [
           { key: "academy.admin.view", label: "Ver Administración de Academia", type: "page", path: "/modules/academy/admin" },
         ],
       },
+      {
+        key: "academy.learning",
+        label: "Capacitación",
+        description: "Acceso a los cursos asignados al cargo del colaborador.",
+        permissions: [
+          { key: "academy.learning.view", label: "Ver Mis cursos", type: "page", path: "/modules/academy/learning" },
+        ],
+      },
     ],
   },
 ];
@@ -333,6 +341,7 @@ export const ACCESS_PAGE_CATALOG = [
     pages: [
       ["Entrada a Academia", "/modules/academy", "academy.admin.view"],
       ["Administración", "/modules/academy/admin", "academy.admin.view"],
+      ["Mis cursos", "/modules/academy/learning", "academy.learning.view"],
     ],
   },
 ].map((module) => ({

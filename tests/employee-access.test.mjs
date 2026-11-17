@@ -6,7 +6,7 @@ import vm from "node:vm";
 
 // Execute the actual proxy with authentication and NextResponse isolated.
 const source = readFileSync(new URL("../proxy.js", import.meta.url), "utf8")
-  .replace(/^import .*;\n/gm, "")
+  .replace(/^import .*;\r?\n/gm, "")
   .replace(/export /g, "");
 const secret = "employee-access-test-secret";
 const encoded = Buffer.from(JSON.stringify([])).toString("base64url");

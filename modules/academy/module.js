@@ -11,6 +11,12 @@ export const ACADEMY_COURSES_PATH = `${ACADEMY_ADMIN.href}/courses`;
 
 export const ACADEMY_SETTINGS_PATH = `${ACADEMY_ADMIN.href}/settings`;
 
+export const ACADEMY_LEARNING = {
+  title: "Mis cursos",
+  href: `${academyPath}/learning`,
+  permission: "academy.learning.view",
+};
+
 export const ACADEMY_MODULE = {
   key: "academy",
   title: "Academia",

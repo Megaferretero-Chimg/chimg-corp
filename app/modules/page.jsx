@@ -1,7 +1,6 @@
 import Image from "next/image";
 import { Building2, CalendarRange, GraduationCap, PackageSearch } from "lucide-react";
 
-import LogoutButton from "@/components/auth/LogoutButton";
 import TransitionLink from "@/components/navigation/TransitionLink";
 import { requireAuthenticatedUser } from "@/lib/access-control";
 import { getModuleCardsForUser } from "@/modules/registry";
@@ -45,7 +44,6 @@ export default async function ModulesPage() {
             </div>
           </div>
 
-          <LogoutButton className={styles.logout} />
         </header>
 
         <section className={styles.grid} aria-label="Módulos disponibles">

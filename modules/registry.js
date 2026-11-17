@@ -5,7 +5,7 @@ import {
   isCompanyEmployeeOnlyUser,
   isPlanningExceptionsUser,
 } from "@/lib/access-control";
-import { ACADEMY_MODULE } from "@/modules/academy/module";
+import { ACADEMY_ADMIN, ACADEMY_LEARNING, ACADEMY_MODULE } from "@/modules/academy/module";
 import { COMPANY_MODULE } from "@/modules/company/module";
 import { PLANNING_MODULE } from "@/modules/planner/module";
 import { BUSINESS_MODULE } from "@/modules/business/module";
@@ -108,6 +108,14 @@ export function getModuleCardsForUser(user) {
 
     return true;
   }).map((module) => {
+    if (module.key === ACADEMY_MODULE.key && !hasAccessPermission(user, ACADEMY_ADMIN.permission)) {
+      return asModuleCard({
+        ...module,
+        href: ACADEMY_LEARNING.href,
+        description: "Consulta tus capacitaciones y continúa donde te quedaste.",
+        bullets: ["Mis cursos", "Lecciones", "Evaluaciones"],
+      });
+    }
     return asModuleCard(module);
   });
 }

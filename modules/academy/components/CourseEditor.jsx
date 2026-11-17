@@ -11,23 +11,12 @@ import LessonMediaBlock from "@/modules/academy/components/LessonMediaBlock";
 import LessonPreview from "@/modules/academy/components/LessonPreview";
 import LessonTextBlock from "@/modules/academy/components/LessonTextBlock";
 import { uploadAcademyMedia } from "@/modules/academy/lib/upload-media";
+import { getLessonBlocks } from "@/modules/academy/lib/lesson-blocks";
 import { saveCourse } from "@/modules/academy/actions/save-course";
 import { ACADEMY_COURSES_PATH, MAX_LESSON_BLOCK_IMAGES } from "@/modules/academy/module";
 import styles from "@/modules/academy/styles/admin.module.scss";
 
 const BLOCK_NAMES = { text: "Texto", image: "Imagen", video: "Video", divider: "Separador" };
-
-function initialLessonBlocks(lesson) {
-  const blocks = lesson?.blocks ?? [
-    ...(lesson?.content ? [{ kind: "text", parts: [{ style: "paragraph", text: lesson.content }] }] : []),
-    ...(lesson?.media ?? []).map((asset) => ({ kind: asset.kind, asset })),
-  ];
-  return blocks.map((block, index) => {
-    const key = `saved-${index}`;
-    if (block.kind !== "image" && block.kind !== "video") return { ...block, key };
-    return { kind: block.kind, label: block.label, assets: block.assets ?? block.images ?? (block.asset ? [block.asset] : []), key };
-  });
-}
 
 export default function CourseEditor({ course, chapter, lesson, section, roles = [], categories = [], previewUrls = {} }) {
   const router = useRouter();
@@ -61,7 +50,7 @@ export default function CourseEditor({ course, chapter, lesson, section, roles =
   const busy = isPending || uploading || removingBlock !== null;
   const [draft, setDraft] = useState(() => {
     if (section === "lesson") {
-      return { title: lesson?.title ?? "", blocks: initialLessonBlocks(lesson) };
+      return { title: lesson?.title ?? "", blocks: getLessonBlocks(lesson) };
     }
     if (section === "chapter") {
       return { title: chapter?.title ?? "" };

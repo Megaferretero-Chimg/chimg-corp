@@ -131,16 +131,11 @@ por usuario. Nuevos modulos deben registrarse ahi y exponer al menos:
 
 ### Academia
 
-Academia es el módulo administrativo de capacitación del portal corporativo.
-Su entrada `/modules/academy` abre el resumen en `/modules/academy/admin`.
-Incluye Resumen, Cursos y Configuración. El permiso `academy.admin.view`
-habilita la entrada y todas las pantallas administrativas. Los permisos
-anteriores `academy.home.view` y `academy.learning.view` dejan de otorgar
-acceso al módulo. Los administradores conservan el acceso por su perfil.
-
-La experiencia de aprendizaje de los empleados se desarrollará en un espacio
-independiente del selector de módulos administrativos. Su navegación y acceso
-se definirán al implementar ese espacio.
+Academia tiene un área administrativa en `/modules/academy/admin` y un espacio
+de capacitación en `/modules/academy/learning`. La entrada `/modules/academy`
+redirige según el perfil. El permiso `academy.admin.view` habilita Resumen,
+Cursos y Configuración. El permiso `academy.learning.view` habilita Mis cursos
+para usuarios vinculados a un empleado activo.
 
 Cada curso contiene capítulos ordenados con lecciones obligatorias y una
 evaluación de opción múltiple por capítulo. Cada pregunta tiene una respuesta
@@ -160,12 +155,14 @@ El progreso y los intentos de evaluación se guardarán por empleado y curso.
 - **Cloudinary.** El navegador carga los archivos directamente con una firma
   emitida por el servidor para administradores de Academia. El servidor
   verifica los archivos autenticados antes de guardar sus referencias.
-- **Entrega al estudiante.** Queda pendiente la reproducción protegida y el
-  procesamiento para HLS. El servidor deberá comprobar la sesión, el cargo
-  asignado y el estado publicado antes de autorizar la entrega.
+- **Entrega al estudiante.** El servidor comprueba la sesión, el cargo asignado
+  y el estado publicado antes de generar la vista de la lección con sus
+  enlaces firmados. El procesamiento para HLS queda pendiente.
 
 En `/modules/academy/admin/courses` se crea el borrador con su información
 básica. Desde el detalle del curso se crean capítulos, se editan sus lecciones
 y evaluaciones y se asignan cargos en la pantalla de publicación. Los cursos
 nuevos requieren capítulos con lecciones y evaluación, y al menos un cargo
-para publicarse. El progreso y la corrección quedan para la vista del estudiante.
+para publicarse. Mis cursos guarda el progreso, las respuestas y la nota por
+empleado y curso. La evaluación se habilita al completar las lecciones
+correspondientes.
