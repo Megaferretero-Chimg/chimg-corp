@@ -1,3 +1,5 @@
+import { resolveAssignmentHolidayScope } from "@/modules/planner/lib/planning/assignmentHolidayScope";
+import { holidaysForBranch } from "@/modules/planner/lib/planning/holidayScope";
 import { NextResponse } from "next/server";
 
 import { isAuthenticated } from "@/lib/auth";
@@ -683,7 +685,7 @@ function buildFixedScheduleFallbackAssignments({ employees = [], rolesByCode = n
         generatedDays: buildGeneratedDays(
           fallbackMonthKey,
           template,
-          holidaysByMonth.get(fallbackMonthKey) || [],
+          holidaysForBranch(holidaysByMonth.get(fallbackMonthKey) || [], employee.branchCode),
           [],
           { weekdaysOnly: true },
         ),
@@ -758,7 +760,9 @@ function applyVacationDay(day, vacationDateKeys = new Set()) {
 }
 
 function enforceHolidayDay(day, holidayDateKeys = new Set()) {
-  if (!holidayDateKeys.has(day.dateKey)) return day;
+  if (!holidayDateKeys.has(day.dateKey)) {
+    return { ...day, isHoliday: false, tags: (day.tags || []).filter((tag) => tag !== "Feriado") };
+  }
 
   const hasPlannedHolidaySchedule = isPlannedWorkDay(day) && day.startTime && day.endTime;
   const holidayPlannedStartTime = day.holidayPlannedStartTime || (hasPlannedHolidaySchedule ? day.startTime : "");
@@ -3503,7 +3507,8 @@ export async function GET(request) {
         ])
       : [[], [], [], null, [], []];
     const employeesById = new Map(employees.map((employee) => [toId(employee), employee]));
-    const currentManualAssignments = manualAssignments.filter((assignment) =>
+    const scopedManualAssignments = await resolveAssignmentHolidayScope(manualAssignments, holidays);
+    const currentManualAssignments = scopedManualAssignments.filter((assignment) =>
       assignmentMatchesCurrentEmployeeOrg(assignment, employeesById.get(toId(assignment.employee))),
     );
     const fallbackAssignments = buildFixedScheduleFallbackAssignments({
@@ -3571,10 +3576,10 @@ export async function GET(request) {
       punchesByEmployeeDate.get(key).push(punch);
     });
 
-    const holidayDateKeys = new Set(holidays.map((holiday) => holiday.dateKey));
-    const referenceDays = buildReferenceDaysInRange(contextStart, contextEnd, holidayDateKeys);
-    const visibleReferenceDays = referenceDays.filter((day) => monthKeyFromDateKey(day.dateKey) === monthKey);
     const rows = employees.map((employee) => {
+      const holidayDateKeys = new Set(holidaysForBranch(holidays, employee.branchCode).map((holiday) => holiday.dateKey));
+      const referenceDays = buildReferenceDaysInRange(contextStart, contextEnd, holidayDateKeys);
+      const visibleReferenceDays = referenceDays.filter((day) => monthKeyFromDateKey(day.dateKey) === monthKey);
       const employeeKey = toId(employee);
       const employmentStartDateKey = resolveEmploymentStartDateKey(employee);
       const terminationDateKey = resolveTerminationDateKey(employee);

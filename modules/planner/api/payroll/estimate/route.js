@@ -227,6 +227,7 @@ export async function GET(request) {
       punches,
       schedules,
       monthlyBaseHours: (await resolveMonthlyBaseHours({
+        branchCode: employee.branchCode,
         monthKey: format(month, "yyyy-MM"),
         year: month.getFullYear(),
         monthIndex: month.getMonth(),

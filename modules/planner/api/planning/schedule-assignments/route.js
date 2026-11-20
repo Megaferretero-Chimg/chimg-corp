@@ -1,3 +1,5 @@
+import { resolveAssignmentHolidayScope } from "@/modules/planner/lib/planning/assignmentHolidayScope";
+import { holidaysForBranch } from "@/modules/planner/lib/planning/holidayScope";
 import { NextResponse } from "next/server";
 import mongoose from "mongoose";
 
@@ -794,7 +796,7 @@ export async function GET(request) {
       : null;
 
     return NextResponse.json({
-      assignments: mergeAssignmentsByEmployee([...fixedAssignments, ...variableAssignments], monthKey)
+      assignments: mergeAssignmentsByEmployee(await resolveAssignmentHolidayScope([...fixedAssignments, ...variableAssignments], fixedHolidays), monthKey)
         .map((assignment) => serializeScheduleAssignmentForWeek(assignment, weekStartKey, groupId)),
       unlockRequest: serializeScheduleUnlockRequest(currentVersionUnlockRequest),
       overlays: includeOverlays ? {
@@ -875,7 +877,7 @@ export async function POST(request) {
         throw new Error("La plantilla seleccionada no corresponde al area o rol del empleado.");
       }
 
-      const generatedTemplateDay = buildGeneratedDays(monthKey, template, holidays)
+      const generatedTemplateDay = buildGeneratedDays(monthKey, template, holidaysForBranch(holidays, employee.branchCode))
         .find((day) => day.dateKey === dateKey);
       const templateDay = resolveTemplateOverrideDay(generatedTemplateDay, template, dateKey);
 
@@ -1019,7 +1021,6 @@ export async function POST(request) {
           assignment,
         ]),
       );
-      const holidayNamesByDate = new Map(holidays.map((holiday) => [holiday.dateKey, holiday.name]));
       const operations = [];
       const savedEmployeeIds = new Set();
       const savedAt = new Date();
@@ -1033,6 +1034,7 @@ export async function POST(request) {
           return;
         }
 
+        const holidayNamesByDate = new Map(holidaysForBranch(holidays, employee.branchCode).map((holiday) => [holiday.dateKey, holiday.name]));
         const daysByMonth = new Map();
 
         (Array.isArray(entry?.days) ? entry.days : []).forEach((day) => {

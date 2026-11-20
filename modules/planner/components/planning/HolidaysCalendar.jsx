@@ -3,8 +3,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState, useTransition } from "react";
 import { addMonths, endOfMonth, format, getDay, startOfMonth, subMonths } from "date-fns";
 import { es } from "date-fns/locale";
-import { ChevronLeft, ChevronRight, Plus, Save, Trash2 } from "lucide-react";
+import { Check, ChevronLeft, ChevronRight, Plus, Save, Trash2 } from "lucide-react";
 
+import SelectInput from "@/components/ui/SelectInput";
 import ConfirmDialog from "@/components/ui/ConfirmDialog";
 import FloatingModal from "@/components/ui/FloatingModal";
 import FloatingNotice from "@/components/ui/FloatingNotice";
@@ -40,6 +41,9 @@ function buildMonthDays(monthDate) {
 
 export default function HolidaysCalendar() {
   const [monthDate, setMonthDate] = useState(() => startOfMonth(new Date()));
+  const [branches, setBranches] = useState([]);
+  const [scope, setScope] = useState("all");
+  const [branchCodes, setBranchCodes] = useState([]);
   const [holidays, setHolidays] = useState([]);
   const [selectedDay, setSelectedDay] = useState(null);
   const [holidayName, setHolidayName] = useState("");
@@ -102,6 +106,7 @@ export default function HolidaysCalendar() {
 
         if (!isCancelled) {
           setHolidays(payload.holidays || []);
+          setBranches(payload.branches || []);
         }
       } catch (error) {
         if (!isCancelled) {
@@ -130,6 +135,8 @@ export default function HolidaysCalendar() {
     const holiday = holidaysByDate.get(day.dateKey);
     setSelectedDay(day);
     setHolidayName(holiday?.name || "");
+    setScope(holiday?.scope || "all");
+    setBranchCodes(holiday?.branchCodes || []);
   }
 
   function closeEditor() {
@@ -153,6 +160,8 @@ export default function HolidaysCalendar() {
           body: JSON.stringify({
             dateKey: selectedDay.dateKey,
             name: holidayName,
+            scope,
+            branchCodes: scope === "branches" ? branchCodes : [],
           }),
         });
         const payload = await response.json();
@@ -254,7 +263,7 @@ export default function HolidaysCalendar() {
                 {day ? (
                   <>
                     <span className={styles.dayNumber}>{day.day}</span>
-                    {holiday ? <strong className={styles.holidayName}>{holiday.name}</strong> : <span className={styles.addHint}><Plus size={14} /> Agregar</span>}
+                    {holiday ? <strong className={styles.holidayName}>{holiday.name}<small className={styles.scopeLabel}>{holiday.scope === "branches" ? holiday.branchCodes.map((code) => branches.find((branch) => branch.code === code)?.name || code).join(", ") : "Todas las sucursales"}</small></strong> : <span className={styles.addHint}><Plus size={14} /> Agregar</span>}
                   </>
                 ) : null}
               </button>
@@ -276,6 +285,26 @@ export default function HolidaysCalendar() {
             <input value={holidayName} onChange={(event) => setHolidayName(event.target.value)} placeholder="Ej. INDEPENDENCIA DE AMBATO" autoFocus disabled={isPending} />
           </label>
 
+          <SelectInput label="Aplica a" value={scope} disabled={isPending} onChange={(event) => setScope(event.target.value)}>
+            <option value="all">Todas las sucursales</option>
+            <option value="branches">Sucursales seleccionadas</option>
+          </SelectInput>
+          {scope === "branches" && (
+            <fieldset className={styles.branchPicker} disabled={isPending}>
+              <legend>Sucursales</legend>
+              {branches.map((branch) => (
+                <label key={branch.code} className={`${styles.branchOption} ${branchCodes.includes(branch.code) ? styles.branchOptionSelected : ""}`}>
+                  <input type="checkbox" checked={branchCodes.includes(branch.code)} onChange={(event) => {
+                    setBranchCodes((current) => event.target.checked ? [...current, branch.code] : current.filter((code) => code !== branch.code));
+                  }} />
+                  <span className={styles.branchCheck} aria-hidden="true"><Check size={14} /></span>
+                  <span className={styles.branchName}>{branch.name}{branch.isActive === false ? <small>Inactiva</small> : null}</span>
+                </label>
+              ))}
+              {!branches.length && <p>No hay sucursales registradas.</p>}
+            </fieldset>
+          )}
+
           <div className={styles.actions}>
             {selectedHoliday ? (
               <button type="button" className={styles.dangerButton} onClick={() => setHolidayToDelete(selectedHoliday)}>
@@ -283,7 +312,7 @@ export default function HolidaysCalendar() {
                 Eliminar
               </button>
             ) : null}
-            <button type="submit" className={styles.primaryButton} disabled={isPending || !holidayName.trim()}>
+            <button type="submit" className={styles.primaryButton} disabled={isPending || !holidayName.trim() || (scope === "branches" && !branchCodes.length)}>
               <Save size={16} />
               {isPending ? "Guardando..." : "Guardar feriado"}
             </button>

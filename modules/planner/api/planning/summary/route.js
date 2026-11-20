@@ -1,3 +1,4 @@
+import { resolveAssignmentHolidayScope } from "@/modules/planner/lib/planning/assignmentHolidayScope";
 import { NextResponse } from "next/server";
 
 import connectToDatabase from "@/lib/db/mongodb";
@@ -203,7 +204,7 @@ export async function GET(request) {
 
     applyPlannerScopeToAssignmentQuery(assignmentQuery, plannerScope);
 
-    const [allActiveEmployees, employees, assignments] = await Promise.all([
+    const [allActiveEmployees, employees, rawAssignments] = await Promise.all([
       Employee.find(allActiveEmployeeQuery)
         .select({
           fullName: 1,
@@ -236,6 +237,7 @@ export async function GET(request) {
         .lean(),
       ScheduleAssignment.find(assignmentQuery).lean(),
     ]);
+    const assignments = await resolveAssignmentHolidayScope(rawAssignments);
     const filteredEmployees = employees.filter((employee) =>
       employeeMatchesArea(employee, areaCode) && employeeMatchesRole(employee, roleCode),
     );
@@ -246,6 +248,7 @@ export async function GET(request) {
         .map((assignment) => [assignment.employee.toString(), assignment]),
     );
     const monthlyBase = await resolveMonthlyBaseHours({
+      branchCode,
       monthKey,
       year,
       monthIndex,

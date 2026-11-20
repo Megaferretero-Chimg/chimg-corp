@@ -10,6 +10,7 @@ import {
   serializeHoliday,
 } from "@/modules/planner/lib/planning/holidays";
 import { makeEcuadorDate } from "@/lib/datetime/ecuador";
+import { Branch } from "@/modules/company/models";
 import { Holiday } from "@/modules/planner/models";
 
 export async function GET(request) {
@@ -44,6 +45,8 @@ export async function GET(request) {
       .lean();
 
     return NextResponse.json({
+      branches: (await Branch.find().select("code name isActive").sort({ name: 1 }).lean())
+        .map(({ code, name, isActive }) => ({ code, name, isActive })),
       month: monthKey,
       holidays: holidays.map(serializeHoliday),
     });
@@ -71,6 +74,10 @@ export async function PUT(request) {
 
     const body = await request.json();
     const payload = normalizeHolidayPayload(body);
+    if (payload.scope === "branches") {
+      const count = await Branch.countDocuments({ code: { $in: payload.branchCodes } });
+      if (count !== payload.branchCodes.length) throw new Error("Una de las sucursales seleccionadas ya no existe.");
+    }
     const holiday = await Holiday.findOneAndUpdate(
       { dateKey: payload.dateKey },
       { $set: payload },

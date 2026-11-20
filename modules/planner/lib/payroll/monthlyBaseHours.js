@@ -1,3 +1,4 @@
+import { holidaysForBranch } from "@/modules/planner/lib/planning/holidayScope";
 import { eachDayOfInterval, endOfMonth, startOfMonth } from "date-fns";
 
 import { formatEcuadorDateKey } from "@/lib/datetime/ecuador";
@@ -20,6 +21,7 @@ export async function resolveMonthlyBaseHours({
   monthKey,
   year,
   monthIndex,
+  branchCode = "",
   dailyBaseHours = ECUADOR_DAILY_BASE_HOURS,
 }) {
   const safeDailyBaseHours = Math.max(Number(dailyBaseHours) || ECUADOR_DAILY_BASE_HOURS, 1);
@@ -30,9 +32,9 @@ export async function resolveMonthlyBaseHours({
       $lte: to,
     },
   })
-    .select({ dateKey: 1 })
+    .select({ dateKey: 1, scope: 1, branchCodes: 1 })
     .lean();
-  const holidayKeys = new Set(holidays.map((holiday) => holiday.dateKey));
+  const holidayKeys = new Set(holidaysForBranch(holidays, branchCode).map((holiday) => holiday.dateKey));
   const days = eachDayOfInterval({
     start: startOfMonth(new Date(year, monthIndex, 1)),
     end: endOfMonth(new Date(year, monthIndex, 1)),

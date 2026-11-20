@@ -142,6 +142,7 @@ export async function GET(request) {
     const employeesById = new Map(employees.map((employee) => [employee._id.toString(), employee]));
     const paymentByEmployee = new Map(payments.map((payment) => [payment.employee?.toString?.() || "", payment]));
     const monthlyBase = await resolveMonthlyBaseHours({
+      branchCode,
       monthKey,
       year,
       monthIndex,

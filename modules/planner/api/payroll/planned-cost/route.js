@@ -1,3 +1,4 @@
+import { resolveAssignmentHolidayScope } from "@/modules/planner/lib/planning/assignmentHolidayScope";
 import { NextResponse } from "next/server";
 
 import { isAuthenticated } from "@/lib/auth";
@@ -101,7 +102,7 @@ export async function GET(request) {
       query.roleCode = roleCode;
     }
 
-    const [assignments, allMonthAssignments] = await Promise.all([
+    const [rawAssignments, allMonthAssignments] = await Promise.all([
       ScheduleAssignment.find(query).sort({ branchName: 1, areaName: 1, roleName: 1, employeeName: 1 }).lean(),
       ScheduleAssignment.find({ monthKey }).select({
         branchCode: 1,
@@ -112,12 +113,14 @@ export async function GET(request) {
         roleName: 1,
       }).lean(),
     ]);
+    const assignments = await resolveAssignmentHolidayScope(rawAssignments);
     const employeeIds = assignments.map((assignment) => assignment.employee).filter(Boolean);
     const employees = employeeIds.length
       ? await Employee.find({ _id: { $in: employeeIds } }).select({ salary: 1, isActive: 1, terminationDate: 1 }).lean()
       : [];
     const employeesById = new Map(employees.map((employee) => [employee._id.toString(), employee]));
     const monthlyBase = await resolveMonthlyBaseHours({
+      branchCode,
       monthKey,
       year,
       monthIndex,

@@ -1,3 +1,4 @@
+import { holidaysForBranch } from "@/modules/planner/lib/planning/holidayScope";
 import { addDays, format, startOfWeek } from "date-fns";
 
 import { formatTimeText24, makeEcuadorDate } from "@/lib/datetime/ecuador";
@@ -362,6 +363,7 @@ export function buildAssignmentPayload({
   weeklyPlan = [],
   weekdaysOnly = false,
 }) {
+  holidays = holidaysForBranch(holidays, employee.branchCode);
   const normalizedWeeklyPlan = weeklyPlan
     .map((entry, index) =>
       normalizeWeeklyPlanEntry(entry, getMonthWeekOptions(monthKey)[index]?.label || ""),

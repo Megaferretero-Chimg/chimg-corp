@@ -12,6 +12,7 @@ import SelectInput from "@/components/ui/SelectInput";
 import TextInput from "@/components/ui/TextInput";
 import { formatEcuadorDateTimeLabel, formatEcuadorMonthKey, formatTime24 } from "@/lib/datetime/ecuador";
 import { dateKeyFromValue, employeeDismissalLabel, isEmployeeActiveOnDate, isEmployeeDismissedInMonth } from "@/modules/company/submodules/people/lib/employees";
+import { holidaysForBranch, holidayAppliesToBranch } from "@/modules/planner/lib/planning/holidayScope";
 import { planningModulePath } from "@/modules/planner/routes";
 import { ECUADOR_DAILY_BASE_HOURS } from "@/modules/planner/lib/payroll/laborConstants";
 import { calculatePayrollHourlyRate } from "@/modules/planner/lib/payroll/rates";
@@ -2008,11 +2009,6 @@ export default function SchedulePlanner({ initialFilters = {}, basePath = "/sche
     () => new Map(holidays.map((holiday) => [holiday.dateKey, holiday])),
     [holidays],
   );
-  const holidayDateKeys = useMemo(
-    () => new Set(holidaysByDate.keys()),
-    [holidaysByDate],
-  );
-
   const displayedDraftDays = useMemo(() => {
     if (!approvedHistoryVersion) return draftDays;
 
@@ -2104,12 +2100,12 @@ export default function SchedulePlanner({ initialFilters = {}, basePath = "/sche
         weekDateKeys,
         draftDays: effectiveDraftDays,
         shiftOptionsByKey: effectiveShiftOptionsByKey,
-        holidayDateKeys,
+        holidayDateKeys: new Set(holidaysForBranch(holidays, employee.branchCode).map((holiday) => holiday.dateKey)),
         dailyBaseHours,
         regularWorkdayLimit: 5,
       }),
     ]));
-  }, [dailyBaseHours, effectiveDraftDays, effectiveShiftOptionsByKey, filteredEmployees, holidayDateKeys, showFinancials, showHours, showSummaries, weekDateKeys]);
+  }, [dailyBaseHours, effectiveDraftDays, effectiveShiftOptionsByKey, filteredEmployees, holidays, showFinancials, showHours, showSummaries, weekDateKeys]);
 
   const summary = useMemo(() => {
     let extraDayIndicators = 0;
@@ -2707,7 +2703,7 @@ export default function SchedulePlanner({ initialFilters = {}, basePath = "/sche
       row.cells.forEach((cell) => {
         const overlay = overlaysByEmployeeDate.get(`${row.employee.id}|${cell.dateKey}`);
 
-        if (overlay?.kind === "vacation" || holidayDateKeys.has(cell.dateKey)) {
+        if (overlay?.kind === "vacation" || (holidaysByDate.has(cell.dateKey) && holidayAppliesToBranch(holidaysByDate.get(cell.dateKey), row.employee.branchCode))) {
           return;
         }
 
@@ -3632,7 +3628,8 @@ export default function SchedulePlanner({ initialFilters = {}, basePath = "/sche
               <tr>
                 <th>Empleado</th>
                 {weekDateKeys.map((dateKey) => {
-                  const holiday = holidaysByDate.get(dateKey);
+                  const candidateHoliday = holidaysByDate.get(dateKey);
+                  const holiday = candidateHoliday && filteredEmployees.some((employee) => holidayAppliesToBranch(candidateHoliday, employee.branchCode)) ? candidateHoliday : null;
 
                   return (
                     <th
@@ -3642,7 +3639,7 @@ export default function SchedulePlanner({ initialFilters = {}, basePath = "/sche
                     >
                       <span>{DAY_LABELS[getDayOfWeek(dateKey)]}</span>
                       <small>{formatPlannerDay(dateKey, monthKey)}</small>
-                      {holiday ? <em>Feriado</em> : null}
+                      {holiday ? <em>{holiday.scope === "branches" ? "Feriado local" : "Feriado"}</em> : null}
                     </th>
                   );
                 })}

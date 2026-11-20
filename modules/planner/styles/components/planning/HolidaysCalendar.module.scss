@@ -205,6 +205,12 @@
   padding: 0.78rem 0.9rem;
   font-weight: 400;
   outline: none;
+  transition: border-color 160ms ease, box-shadow 160ms ease;
+}
+
+.field input:focus-visible {
+  border-color: var(--primary);
+  box-shadow: 0 0 0 3px rgba(31, 111, 255, 0.1);
 }
 
 .actions {
@@ -224,6 +230,24 @@
   padding: 0.82rem 1.05rem;
   font-weight: 700;
   cursor: pointer;
+  transition: transform 160ms ease, box-shadow 160ms ease, filter 160ms ease;
+}
+
+.primaryButton:hover:not(:disabled) {
+  filter: brightness(1.08);
+  box-shadow: 0 4px 12px rgba(31, 111, 255, 0.2);
+  transform: translateY(-1px);
+}
+
+.dangerButton:hover:not(:disabled) {
+  background: rgba(217, 45, 32, 0.12);
+  border-color: var(--danger);
+}
+
+.primaryButton:focus-visible,
+.dangerButton:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 3px;
 }
 
 .primaryButton {
@@ -280,4 +304,105 @@
   .calendar {
     grid-template-columns: 1fr;
   }
+}
+
+.scopeLabel {
+  display: block;
+  margin-top: 0.3rem;
+  font-size: 0.7rem;
+  font-weight: 400;
+}
+
+.branchPicker {
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.55rem;
+  max-height: 18rem;
+  overflow-y: auto;
+  animation: branchesEnter 180ms ease both;
+
+  legend {
+    margin-bottom: 0.6rem;
+    color: #1c315d;
+    font-size: var(--font-size-base);
+    font-weight: 600;
+  }
+}
+
+.branchOption {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+  padding: 0.8rem;
+  border: 1px solid #e2eaf6;
+  border-radius: 0.95rem;
+  color: #425b80;
+  background: #fff;
+  cursor: pointer;
+  transition: border-color 160ms ease, background-color 160ms ease, color 160ms ease;
+
+  input {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    opacity: 0;
+  }
+
+  &:hover { border-color: rgba(31, 111, 255, 0.4); background: #f8fbff; }
+  &:has(input:focus-visible) { outline: 2px solid var(--primary); outline-offset: -2px; }
+  &:has(input:disabled) { opacity: 0.6; cursor: not-allowed; }
+}
+
+.branchCheck {
+  flex: 0 0 1.2rem;
+  height: 1.2rem;
+  display: grid;
+  place-items: center;
+  border: 1px solid #c8d4e8;
+  border-radius: 0.35rem;
+  background: #fff;
+  transition: background-color 160ms ease, border-color 160ms ease;
+
+  svg { opacity: 0; transform: scale(0.7); transition: opacity 160ms ease, transform 160ms ease; }
+}
+
+.branchOptionSelected {
+  border-color: rgba(31, 111, 255, 0.35);
+  background: #edf4ff;
+  color: #17428c;
+
+  .branchCheck {
+    background: var(--primary);
+    border-color: var(--primary);
+    color: #fff;
+    svg { opacity: 1; transform: scale(1); }
+  }
+}
+
+.branchName {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  font-size: var(--font-size-sm);
+  font-weight: 600;
+  small { display: block; margin-top: 0.2rem; color: #7183a0; font-weight: 400; }
+}
+
+@keyframes branchesEnter {
+  from { opacity: 0; transform: translateY(-4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@media (max-width: 520px) {
+  .branchPicker { grid-template-columns: minmax(0, 1fr); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .branchPicker { animation: none; }
+  .branchOption, .branchCheck, .branchCheck svg, .field input,
+  .primaryButton, .dangerButton { transition: none; }
 }
